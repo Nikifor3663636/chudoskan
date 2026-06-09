@@ -1,0 +1,32 @@
+[package]
+name = "chudo-core"
+version = "0.1.0"
+edition = "2021"
+description = "Ядро сканера ЧудоОстров: запросы, парсинг, штрихкоды"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "chudo_core"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+bindgen = ["uniffi/cli"]
+
+[dependencies]
+uniffi = "0.32"
+scraper = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

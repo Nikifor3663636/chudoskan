@@ -1,0 +1,5 @@
+{"data":{"products":{"total_count":3,"items":[
+{"id":1,"external_id":"64103-B","name":"Схожий товар","url_key":"a","url_suffix":".html","stock_status":"IN_STOCK","price_range":null,"small_image":{"url":"https://chudo-ostriv.com.ua/static/x/placeholder/small_image.jpg"}},
+{"id":36501,"external_id":"64103","name":"Надувний матрац Intex (64103)","url_key":"naduvnoj-matras-intex-64103","url_suffix":".html","stock_status":"OUT_OF_STOCK","price_range":{"minimum_price":{"regular_price":{"value":969,"currency":"UAH"},"final_price":{"value":969,"currency":"UAH"},"discount":{"percent_off":0}}},"small_image":null},
+{"id":2,"external_id":null,"name":"Ще один","url_key":"b","url_suffix":null,"stock_status":null,"price_range":null,"small_image":null}
+]}}}

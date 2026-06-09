@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Знак ЧудоСкан: остров с пальмой над штрихкодом-волнами. Оригинальный рисунок. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <path android:fillColor="#FF7500"
+        android:pathData="M30,4h36a26,26 0,0 1,26 26v36a26,26 0,0 1,-26 26h-36a26,26 0,0 1,-26 -26v-36a26,26 0,0 1,26 -26z" />
+    <path android:fillColor="#FFD43B"
+        android:pathData="M64,30m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+    <path android:fillColor="#FFE3B3" android:pathData="M22,58 Q46,44 70,58 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M44,56 L48,34 L51,34 L48,56 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M50,34 Q38,27 30,36 Q40,31 50,35 Z M50,34 Q62,26 70,35 Q60,31 50,35 Z M50,34 Q47,23 37,22 Q46,26 50,35 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M22,63h4v18h-4z M29,63h2v18h-2z M34,63h4v18h-4z M41,63h2v18h-2z M46,63h4v18h-4z M53,63h2v18h-2z M58,63h4v18h-4z M65,63h2v18h-2z M70,63h4v18h-4z" />
+</vector>

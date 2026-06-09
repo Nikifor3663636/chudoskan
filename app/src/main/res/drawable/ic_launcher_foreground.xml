@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Остров с пальмой над штрихкодом-«волнами». Оригинальный рисунок. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- солнце -->
+    <path android:fillColor="#FFD43B"
+        android:pathData="M70,36m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+    <!-- остров -->
+    <path android:fillColor="#FFE3B3"
+        android:pathData="M34,62 Q54,50 74,62 Z" />
+    <!-- ствол -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M51,60 L54,40 L56,40 L54,60 Z" />
+    <!-- листья -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M55,40 Q44,34 38,42 Q47,37 55,41 Z M55,40 Q66,33 72,41 Q63,37 55,41 Z M55,40 Q52,30 44,30 Q52,33 55,41 Z" />
+    <!-- штрихкод -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M34,66h3v12h-3z M39,66h1.5v12h-1.5z M42.5,66h3v12h-3z M47.5,66h1.5v12h-1.5z M51,66h3v12h-3z M56,66h1.5v12h-1.5z M59.5,66h3v12h-3z M64.5,66h1.5v12h-1.5z M68,66h1.5v12h-1.5z M71,66h3v12h-3z" />
+</vector>
