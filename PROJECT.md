@@ -46,7 +46,7 @@
 
 | Платформа | Статус | Ссылка |
 |---|---|---|
-| **Android** (APK) | готов к сборке, версия 2.0 | `ANDROID_APK_URL` — после первой сборки (GitHub Releases) |
+| **Android** (APK) | версия 2.0 | [chudoskan-2.0.apk](https://github.com/Nikifor3663636/chudoskan/releases/download/v2.0/chudoskan-2.0.apk) · [релиз v2.0](https://github.com/Nikifor3663636/chudoskan/releases/tag/v2.0) |
 | **Android** (Google Play) | не опубликовано | `GOOGLE_PLAY_URL` |
 | **iOS** (App Store / TestFlight) | в планах | `APP_STORE_URL` |
 
