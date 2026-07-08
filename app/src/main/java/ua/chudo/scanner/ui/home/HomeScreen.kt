@@ -51,10 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -98,20 +95,13 @@ fun HomeScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painterResource(R.drawable.logo_mark),
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                )
-                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        buildAnnotatedString {
-                            append("Чудо")
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Скан") }
-                        },
-                        style = MaterialTheme.typography.headlineMedium,
+                    Image(
+                        painterResource(R.drawable.logo_wordmark),
+                        contentDescription = "Чудо Острів",
+                        modifier = Modifier.height(44.dp),
                     )
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "Наявність іграшок у магазинах",
                         style = MaterialTheme.typography.bodyMedium,
