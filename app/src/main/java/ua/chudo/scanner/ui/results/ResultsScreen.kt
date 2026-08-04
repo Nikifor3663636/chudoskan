@@ -63,6 +63,9 @@ import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.openUrl
 import ua.chudo.scanner.ui.common.toUiError
 import uniffi.chudo_core.siteSearchUrl
+import ua.chudo.scanner.i18n.tr
+import ua.chudo.scanner.i18n.LocalLang
+import uniffi.chudo_core.Lang
 
 sealed interface ResultsState {
     data class Loading(val step: String) : ResultsState
@@ -81,7 +84,7 @@ class ResultsViewModel(
     val isPhoto = query == PHOTO_QUERY
     /** Снимок забираем один раз: переживает поворот экрана вместе с ViewModel. */
     private val photo: ByteArray? = if (isPhoto) app.pendingPhoto.also { app.pendingPhoto = null } else null
-    private val _state = MutableStateFlow<ResultsState>(ResultsState.Loading("Шукаємо…"))
+    private val _state = MutableStateFlow<ResultsState>(ResultsState.Loading(app.prefs.lang.value.tr("Шукаємо…", "Ищем…")))
     val state = _state.asStateFlow()
     private var job: Job? = null
 
@@ -90,17 +93,17 @@ class ResultsViewModel(
     fun load() {
         job?.cancel()
         job = viewModelScope.launch {
-            _state.value = ResultsState.Loading("Шукаємо…")
+            _state.value = ResultsState.Loading(app.prefs.lang.value.tr("Шукаємо…", "Ищем…"))
             _state.value = try {
                 val step: (String) -> Unit = { _state.value = ResultsState.Loading(it) }
                 ResultsState.Done(
-                    if (isPhoto) repo.lookupPhoto(photo ?: error("Фото втрачено — зроби ще одне"), step)
+                    if (isPhoto) repo.lookupPhoto(photo ?: error(app.prefs.lang.value.tr("Фото втрачено — зроби ще одне", "Фото потеряно — сделай ещё одно")), step)
                     else repo.lookup(query, step)
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ResultsState.Failed(e.toUiError())
+                ResultsState.Failed(e.toUiError(app.prefs.lang.value))
             }
         }
     }
@@ -136,9 +139,9 @@ fun ResultsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (vm.isPhoto) "Фото товару" else vm.query, maxLines = 1) },
+                title = { Text(if (vm.isPhoto) tr("Фото товару", "Фото товара") else vm.query, maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
                 },
             )
         },
@@ -153,23 +156,23 @@ fun ResultsScreen(
                                 icon = Icons.Rounded.Key,
                                 title = s.error.title,
                                 text = s.error.hint,
-                                primary = "Ввести ключ" to { showKey = true },
-                                secondary = "Сканувати ще" to onScanAgain,
+                                primary = tr("Ввести ключ", "Ввести ключ") to { showKey = true },
+                                secondary = tr("Сканувати ще", "Сканировать ещё") to onScanAgain,
                             )
                         } else if (vm.isPhoto) {
                             MessageState(
                                 icon = Icons.Rounded.SearchOff,
                                 title = s.error.title,
                                 text = s.error.hint,
-                                primary = "Зробити інше фото" to onPhotoAgain,
-                                secondary = "Сканувати штрихкод" to onScanAgain,
+                                primary = tr("Зробити інше фото", "Сделать другое фото") to onPhotoAgain,
+                                secondary = tr("Сканувати штрихкод", "Сканировать штрихкод") to onScanAgain,
                             )
                         } else {
                             ErrorState(s.error, siteSearchUrl(lang, vm.query), vm::load)
                         }
                     }
                     is ResultsState.Done -> when (val r = s.result) {
-                        is LookupResult.Single -> Loading("Відкриваємо товар…")
+                        is LookupResult.Single -> Loading(tr("Відкриваємо товар…", "Открываем товар…"))
                         is LookupResult.Many -> ManyList(r) { urlKey ->
                             val bc = r.barcode.takeIf { r.via !is Via.Direct }
                             onOpenProduct(urlKey, bc, false)
@@ -180,16 +183,16 @@ fun ResultsScreen(
                         ) {
                             MessageState(
                                 icon = Icons.Rounded.SearchOff,
-                                title = if (vm.isPhoto) "Не знайшли на сайті" else "Не знайшли «${r.query}»",
+                                title = if (vm.isPhoto) tr("Не знайшли на сайті", "Не нашли на сайте") else tr("Не знайшли «${r.query}»", "Не нашли «${r.query}»"),
                                 text = buildString {
-                                    if (vm.isPhoto) append("ChatGPT шукав «${r.query}». ")
-                                    append("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.")
+                                    if (vm.isPhoto) append(tr("ChatGPT шукав «${r.query}». ", "ChatGPT искал «${r.query}». "))
+                                    append(tr("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.", "Попробуй ввести артикул с ценника — обычно он в скобках в названии."))
                                     if (r.triedArticles.isNotEmpty()) {
-                                        append("\n\nПеревірили артикули: ${r.triedArticles.joinToString()}")
+                                        append(tr("\n\nПеревірили артикули: ${r.triedArticles.joinToString()}", "\n\nПроверили артикулы: ${r.triedArticles.joinToString()}"))
                                     }
                                 },
-                                primary = "Шукати на сайті" to { ctx.openUrl(siteSearchUrl(lang, r.query)) },
-                                secondary = "Сканувати ще" to onScanAgain,
+                                primary = tr("Шукати на сайті", "Искать на сайте") to { ctx.openUrl(siteSearchUrl(lang, r.query)) },
+                                secondary = tr("Сканувати ще", "Сканировать ещё") to onScanAgain,
                             )
                         }
                     }
@@ -222,19 +225,19 @@ private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Знайдено ${r.items.size}", style = MaterialTheme.typography.titleMedium)
-                viaNote(r.via)?.let { ViaNote(it) }
+                Text(tr("Знайдено ${r.items.size}", "Найдено ${r.items.size}"), style = MaterialTheme.typography.titleMedium)
+                viaNote(r.via, LocalLang.current)?.let { ViaNote(it) }
             }
         }
         items(r.items, key = { it.id }) { item -> ProductCard(item, onClick = { onClick(item.urlKey) }) }
     }
 }
 
-private fun viaNote(via: Via): String? = when (via) {
+private fun viaNote(via: Via, lang: Lang): String? = when (via) {
     Via.Direct, Via.Remembered -> null
-    is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
-    is Via.UpcTitle -> "Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар."
-    is Via.Photo -> "ChatGPT розпізнав на фото: ${via.guess}. Перевір, що це саме твій товар."
+    is Via.UpcArticle -> lang.tr("Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо.", "Штрихкод нашли в открытой базе → артикул ${via.article}. Выбери свой товар — мы его запомним.")
+    is Via.UpcTitle -> lang.tr("Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар.", "Искали по названию из открытой базы: «${via.title}». Проверь, что это именно твой товар.")
+    is Via.Photo -> lang.tr("ChatGPT розпізнав на фото: ${via.guess}. Перевір, що це саме твій товар.", "ChatGPT распознал на фото: ${via.guess}. Проверь, что это именно твой товар.")
 }
 
 @Composable

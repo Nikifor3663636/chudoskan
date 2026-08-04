@@ -51,6 +51,7 @@ import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.Price
 import uniffi.chudo_core.ProductSummary
 import uniffi.chudo_core.StockStatus
+import ua.chudo.scanner.i18n.tr
 
 @Composable
 fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Fit) {
@@ -78,9 +79,9 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
 @Composable
 fun StockBadge(stock: StockStatus, modifier: Modifier = Modifier) {
     val (text, color) = when (stock) {
-        StockStatus.IN_STOCK -> "Є на сайті" to InStockGreen
-        StockStatus.OUT_OF_STOCK -> "Немає онлайн" to OutOfStockGrey
-        StockStatus.UNKNOWN -> "Невідомо" to OutOfStockGrey
+        StockStatus.IN_STOCK -> tr("Є на сайті", "Есть на сайте") to InStockGreen
+        StockStatus.OUT_OF_STOCK -> tr("Немає онлайн", "Нет онлайн") to OutOfStockGrey
+        StockStatus.UNKNOWN -> tr("Невідомо", "Неизвестно") to OutOfStockGrey
     }
     Row(
         modifier
@@ -111,7 +112,7 @@ fun DiscountBadge(percent: Double, modifier: Modifier = Modifier) {
 @Composable
 fun PriceLine(price: Price?, compact: Boolean = false) {
     if (price == null) {
-        Text("Ціна недоступна", style = MaterialTheme.typography.bodyMedium, color = OutOfStockGrey)
+        Text(tr("Ціна недоступна", "Цена недоступна"), style = MaterialTheme.typography.bodyMedium, color = OutOfStockGrey)
         return
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -155,14 +156,14 @@ fun ProductCard(item: ProductSummary, onClick: () -> Unit, modifier: Modifier = 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (highlight) {
                     Text(
-                        "Точний збіг артикулу",
+                        tr("Точний збіг артикулу", "Точное совпадение артикула"),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 Text(item.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.article?.let {
-                    Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Арт. $it", "Арт. $it"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PriceLine(item.price, compact = true)
@@ -230,8 +231,8 @@ fun ErrorState(error: UiError, siteUrl: String?, onRetry: () -> Unit, modifier: 
         title = error.title,
         text = error.hint,
         modifier = modifier,
-        primary = "Спробувати ще раз" to onRetry,
-        secondary = if (error.openSite && siteUrl != null) "Відкрити сайт" to { ctx.openUrl(siteUrl) } else null,
+        primary = tr("Спробувати ще раз", "Попробовать ещё раз") to onRetry,
+        secondary = if (error.openSite && siteUrl != null) tr("Відкрити сайт", "Открыть сайт") to { ctx.openUrl(siteUrl) } else null,
     )
 }
 

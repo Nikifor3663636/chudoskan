@@ -79,6 +79,8 @@ import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ShopAvailability
 import uniffi.chudo_core.productUrl
+import ua.chudo.scanner.i18n.tr
+import ua.chudo.scanner.i18n.title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,13 +103,13 @@ fun ProductScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = {},
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
                 },
                 actions = {
                     IconButton(onClick = { ctx.shareText(listOfNotNull(p?.name, url).joinToString("\n")) }) {
-                        Icon(Icons.Rounded.Share, "Поділитися")
+                        Icon(Icons.Rounded.Share, tr("Поділитися", "Поделиться"))
                     }
-                    IconButton(onClick = { ctx.openUrl(url) }) { Icon(Icons.Rounded.OpenInBrowser, "Відкрити на сайті") }
+                    IconButton(onClick = { ctx.openUrl(url) }) { Icon(Icons.Rounded.OpenInBrowser, tr("Відкрити на сайті", "Открыть на сайте")) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
@@ -131,17 +133,17 @@ fun ProductScreen(onBack: () -> Unit) {
                         Button(onClick = { ctx.openUrl(url) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                             Icon(Icons.Rounded.OpenInBrowser, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Відкрити на сайті")
+                            Text(tr("Відкрити на сайті", "Открыть на сайте"))
                         }
                     }
                     s.barcodeToRemember?.let { bc ->
                         item { RememberCard(bc, vm::rememberBarcode, vm::dismissRemember) }
                     }
                     item {
-                        SectionTitle("Наявність у магазинах") {
+                        SectionTitle(tr("Наявність у магазинах", "Наличие в магазинах")) {
                             AssistChip(
                                 onClick = { showRegions = true },
-                                label = { Text(region.name) },
+                                label = { Text(region.title()) },
                                 leadingIcon = { Icon(Icons.Rounded.LocationOn, null, Modifier.size(18.dp)) },
                                 trailingIcon = { Icon(Icons.Rounded.ExpandMore, null, Modifier.size(18.dp)) },
                             )
@@ -206,15 +208,15 @@ private fun Header(p: ProductDetails) {
             p.article?.let { art ->
                 AssistChip(
                     onClick = { clipboard.setText(AnnotatedString(art)) },
-                    label = { Text("Арт. $art") },
-                    trailingIcon = { Icon(Icons.Rounded.ContentCopy, "Копіювати", Modifier.size(16.dp)) },
+                    label = { Text(tr("Арт. $art", "Арт. $art")) },
+                    trailingIcon = { Icon(Icons.Rounded.ContentCopy, tr("Копіювати", "Копировать"), Modifier.size(16.dp)) },
                 )
             }
             StockBadge(p.stock)
         }
         PriceLine(p.price)
         p.onlyXLeft?.takeIf { it > 0 }?.let {
-            Text("Залишилось ${it.toInt()} шт.", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+            Text(tr("Залишилось ${it.toInt()} шт.", "Осталось ${it.toInt()} шт."), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
         }
     }
 }
@@ -223,16 +225,16 @@ private fun Header(p: ProductDetails) {
 private fun RememberCard(barcode: String, onYes: () -> Unit, onNo: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.tertiaryContainer) {
         Column(Modifier.padding(16.dp)) {
-            Text("Це твій товар?", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text(tr("Це твій товар?", "Это твой товар?"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
             Text(
-                "Штрихкод $barcode знайшли через відкриту базу. Запам'ятати — наступного разу відкриємо одразу.",
+                tr("Штрихкод $barcode знайшли через відкриту базу. Запам'ятати — наступного разу відкриємо одразу.", "Штрихкод $barcode нашли через открытую базу. Запомнить — в следующий раз откроем сразу."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onYes) { Text("Так, запам'ятати") }
-                TextButton(onClick = onNo) { Text("Ні") }
+                Button(onClick = onYes) { Text(tr("Так, запам'ятати", "Да, запомнить")) }
+                TextButton(onClick = onNo) { Text(tr("Ні", "Нет")) }
             }
         }
     }
@@ -250,7 +252,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.shopsSection(
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Text(state.error.title, style = MaterialTheme.typography.titleSmall)
                     Text(state.error.hint, style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = onRetry, Modifier.padding(top = 8.dp)) { Text("Оновити наявність") }
+                    OutlinedButton(onClick = onRetry, Modifier.padding(top = 8.dp)) { Text(tr("Оновити наявність", "Обновить наличие")) }
                 }
             }
         }
@@ -259,7 +261,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.shopsSection(
             if (shops.isEmpty()) {
                 item {
                     Text(
-                        "У цьому місті немає даних про магазини.",
+                        tr("У цьому місті немає даних про магазини.", "В этом городе нет данных о магазинах."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -276,9 +278,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.shopsSection(
 private fun AvailabilitySummary(shops: List<ShopAvailability>) {
     val n = shops.count { it.available }
     val (text, color) = when (n) {
-        0 -> "Немає в жодному магазині міста" to OutOfStockGrey
-        shops.size -> "Є в усіх магазинах міста (${shops.size})" to InStockGreen
-        else -> "Є в $n з ${shops.size} магазинів" to InStockGreen
+        0 -> tr("Немає в жодному магазині міста", "Нет ни в одном магазине города") to OutOfStockGrey
+        shops.size -> tr("Є в усіх магазинах міста (${shops.size})", "Есть во всех магазинах города (${shops.size})") to InStockGreen
+        else -> tr("Є в $n з ${shops.size} магазинів", "Есть в $n из ${shops.size} магазинов") to InStockGreen
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Storefront, null, tint = color)
@@ -305,7 +307,7 @@ private fun ShopRow(shop: ShopAvailability, onClick: () -> Unit) {
                 color = if (shop.available) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(8.dp))
-            Text(if (shop.available) "Є" else "Немає", style = MaterialTheme.typography.labelLarge, color = color)
+            Text(if (shop.available) tr("Є", "Есть") else tr("Немає", "Нет"), style = MaterialTheme.typography.labelLarge, color = color)
         }
     }
 }
@@ -314,7 +316,7 @@ private fun ShopRow(shop: ShopAvailability, onClick: () -> Unit) {
 private fun Description(text: String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.animateContentSize()) {
-        SectionTitle("Опис")
+        SectionTitle(tr("Опис", "Описание"))
         Spacer(Modifier.height(6.dp))
         Text(
             text,
@@ -323,7 +325,7 @@ private fun Description(text: String) {
             overflow = TextOverflow.Ellipsis,
         )
         TextButton(onClick = { expanded = !expanded }) {
-            Text(if (expanded) "Згорнути" else "Читати повністю")
+            Text(if (expanded) tr("Згорнути", "Свернуть") else tr("Читати повністю", "Читать полностью"))
             Icon(Icons.Rounded.ExpandMore, null, Modifier.rotate(if (expanded) 180f else 0f))
         }
     }

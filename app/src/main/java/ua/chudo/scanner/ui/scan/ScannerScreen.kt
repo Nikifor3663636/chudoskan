@@ -100,6 +100,7 @@ import ua.chudo.scanner.ui.common.MessageState
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import kotlin.math.max
+import ua.chudo.scanner.i18n.tr
 
 enum class ScanMode { BARCODE, PHOTO }
 
@@ -128,10 +129,10 @@ fun ScannerScreen(
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 MessageState(
                     icon = Icons.Rounded.CameraAlt,
-                    title = "Потрібен доступ до камери",
-                    text = "Камера читає штрихкод. Фото товару надсилається в ChatGPT лише в режимі «Фото» і лише коли ти натискаєш кнопку.",
-                    primary = "Дозволити" to { launcher.launch(Manifest.permission.CAMERA) },
-                    secondary = "Відкрити налаштування" to {
+                    title = tr("Потрібен доступ до камери", "Нужен доступ к камере"),
+                    text = tr("Камера читає штрихкод. Фото товару надсилається в ChatGPT лише в режимі «Фото» і лише коли ти натискаєш кнопку.", "Камера читает штрихкод. Фото товара отправляется в ChatGPT только в режиме «Фото» и только когда ты нажимаешь кнопку."),
+                    primary = tr("Дозволити", "Разрешить") to { launcher.launch(Manifest.permission.CAMERA) },
+                    secondary = tr("Відкрити налаштування", "Открыть настройки") to {
                         ctx.startActivity(
                             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null))
                         )
@@ -230,7 +231,7 @@ private fun CameraScreen(
     fun shoot() {
         if (aiKey == null) { showKey = true; return }
         val ic = capture ?: run {
-            Toast.makeText(ctx, "Камера цього телефону не підтримує фото разом зі сканером", Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Камера цього телефону не підтримує фото разом зі сканером", "Камера этого телефона не поддерживает фото вместе со сканером"), Toast.LENGTH_LONG).show()
             return
         }
         busy = true
@@ -246,7 +247,7 @@ private fun CameraScreen(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         currentOnPhoto(bytes)
                     } else {
-                        Toast.makeText(ctx, "Не вдалося обробити фото", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Не вдалося обробити фото", "Не удалось обработать фото"), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -254,7 +255,7 @@ private fun CameraScreen(
             override fun onError(exception: ImageCaptureException) {
                 main.execute {
                     busy = false
-                    Toast.makeText(ctx, "Не вдалося зробити фото", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Не вдалося зробити фото", "Не удалось сделать фото"), Toast.LENGTH_SHORT).show()
                 }
             }
         })
@@ -268,10 +269,10 @@ private fun CameraScreen(
             Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, "Закрити") }
+            RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, tr("Закрити", "Закрыть")) }
             Spacer(Modifier.weight(1f))
             if (mode == ScanMode.PHOTO) {
-                RoundIcon(onClick = { showKey = true }) { Icon(Icons.Rounded.Key, "Ключ OpenAI") }
+                RoundIcon(onClick = { showKey = true }) { Icon(Icons.Rounded.Key, tr("Ключ OpenAI", "Ключ OpenAI")) }
                 Spacer(Modifier.size(8.dp))
             }
             if (camera?.cameraInfo?.hasFlashUnit() == true) {
@@ -279,7 +280,7 @@ private fun CameraScreen(
                     torch = !torch
                     camera?.cameraControl?.enableTorch(torch)
                 }) {
-                    Icon(if (torch) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, "Ліхтарик")
+                    Icon(if (torch) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, tr("Ліхтарик", "Фонарик"))
                 }
             }
         }
@@ -290,15 +291,15 @@ private fun CameraScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                if (mode == ScanMode.BARCODE) "Наведи рамку на штрихкод" else "Сфотографуй упаковку цілком",
+                if (mode == ScanMode.BARCODE) tr("Наведи рамку на штрихкод", "Наведи рамку на штрихкод") else tr("Сфотографуй упаковку цілком", "Сфотографируй упаковку целиком"),
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
             )
             Text(
-                if (mode == ScanMode.BARCODE) "EAN-13 / EAN-8 / UPC з упаковки"
-                else if (aiKey == null) "Потрібен ключ OpenAI — натисни кнопку, щоб ввести"
-                else "ChatGPT визначить бренд і артикул",
+                if (mode == ScanMode.BARCODE) tr("EAN-13 / EAN-8 / UPC з упаковки", "EAN-13 / EAN-8 / UPC с упаковки")
+                else if (aiKey == null) tr("Потрібен ключ OpenAI — натисни кнопку, щоб ввести", "Нужен ключ OpenAI — нажми кнопку, чтобы ввести")
+                else tr("ChatGPT визначить бренд і артикул", "ChatGPT определит бренд и артикул"),
                 color = Color.White.copy(alpha = 0.75f),
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
@@ -320,10 +321,10 @@ private fun CameraScreen(
                             inactiveContainerColor = Color.Black.copy(alpha = 0.45f),
                             inactiveContentColor = Color.White,
                         ),
-                    ) { Text(if (m == ScanMode.BARCODE) "Штрихкод" else "Фото товару") }
+                    ) { Text(if (m == ScanMode.BARCODE) tr("Штрихкод", "Штрихкод") else tr("Фото товару", "Фото товара")) }
                 }
             }
-            FilledTonalButton(onClick = onClose) { Text("Ввести вручну") }
+            FilledTonalButton(onClick = onClose) { Text(tr("Ввести вручну", "Ввести вручную")) }
         }
     }
 

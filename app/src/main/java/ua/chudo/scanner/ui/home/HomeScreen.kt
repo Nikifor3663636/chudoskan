@@ -63,6 +63,10 @@ import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.common.SectionTitle
 import uniffi.chudo_core.Lang
+import ua.chudo.scanner.i18n.tr
+import ua.chudo.scanner.i18n.title
+import androidx.compose.material.icons.rounded.Storefront
+import ua.chudo.scanner.ui.common.openUrl
 
 @Composable
 fun HomeScreen(
@@ -103,7 +107,7 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Наявність іграшок у магазинах",
+                        tr("Наявність іграшок у магазинах", "Наличие игрушек в магазинах"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -113,13 +117,17 @@ fun HomeScreen(
                     label = { Text(if (lang == Lang.UA) "UA" else "RU") },
                     leadingIcon = { Icon(Icons.Rounded.Translate, null, Modifier.size(18.dp)) },
                 )
+                val ctx = LocalContext.current
+                IconButton(onClick = { ctx.openUrl(if (lang == Lang.RU) "https://chudo-ostriv.com.ua/ru/" else "https://chudo-ostriv.com.ua/ua/") }) {
+                    Icon(Icons.Rounded.Storefront, tr("Сайт", "Сайт"))
+                }
             }
         }
 
         item {
             AssistChip(
                 onClick = { showRegions = true },
-                label = { Text(region.name) },
+                label = { Text(region.title()) },
                 leadingIcon = { Icon(Icons.Rounded.LocationOn, null, Modifier.size(18.dp)) },
             )
         }
@@ -138,9 +146,9 @@ fun HomeScreen(
                             Icon(Icons.Rounded.PhotoCamera, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                             Spacer(Modifier.width(10.dp))
                             Column {
-                                Text("Фото товару", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Text(tr("Фото товару", "Фото товара"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                                 Text(
-                                    if (aiKey == null) "Потрібен ключ OpenAI" else "ChatGPT знайде за упаковкою",
+                                    if (aiKey == null) tr("Потрібен ключ OpenAI", "Нужен ключ OpenAI") else tr("ChatGPT знайде за упаковкою", "ChatGPT найдёт по упаковке"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
                                 )
@@ -153,7 +161,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
                         Box(Modifier.padding(16.dp).size(40.dp), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Key, "Ключ OpenAI")
+                            Icon(Icons.Rounded.Key, tr("Ключ OpenAI", "Ключ OpenAI"))
                         }
                     }
                 }
@@ -165,11 +173,11 @@ fun HomeScreen(
                 value = query,
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Артикул, штрихкод або назва") },
+                placeholder = { Text(tr("Артикул, штрихкод або назва", "Артикул, штрихкод или название")) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Очистити") }
+                        IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, tr("Очистити", "Очистить")) }
                     }
                 },
                 singleLine = true,
@@ -187,8 +195,8 @@ fun HomeScreen(
             item { Tips() }
         } else {
             item {
-                SectionTitle("Нещодавні") {
-                    TextButton(onClick = prefs::clearHistory) { Text("Очистити") }
+                SectionTitle(tr("Нещодавні", "Недавние")) {
+                    TextButton(onClick = prefs::clearHistory) { Text(tr("Очистити", "Очистить")) }
                 }
             }
             items(history, key = { it.urlKey }) { HistoryRow(it) { onOpenProduct(it.urlKey) } }
@@ -225,10 +233,10 @@ private fun ScanHero(onScan: () -> Unit) {
                     Icon(Icons.Rounded.QrCodeScanner, null, Modifier.size(32.dp), tint = Color.White)
                 }
                 Spacer(Modifier.height(18.dp))
-                Text("Сканувати штрихкод", style = MaterialTheme.typography.titleLarge, color = Color.White)
+                Text(tr("Сканувати штрихкод", "Сканировать штрихкод"), style = MaterialTheme.typography.titleLarge, color = Color.White)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Наведи камеру на упаковку — покажемо ціну і де товар є зараз",
+                    tr("Наведи камеру на упаковку — покажемо ціну і де товар є зараз", "Наведи камеру на упаковку — покажем цену и где товар есть сейчас"),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.85f),
                 )
@@ -256,7 +264,7 @@ private fun HistoryRow(item: HistoryItem, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.article?.let {
-                    Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Арт. $it", "Арт. $it"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -267,10 +275,10 @@ private fun HistoryRow(item: HistoryItem, onClick: () -> Unit) {
 private fun Tips() {
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Як це працює", style = MaterialTheme.typography.titleMedium)
-            Tip("1", "Скануй штрихкод або введи артикул з цінника (64103, HKB86).")
-            Tip("2", "Обери місто — побачиш, у яких магазинах товар є зараз.")
-            Tip("3", "Якщо сайт не знає штрихкод, шукаємо його у відкритій базі та запам'ятовуємо твій вибір.")
+            Text(tr("Як це працює", "Как это работает"), style = MaterialTheme.typography.titleMedium)
+            Tip("1", tr("Скануй штрихкод або введи артикул з цінника (64103, HKB86).", "Сканируй штрихкод или введи артикул с ценника (64103, HKB86)."))
+            Tip("2", tr("Обери місто — побачиш, у яких магазинах товар є зараз.", "Выбери город — увидишь, в каких магазинах товар есть сейчас."))
+            Tip("3", tr("Якщо сайт не знає штрихкод, шукаємо його у відкритій базі та запам'ятовуємо твій вибір.", "Если сайт не знает штрихкод, ищем его в открытой базе и запоминаем твой выбор."))
         }
     }
 }

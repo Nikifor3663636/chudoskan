@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import ua.chudo.scanner.data.AppPrefs
 import uniffi.chudo_core.defaultAiModel
+import ua.chudo.scanner.i18n.tr
 
 /** Ключ и модель OpenAI для распознавания фото. Ключ хранится только на телефоне. */
 @Composable
@@ -35,26 +36,30 @@ fun AiSettingsDialog(prefs: AppPrefs, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Розпізнавання фото") },
+        title = { Text(tr("Розпізнавання фото", "Распознавание фото")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
+                    tr(
                     "Фото товару надсилається в ChatGPT, він повертає назву або артикул, і ми шукаємо їх на сайті. " +
                         "Ключ — з platform.openai.com, зберігається лише на цьому телефоні.",
+                    "Фото товара отправляется в ChatGPT, он возвращает название или артикул, и мы ищем их на сайте. " +
+                        "Ключ — с platform.openai.com, хранится только на этом телефоне.",
+                ),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(
                     value = key,
                     onValueChange = { key = it },
-                    label = { Text("API ключ") },
+                    label = { Text(tr("API ключ", "API ключ")) },
                     placeholder = { Text("sk-...") },
                     singleLine = true,
                     isError = !keyOk,
-                    supportingText = { if (!keyOk) Text("Ключ має починатися з «sk-»") },
+                    supportingText = { if (!keyOk) Text(tr("Ключ має починатися з «sk-»", "Ключ должен начинаться с «sk-»")) },
                     visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         IconButton(onClick = { show = !show }) {
-                            Icon(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, "Показати ключ")
+                            Icon(if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, tr("Показати ключ", "Показать ключ"))
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -62,16 +67,16 @@ fun AiSettingsDialog(prefs: AppPrefs, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     value = model,
                     onValueChange = { model = it },
-                    label = { Text("Модель") },
-                    supportingText = { Text("За замовчуванням ${defaultAiModel()}") },
+                    label = { Text(tr("Модель", "Модель")) },
+                    supportingText = { Text(tr("За замовчуванням ${defaultAiModel()}", "По умолчанию ${defaultAiModel()}")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = keyOk, onClick = { prefs.setAi(key, model); onDismiss() }) { Text("Зберегти") }
+            TextButton(enabled = keyOk, onClick = { prefs.setAi(key, model); onDismiss() }) { Text(tr("Зберегти", "Сохранить")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Скасувати", "Отмена")) } },
     )
 }

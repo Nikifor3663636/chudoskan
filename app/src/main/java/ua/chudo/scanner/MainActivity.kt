@@ -12,7 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -21,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,8 +38,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ua.chudo.scanner.ui.common.RegionPickerSheet
-import ua.chudo.scanner.ui.common.openUrl
-import uniffi.chudo_core.Lang
+import ua.chudo.scanner.i18n.LocalLang
+import ua.chudo.scanner.i18n.tr
+import ua.chudo.scanner.ui.layout.StoreLayoutScreen
+import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
@@ -51,8 +55,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ChudoTheme {
-                Surface(color = MaterialTheme.colorScheme.background) { AppNav() }
+            val lang by chudoApp.prefs.lang.collectAsStateWithLifecycle()
+            CompositionLocalProvider(LocalLang provides lang) {
+                ChudoTheme {
+                    Surface(color = MaterialTheme.colorScheme.background) { AppNav() }
+                }
             }
         }
     }
@@ -63,37 +70,43 @@ private object Routes {
     const val SCAN = "scan?mode={mode}"
     const val RESULTS = "results/{q}"
     const val PRODUCT = "product/{urlKey}?bc={bc}"
+    const val STOCK = "stock"
+    const val LAYOUT = "layout"
 
     fun scan(mode: ScanMode = ScanMode.BARCODE) = "scan?mode=${mode.name}"
     fun results(q: String) = "results/${Uri.encode(q)}"
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
 
+private enum class Tab { SEARCH, STOCK, LAYOUT }
+
 @Composable
 private fun AppNav() {
     val nav = rememberNavController()
-    val ctx = LocalContext.current
-    val prefs = ctx.chudoApp.prefs
+    val prefs = LocalContext.current.chudoApp.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
-    val lang by prefs.lang.collectAsStateWithLifecycle()
     var showRegions by rememberSaveable { mutableStateOf(false) }
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
-    val showBar = route != null && route != Routes.SCAN
+    val tab = when (route) {
+        Routes.STOCK -> Tab.STOCK
+        Routes.LAYOUT -> Tab.LAYOUT
+        else -> Tab.SEARCH
+    }
+    fun openTab(r: String) {
+        if (route != r) nav.navigate(r) { popUpTo(Routes.HOME); launchSingleTop = true }
+    }
 
     Scaffold(
         // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (showBar) BottomTabs(
-                onSearch = {
-                    if (route != Routes.HOME) nav.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                },
+            if (route != null && route != Routes.SCAN) BottomTabs(
+                tab = tab,
+                onSearch = { if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false) },
                 onScan = { nav.navigate(Routes.scan()) },
+                onStock = { openTab(Routes.STOCK) },
+                onLayout = { openTab(Routes.LAYOUT) },
                 onCity = { showRegions = true },
-                onSite = { ctx.openUrl(if (lang == Lang.RU) "$SITE/ru/" else "$SITE/ua/") },
             )
         },
     ) { inner ->
@@ -110,27 +123,36 @@ private fun AppNav() {
     }
 }
 
-private const val SITE = "https://chudo-ostriv.com.ua"
-
-/** Нижняя панель как в веб-версии: Пошук · Сканер · Місто · Сайт. */
+/** Пошук · Сканер · Залишки · Планування · Місто. */
 @Composable
-private fun BottomTabs(onSearch: () -> Unit, onScan: () -> Unit, onCity: () -> Unit, onSite: () -> Unit) {
+private fun BottomTabs(
+    tab: Tab,
+    onSearch: () -> Unit,
+    onScan: () -> Unit,
+    onStock: () -> Unit,
+    onLayout: () -> Unit,
+    onCity: () -> Unit,
+) {
     NavigationBar {
         NavigationBarItem(
-            selected = true, onClick = onSearch,
-            icon = { Icon(Icons.Rounded.Search, null) }, label = { Text("Пошук") },
+            selected = tab == Tab.SEARCH, onClick = onSearch,
+            icon = { Icon(Icons.Rounded.Search, null) }, label = { Text(tr("Пошук", "Поиск")) },
         )
         NavigationBarItem(
             selected = false, onClick = onScan,
-            icon = { Icon(Icons.Rounded.QrCodeScanner, null) }, label = { Text("Сканер") },
+            icon = { Icon(Icons.Rounded.QrCodeScanner, null) }, label = { Text(tr("Сканер", "Сканер")) },
+        )
+        NavigationBarItem(
+            selected = tab == Tab.STOCK, onClick = onStock,
+            icon = { Icon(Icons.Rounded.Inventory2, null) }, label = { Text(tr("Залишки", "Остатки")) },
+        )
+        NavigationBarItem(
+            selected = tab == Tab.LAYOUT, onClick = onLayout,
+            icon = { Icon(Icons.Rounded.Map, null) }, label = { Text(tr("Планування", "Планировка"), maxLines = 1) },
         )
         NavigationBarItem(
             selected = false, onClick = onCity,
-            icon = { Icon(Icons.Rounded.LocationOn, null) }, label = { Text("Місто") },
-        )
-        NavigationBarItem(
-            selected = false, onClick = onSite,
-            icon = { Icon(Icons.Rounded.Storefront, null) }, label = { Text("Сайт") },
+            icon = { Icon(Icons.Rounded.LocationOn, null) }, label = { Text(tr("Місто", "Город")) },
         )
     }
 }
@@ -138,6 +160,8 @@ private fun BottomTabs(onSearch: () -> Unit, onScan: () -> Unit, onCity: () -> U
 @Composable
 private fun AppNavHost(nav: NavHostController, modifier: Modifier) {
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
+        composable(Routes.STOCK) { StockScreen() }
+        composable(Routes.LAYOUT) { StoreLayoutScreen() }
         composable(Routes.HOME) {
             HomeScreen(
                 onScan = { nav.navigate(Routes.scan()) },

@@ -64,7 +64,7 @@ class ProductViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loading = false, refreshing = false, error = e.toUiError()) }
+            _state.update { it.copy(loading = false, refreshing = false, error = e.toUiError(prefs.lang.value)) }
         }
     }
 
@@ -78,7 +78,7 @@ class ProductViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ShopsState.Failed(e.toUiError())
+                ShopsState.Failed(e.toUiError(prefs.lang.value))
             }
             _state.update { it.copy(shops = next) }
         }

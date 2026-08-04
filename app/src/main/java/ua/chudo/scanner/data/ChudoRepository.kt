@@ -19,6 +19,7 @@ import uniffi.chudo_core.shopsUrl
 import uniffi.chudo_core.upcCandidates
 import uniffi.chudo_core.upcLookupUrl
 import uniffi.chudo_core.upcTitle
+import ua.chudo.scanner.i18n.tr
 
 /** Как нашли товар — показываем пользователю, чтобы было понятно, чему верить. */
 sealed interface Via {
@@ -89,22 +90,22 @@ class ChudoRepository(
             prefs.rememberedProduct(bc)?.let { return LookupResult.Single(code, bc, it, Via.Remembered) }
         }
 
-        onStep("Шукаємо «$code» на сайті…")
+        onStep(lang.tr("Шукаємо «$code» на сайті…", "Ищем «$code» на сайте…"))
         pick(code, barcode, search(code), Via.Direct)?.let { return it }
         if (barcode == null) return LookupResult.NotFound(code, null, emptyList())
 
-        onStep("Сайт не знає штрихкодів — шукаємо у відкритій базі…")
+        onStep(lang.tr("Сайт не знає штрихкодів — шукаємо у відкритій базі…", "Сайт не знает штрихкодов — ищем в открытой базе…"))
         val upc = runCatching { client.getExternal(upcLookupUrl(barcode)) }.getOrNull()
             ?: return LookupResult.NotFound(code, barcode, emptyList())
 
         val articles = upcCandidates(upc, barcode, 4u)
         for (article in articles) {
-            onStep("Пробуємо артикул $article…")
+            onStep(lang.tr("Пробуємо артикул $article…", "Пробуем артикул $article…"))
             pick(code, barcode, search(article), Via.UpcArticle(article))?.let { return it }
         }
 
         upcTitle(upc)?.let { title ->
-            onStep("Шукаємо за назвою…")
+            onStep(lang.tr("Шукаємо за назвою…", "Ищем по названию…"))
             val short = title.split(' ').take(6).joinToString(" ")
             pick(code, barcode, search(short), Via.UpcTitle(title))?.let { return it }
         }
@@ -128,19 +129,19 @@ class ChudoRepository(
      * ничего нет, пробуем «бренд + назва».
      */
     suspend fun lookupPhoto(jpeg: ByteArray, onStep: (String) -> Unit): LookupResult {
-        onStep("ChatGPT визначає товар…")
+        onStep(lang.tr("ChatGPT визначає товар…", "ChatGPT определяет товар…"))
         val g = identify(jpeg)
-        val label = listOfNotNull(g.brand, g.name.ifBlank { null }, g.article?.let { "арт. $it" })
+        val label = listOfNotNull(g.brand, g.name.ifBlank { null }, g.article?.let { lang.tr("арт. $it", "арт. $it") })
             .distinct().joinToString(" · ")
         val via = Via.Photo(label.ifBlank { g.searchQuery })
 
-        onStep("ChatGPT: «${g.searchQuery}» — шукаємо…")
+        onStep(lang.tr("ChatGPT: «${g.searchQuery}» — шукаємо…", "ChatGPT: «${g.searchQuery}» — ищем…"))
         val first = withVia(lookup(g.searchQuery), via)
         if (first !is LookupResult.NotFound || g.article == null) return first
 
         val byName = listOfNotNull(g.brand, g.name).distinct().joinToString(" ").trim()
         if (byName.isEmpty() || byName == g.searchQuery) return first
-        onStep("Шукаємо за назвою «$byName»…")
+        onStep(lang.tr("Шукаємо за назвою «$byName»…", "Ищем по названию «$byName»…"))
         return withVia(lookup(byName), via)
     }
 
