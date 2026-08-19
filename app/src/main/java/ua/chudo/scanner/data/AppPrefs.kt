@@ -64,6 +64,11 @@ class AppPrefs(context: Context) {
         _aiModel.value = m
     }
 
+    /** Привязать телефон старому email-аккаунту предлагаем один раз. */
+    fun phoneLinkOffered(uid: String): Boolean = sp.getBoolean("phone_link_offered:$uid", false)
+
+    fun markPhoneLinkOffered(uid: String) = sp.edit { putBoolean("phone_link_offered:$uid", true) }
+
     /** Штрихкод → url_key товара, который пользователь подтвердил вручную. */
     fun rememberedProduct(barcode: String): String? = sp.getString("$KEY_BARCODE$barcode", null)
 

@@ -4,6 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Вход сотрудников и остатки магазинов — Firebase. Файл google-services.json кладётся в app/
+// (скачивается из консоли Firebase, в git не попадает). Без него приложение соберётся,
+// но экран входа попросит подключить Firebase.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "ua.chudo.scanner"
     compileSdk = 36
@@ -55,6 +62,10 @@ if (providers.gradleProperty("skipRust").orNull != "true") {
 }
 
 dependencies {
+    // Firebase тянет Guava только в рантайм, а на этапе компиляции оставляет пустую заглушку
+    // listenablefuture:9999.0 — CameraX тогда не видит ListenableFuture. Та же версия, что у Firebase.
+    implementation("com.google.guava:guava:32.1.3-android")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -77,5 +88,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.coroutines.android)
+    implementation(libs.coroutines.play.services)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
     implementation("${libs.jna.get()}@aar")
 }

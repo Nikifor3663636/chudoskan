@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -74,6 +75,7 @@ fun HomeScreen(
     onPhoto: () -> Unit,
     onSearch: (String) -> Unit,
     onOpenProduct: (String) -> Unit,
+    onProfile: () -> Unit,
 ) {
     val prefs = LocalContext.current.chudoApp.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
@@ -120,6 +122,9 @@ fun HomeScreen(
                 val ctx = LocalContext.current
                 IconButton(onClick = { ctx.openUrl(if (lang == Lang.RU) "https://chudo-ostriv.com.ua/ru/" else "https://chudo-ostriv.com.ua/ua/") }) {
                     Icon(Icons.Rounded.Storefront, tr("Сайт", "Сайт"))
+                }
+                IconButton(onClick = onProfile) {
+                    Icon(Icons.Rounded.AccountCircle, tr("Профіль", "Профиль"))
                 }
             }
         }

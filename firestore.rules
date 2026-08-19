@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// ЧудоСкан: сотрудник видит и загружает остатки только своего магазина.
+// Вставить в консоли Firebase → Firestore Database → Rules → Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Подтверждённый администратором сотрудник именно этого магазина.
+    function worksAt(shopId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().approved == true
+        && me().shopId == shopId;
+    }
+
+    // Телефон в анкете — только подтверждённый номер из токена (или пусто у старых email-аккаунтов).
+    function phoneOk() {
+      return !('phone' in request.resource.data)
+        || request.resource.data.phone == ''
+        || request.resource.data.phone == request.auth.token.phone_number;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      // Анкету создаёт сам сотрудник при регистрации, всегда неподтверждённой.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.approved == false
+        && phoneOk()
+        && request.resource.data.keys().hasOnly(['name', 'email', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']);
+      // Менять магазин и подтверждение может только администратор (в консоли правила не действуют).
+      // Сам сотрудник может: до подтверждения — переписать анкету, после — только имя и привязанный телефон.
+      allow update: if signedIn() && request.auth.uid == uid && phoneOk() && (
+        (resource.data.approved == false && request.resource.data.approved == false)
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone'])
+      );
+      allow delete: if false;
+    }
+
+    match /shops/{shopId} {
+      allow read, write: if worksAt(shopId);
+
+      match /stock/{item} {
+        allow read, write: if worksAt(shopId);
+      }
+    }
+  }
+}

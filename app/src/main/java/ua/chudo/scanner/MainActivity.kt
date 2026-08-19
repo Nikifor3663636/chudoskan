@@ -37,10 +37,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.i18n.LocalLang
 import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.layout.StoreLayoutScreen
+import ua.chudo.scanner.ui.profile.ProfileScreen
 import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
@@ -58,7 +61,7 @@ class MainActivity : ComponentActivity() {
             val lang by chudoApp.prefs.lang.collectAsStateWithLifecycle()
             CompositionLocalProvider(LocalLang provides lang) {
                 ChudoTheme {
-                    Surface(color = MaterialTheme.colorScheme.background) { AppNav() }
+                    Surface(color = MaterialTheme.colorScheme.background) { AuthGate { AppNav(it) } }
                 }
             }
         }
@@ -72,6 +75,7 @@ private object Routes {
     const val PRODUCT = "product/{urlKey}?bc={bc}"
     const val STOCK = "stock"
     const val LAYOUT = "layout"
+    const val PROFILE = "profile"
 
     fun scan(mode: ScanMode = ScanMode.BARCODE) = "scan?mode=${mode.name}"
     fun results(q: String) = "results/${Uri.encode(q)}"
@@ -81,7 +85,7 @@ private object Routes {
 private enum class Tab { SEARCH, STOCK, LAYOUT }
 
 @Composable
-private fun AppNav() {
+private fun AppNav(employee: Employee) {
     val nav = rememberNavController()
     val prefs = LocalContext.current.chudoApp.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
@@ -110,7 +114,7 @@ private fun AppNav() {
             )
         },
     ) { inner ->
-        AppNavHost(nav, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner))
+        AppNavHost(nav, employee, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner))
     }
 
     if (showRegions) {
@@ -158,9 +162,10 @@ private fun BottomTabs(
 }
 
 @Composable
-private fun AppNavHost(nav: NavHostController, modifier: Modifier) {
+private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Modifier) {
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
-        composable(Routes.STOCK) { StockScreen() }
+        composable(Routes.STOCK) { StockScreen(employee, onProfile = { nav.navigate(Routes.PROFILE) }) }
+        composable(Routes.PROFILE) { ProfileScreen(employee, onBack = { nav.popBackStack() }) }
         composable(Routes.LAYOUT) { StoreLayoutScreen() }
         composable(Routes.HOME) {
             HomeScreen(
@@ -168,6 +173,7 @@ private fun AppNavHost(nav: NavHostController, modifier: Modifier) {
                 onPhoto = { nav.navigate(Routes.scan(ScanMode.PHOTO)) },
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
+                onProfile = { nav.navigate(Routes.PROFILE) },
             )
         }
         composable(
