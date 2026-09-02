@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Store
@@ -35,11 +36,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -98,6 +101,8 @@ sealed interface StockState {
     data class Loading(val step: String) : StockState
     data class Pick(val query: String, val items: List<ProductSummary>) : StockState
     data class NotFound(val query: String) : StockState
+    /** Отсканированного штрихкода нет в выгрузке 1С. */
+    data class NotInExport(val code: String) : StockState
     data class Failed(val error: UiError) : StockState
     data class Ready(
         /** `null` — на сайте товара нет, но он есть в выгрузке магазина. */
@@ -160,6 +165,20 @@ class StockViewModel(
                     if (item != null) StockState.Ready(null, null, item, null) else StockState.NotFound(q)
                 }
             }
+        }
+    }
+
+    /** Скан: одно чтение stock/bc_{код}, без сайта. */
+    fun scanned(code: String) = launchState {
+        last = null
+        _state.value = StockState.Loading(lang.tr("Перевіряємо твій магазин…", "Проверяем твой магазин…"))
+        try {
+            stock.byBarcode(employee.shopId, code)?.let { StockState.Ready(null, null, it, null) }
+                ?: StockState.NotInExport(code)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            StockState.Ready(null, null, null, e.authMessage(lang))
         }
     }
 
@@ -247,7 +266,14 @@ private val QTY_FORMAT = DecimalFormat("#,##0.###")
 private fun Double.qty(): String = QTY_FORMAT.format(this)
 
 @Composable
-fun StockScreen(employee: Employee, onProfile: () -> Unit) {
+fun StockScreen(
+    employee: Employee,
+    onProfile: () -> Unit,
+    onScan: () -> Unit,
+    /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
+    scanned: String?,
+    onScannedConsumed: () -> Unit,
+) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
         key = "stock-${employee.uid}",
@@ -260,6 +286,9 @@ fun StockScreen(employee: Employee, onProfile: () -> Unit) {
     val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.readFile(ctx, it) }
+    }
+    LaunchedEffect(scanned) {
+        scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
     }
 
     LazyColumn(
@@ -279,8 +308,11 @@ fun StockScreen(employee: Employee, onProfile: () -> Unit) {
                 placeholder = { Text(tr("Артикул, штрихкод або назва", "Артикул, штрихкод или название")) },
                 leadingIcon = { Icon(Icons.Rounded.Inventory2, null) },
                 trailingIcon = {
-                    if (query.isNotEmpty()) IconButton(onClick = { query = ""; vm.clear() }) {
-                        Icon(Icons.Rounded.Close, tr("Очистити", "Очистить"))
+                    Row {
+                        if (query.isNotEmpty()) IconButton(onClick = { query = ""; vm.clear() }) {
+                            Icon(Icons.Rounded.Close, tr("Очистити", "Очистить"))
+                        }
+                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, tr("Сканувати", "Сканировать")) }
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -304,6 +336,16 @@ fun StockScreen(employee: Employee, onProfile: () -> Unit) {
                     tr("Не знайшли «${st.query}»", "Не нашли «${st.query}»"),
                     tr("Ні на сайті, ні у вивантаженні твого магазину.", "Ни на сайте, ни в выгрузке твоего магазина."),
                 )
+            }
+            is StockState.NotInExport -> item {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    MessageState(
+                        Icons.Rounded.SearchOff,
+                        tr("Немає у вивантаженні 1С", "Нет в выгрузке 1С"),
+                        tr("Штрихкод ${st.code}", "Штрихкод ${st.code}"),
+                    )
+                    Button(onClick = { vm.search(st.code) }) { Text(tr("Шукати на сайті", "Искать на сайте")) }
+                }
             }
             is StockState.Pick -> {
                 item { Text(tr("Обери товар", "Выбери товар"), style = MaterialTheme.typography.titleMedium) }

@@ -19,7 +19,7 @@ data class ShopStockInfo(val updatedAt: Date?, val updatedBy: String?, val rows:
 data class ImportResult(val total: Int, val changed: Int, val removed: Int)
 
 /**
- * Остатки одного магазина: `shops/{shopId}/stock/{key}`, где key — артикул (или `bc_<штрихкод>`).
+ * Остатки одного магазина: `shops/{shopId}/stock/{key}`, где key — `bc_<штрихкод>` (или артикул без штрихкода).
  * Читать и писать может только подтверждённый сотрудник этого магазина — см. firestore.rules.
  */
 class ShopStockRepository(private val db: FirebaseFirestore) {
@@ -33,16 +33,22 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
         return ShopStockInfo(d.getTimestamp("updatedAt")?.toDate(), d.getString("updatedBy"), d.getLong("rows")?.toInt() ?: 0)
     }
 
-    /** Ищем по артикулу с сайта, потом по штрихкодам. `null` — товара нет в выгрузке. */
+    /** Скан в «Залишках»: ровно одно чтение `stock/bc_{код}`. `null` — товара нет в выгрузке. */
+    suspend fun byBarcode(shopId: String, code: String): StockItem? {
+        val bc = code.filter(Char::isDigit).ifEmpty { return null }
+        val d = stock(shopId).document(keyOf(null, bc)).get().await()
+        return if (d.exists()) d.toItem() else null
+    }
+
+    /** Ищем по штрихкодам (id документа), потом по артикулу с сайта. `null` — товара нет в выгрузке. */
     suspend fun find(shopId: String, article: String?, barcodes: List<String>): StockItem? {
-        article?.let { a ->
-            val d = stock(shopId).document(keyOf(a, null)).get().await()
-            if (d.exists()) return d.toItem()
-        }
         for (bc in barcodes.map { it.filter(Char::isDigit) }.filter { it.isNotEmpty() }.distinct()) {
-            val q = stock(shopId).whereEqualTo("barcode", bc).limit(1).get().await()
+            byBarcode(shopId, bc)?.let { return it }
+        }
+        article?.trim()?.ifEmpty { null }?.let { a ->
+            val q = stock(shopId).whereEqualTo("article", a).limit(1).get().await()
             q.documents.firstOrNull()?.let { return it.toItem() }
-            val d = stock(shopId).document(keyOf(null, bc)).get().await()
+            val d = stock(shopId).document(keyOf(a, null)).get().await()
             if (d.exists()) return d.toItem()
         }
         return null
@@ -111,11 +117,14 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
         const val STOCK = "stock"
         private const val BATCH = 450
 
-        /** id документа: артикул без пробелов в верхнем регистре; «/» в id Firestore запрещён. */
+        /**
+         * id документа: `bc_{штрихкод}` (скан читает его одним запросом);
+         * без штрихкода — артикул без пробелов в верхнем регистре («/» в id Firestore запрещён).
+         */
         fun keyOf(article: String?, barcode: String?): String {
+            barcode?.filter(Char::isDigit)?.ifEmpty { null }?.let { return "bc_$it" }
             val a = article?.trim()?.uppercase()?.replace(Regex("\\s+"), "")?.replace('/', '_')?.ifEmpty { null }
-            return a?.takeUnless { it == "." || it == ".." || it.startsWith("__") }
-                ?: "bc_${barcode.orEmpty().filter(Char::isDigit)}"
+            return a?.takeUnless { it == "." || it == ".." || it.startsWith("__") } ?: "bc_"
         }
     }
 }

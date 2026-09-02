@@ -68,6 +68,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private const val STOCK_MODE = "stock"
+private const val STOCK_CODE = "stock_code"
+
 private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
@@ -76,6 +79,8 @@ private object Routes {
     const val STOCK = "stock"
     const val LAYOUT = "layout"
     const val PROFILE = "profile"
+
+    const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
 
     fun scan(mode: ScanMode = ScanMode.BARCODE) = "scan?mode=${mode.name}"
     fun results(q: String) = "results/${Uri.encode(q)}"
@@ -164,7 +169,16 @@ private fun BottomTabs(
 @Composable
 private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Modifier) {
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
-        composable(Routes.STOCK) { StockScreen(employee, onProfile = { nav.navigate(Routes.PROFILE) }) }
+        composable(Routes.STOCK) { entry ->
+            val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
+            StockScreen(
+                employee,
+                onProfile = { nav.navigate(Routes.PROFILE) },
+                onScan = { nav.navigate(Routes.SCAN_STOCK) },
+                scanned = scanned,
+                onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+            )
+        }
         composable(Routes.PROFILE) { ProfileScreen(employee, onBack = { nav.popBackStack() }) }
         composable(Routes.LAYOUT) { StoreLayoutScreen() }
         composable(Routes.HOME) {
@@ -181,12 +195,19 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = ScanMode.BARCODE.name }),
         ) { entry ->
             val app = LocalContext.current.chudoApp
-            val mode = runCatching { ScanMode.valueOf(entry.arguments?.getString("mode").orEmpty()) }
-                .getOrDefault(ScanMode.BARCODE)
+            val arg = entry.arguments?.getString("mode").orEmpty()
+            // mode=stock — скан для «Залишків»: код возвращаем в поиск остатков.
+            val forStock = arg == STOCK_MODE
+            val mode = runCatching { ScanMode.valueOf(arg) }.getOrDefault(ScanMode.BARCODE)
             ScannerScreen(
                 startMode = mode,
                 onBarcode = { code ->
-                    nav.navigate(Routes.results(code)) { popUpTo(Routes.SCAN) { inclusive = true } }
+                    if (forStock) {
+                        nav.previousBackStackEntry?.savedStateHandle?.set(STOCK_CODE, code)
+                        nav.popBackStack()
+                    } else {
+                        nav.navigate(Routes.results(code)) { popUpTo(Routes.SCAN) { inclusive = true } }
+                    }
                 },
                 onPhoto = { jpeg ->
                     app.pendingPhoto = jpeg
