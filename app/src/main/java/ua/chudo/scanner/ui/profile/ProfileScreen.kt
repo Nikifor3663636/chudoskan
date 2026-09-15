@@ -1,9 +1,7 @@
 package ua.chudo.scanner.ui.profile
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,9 +24,11 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Store
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,12 +60,13 @@ import ua.chudo.scanner.i18n.LocalLang
 import ua.chudo.scanner.i18n.title
 import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.auth.authMessage
+import ua.chudo.scanner.ui.common.Avatar
 import ua.chudo.scanner.ui.theme.InStockGreen
 import uniffi.chudo_core.Lang
 import java.text.DateFormat
 
 @Composable
-fun ProfileScreen(employee: Employee, onBack: () -> Unit) {
+fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit) {
     val app = LocalContext.current.chudoApp
     val lang = LocalLang.current
     val scope = rememberCoroutineScope()
@@ -87,17 +87,7 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit) {
         Spacer(Modifier.height(16.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(64.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    initials(employee.name),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
+            Avatar(employee.name, size = 64.dp)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(employee.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -112,7 +102,7 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         Card {
-            if (employee.phone.isNotEmpty()) InfoRow(Icons.Rounded.Phone, tr("Телефон", "Телефон"), employee.phone)
+            if (employee.phone.isNotEmpty()) InfoRow(Icons.Rounded.Phone, tr("Телефон", "Телефон"), formatPhone(employee.phone))
             else InfoRow(Icons.Rounded.Email, "Email", employee.email)
             HorizontalDivider()
             InfoRow(Icons.Rounded.LocationOn, tr("Місто", "Город"), region?.title() ?: employee.region)
@@ -137,9 +127,16 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         Card {
-            ActionRow(Icons.Rounded.Translate, tr("Мова: українська", "Язык: русский")) {
-                app.prefs.setLang(if (currentLang == Lang.RU) Lang.UA else Lang.RU)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(14.dp))
+                Text(tr("Мова", "Язык"), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                FilterChip(selected = currentLang == Lang.UA, onClick = { app.prefs.setLang(Lang.UA) }, label = { Text("UA") })
+                Spacer(Modifier.width(8.dp))
+                FilterChip(selected = currentLang == Lang.RU, onClick = { app.prefs.setLang(Lang.RU) }, label = { Text("RU") })
             }
+            HorizontalDivider()
+            ActionRow(Icons.Rounded.Print, tr("Принтери", "Принтеры"), onClick = onPrinters)
             HorizontalDivider()
             ActionRow(Icons.AutoMirrored.Rounded.Logout, tr("Вийти", "Выйти"), danger = true) { confirmLogout = true }
         }
@@ -187,8 +184,9 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit) {
     }
 }
 
-private fun initials(name: String): String =
-    name.split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
+/** +380671234567 → +380 67 123 45 67 */
+private fun formatPhone(p: String): String =
+    if (p.length == 13 && p.startsWith("+380")) "+380 ${p.substring(4, 6)} ${p.substring(6, 9)} ${p.substring(9, 11)} ${p.substring(11)}" else p
 
 @Composable
 private fun Card(content: @Composable () -> Unit) {

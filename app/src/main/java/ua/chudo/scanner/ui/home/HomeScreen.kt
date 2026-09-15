@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -60,6 +59,7 @@ import ua.chudo.scanner.R
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.HistoryItem
 import ua.chudo.scanner.ui.common.AiSettingsDialog
+import ua.chudo.scanner.ui.common.MyAvatar
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.common.SectionTitle
@@ -123,9 +123,7 @@ fun HomeScreen(
                 IconButton(onClick = { ctx.openUrl(if (lang == Lang.RU) "https://chudo-ostriv.com.ua/ru/" else "https://chudo-ostriv.com.ua/ua/") }) {
                     Icon(Icons.Rounded.Storefront, tr("Сайт", "Сайт"))
                 }
-                IconButton(onClick = onProfile) {
-                    Icon(Icons.Rounded.AccountCircle, tr("Профіль", "Профиль"))
-                }
+                MyAvatar(onProfile)
             }
         }
 

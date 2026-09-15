@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Inventory2
@@ -83,6 +82,7 @@ import ua.chudo.scanner.data.StockFileParser
 import ua.chudo.scanner.data.StockItem
 import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.auth.authMessage
+import ua.chudo.scanner.ui.common.Avatar
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MessageState
 import ua.chudo.scanner.ui.common.ProductCard
@@ -383,9 +383,7 @@ private fun ShopHeader(e: Employee, onProfile: () -> Unit) {
             }
             Text(e.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        IconButton(onClick = onProfile) {
-            Icon(Icons.Rounded.AccountCircle, tr("Профіль", "Профиль"))
-        }
+        Avatar(e.name, onClick = onProfile)
     }
 }
 

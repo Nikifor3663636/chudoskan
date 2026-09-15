@@ -1,6 +1,7 @@
 package ua.chudo.scanner
 
 import android.net.Uri
+import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -109,7 +110,8 @@ private fun AppNav(employee: Employee) {
         // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            if (route != null && route != Routes.SCAN) BottomTabs(
+            // Сканер и профиль — без нижней навигации.
+            if (route != null && route != Routes.SCAN && route != Routes.PROFILE) BottomTabs(
                 tab = tab,
                 onSearch = { if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false) },
                 onScan = { nav.navigate(Routes.scan()) },
@@ -179,7 +181,16 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
             )
         }
-        composable(Routes.PROFILE) { ProfileScreen(employee, onBack = { nav.popBackStack() }) }
+        composable(Routes.PROFILE) {
+            val ctx = LocalContext.current
+            val soon = tr("Налаштування принтерів з'являться в наступному оновленні.", "Настройка принтеров появится в следующем обновлении.")
+            ProfileScreen(
+                employee,
+                onBack = { nav.popBackStack() },
+                // Экран «Принтери» — этап 4.
+                onPrinters = { Toast.makeText(ctx, soon, Toast.LENGTH_SHORT).show() },
+            )
+        }
         composable(Routes.LAYOUT) { StoreLayoutScreen() }
         composable(Routes.HOME) {
             HomeScreen(
