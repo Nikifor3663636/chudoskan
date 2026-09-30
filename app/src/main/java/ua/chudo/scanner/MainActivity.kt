@@ -1,7 +1,6 @@
 package ua.chudo.scanner
 
 import android.net.Uri
-import android.widget.Toast
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +43,8 @@ import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.i18n.LocalLang
 import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.layout.StoreLayoutScreen
+import ua.chudo.scanner.ui.print.LabelsScreen
+import ua.chudo.scanner.ui.print.PrintersScreen
 import ua.chudo.scanner.ui.profile.ProfileScreen
 import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
@@ -71,6 +72,8 @@ class MainActivity : ComponentActivity() {
 
 private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
+private const val LABEL_MODE = "label"
+private const val LABEL_CODE = "label_code"
 
 private object Routes {
     const val HOME = "home"
@@ -82,11 +85,16 @@ private object Routes {
     const val PROFILE = "profile"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
+    const val SCAN_LABEL = "scan?mode=$LABEL_MODE"
+    const val LABELS = "labels"
+    const val PRINTERS = "printers"
 
     fun scan(mode: ScanMode = ScanMode.BARCODE) = "scan?mode=${mode.name}"
     fun results(q: String) = "results/${Uri.encode(q)}"
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
+
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PROFILE, Routes.PRINTERS, Routes.LABELS)
 
 private enum class Tab { SEARCH, STOCK, LAYOUT }
 
@@ -110,8 +118,8 @@ private fun AppNav(employee: Employee) {
         // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            // Сканер и профиль — без нижней навигации.
-            if (route != null && route != Routes.SCAN && route != Routes.PROFILE) BottomTabs(
+            // Сканер, профиль, принтеры и печать ценников — без нижней навигации.
+            if (route != null && route !in FULLSCREEN) BottomTabs(
                 tab = tab,
                 onSearch = { if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false) },
                 onScan = { nav.navigate(Routes.scan()) },
@@ -182,13 +190,17 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             )
         }
         composable(Routes.PROFILE) {
-            val ctx = LocalContext.current
-            val soon = tr("Налаштування принтерів з'являться в наступному оновленні.", "Настройка принтеров появится в следующем обновлении.")
-            ProfileScreen(
-                employee,
+            ProfileScreen(employee, onBack = { nav.popBackStack() }, onPrinters = { nav.navigate(Routes.PRINTERS) })
+        }
+        composable(Routes.PRINTERS) { PrintersScreen(onBack = { nav.popBackStack() }) }
+        composable(Routes.LABELS) { entry ->
+            val scanned by entry.savedStateHandle.getStateFlow<String?>(LABEL_CODE, null).collectAsStateWithLifecycle()
+            LabelsScreen(
                 onBack = { nav.popBackStack() },
-                // Экран «Принтери» — этап 4.
-                onPrinters = { Toast.makeText(ctx, soon, Toast.LENGTH_SHORT).show() },
+                onScan = { nav.navigate(Routes.SCAN_LABEL) },
+                onPrinters = { nav.navigate(Routes.PRINTERS) },
+                scanned = scanned,
+                onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
             )
         }
         composable(Routes.LAYOUT) { StoreLayoutScreen() }
@@ -199,6 +211,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onProfile = { nav.navigate(Routes.PROFILE) },
+                onLabels = { nav.navigate(Routes.LABELS) },
             )
         }
         composable(
@@ -207,14 +220,18 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
         ) { entry ->
             val app = LocalContext.current.chudoApp
             val arg = entry.arguments?.getString("mode").orEmpty()
-            // mode=stock — скан для «Залишків»: код возвращаем в поиск остатков.
-            val forStock = arg == STOCK_MODE
+            // mode=stock / mode=label — код возвращаем на предыдущий экран («Залишки» / «Друк цінників»).
+            val returnKey = when (arg) {
+                STOCK_MODE -> STOCK_CODE
+                LABEL_MODE -> LABEL_CODE
+                else -> null
+            }
             val mode = runCatching { ScanMode.valueOf(arg) }.getOrDefault(ScanMode.BARCODE)
             ScannerScreen(
                 startMode = mode,
                 onBarcode = { code ->
-                    if (forStock) {
-                        nav.previousBackStackEntry?.savedStateHandle?.set(STOCK_CODE, code)
+                    if (returnKey != null) {
+                        nav.previousBackStackEntry?.savedStateHandle?.set(returnKey, code)
                         nav.popBackStack()
                     } else {
                         nav.navigate(Routes.results(code)) { popUpTo(Routes.SCAN) { inclusive = true } }

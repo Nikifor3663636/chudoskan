@@ -684,6 +684,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_chudo_core_checksum_func_classify_query(
     ): Int
+    external fun uniffi_chudo_core_checksum_func_ean13_bars(
+    ): Int
+    external fun uniffi_chudo_core_checksum_func_ean13_full(
+    ): Int
     external fun uniffi_chudo_core_checksum_func_is_barcode(
     ): Int
     external fun uniffi_chudo_core_checksum_func_build_details_body(
@@ -742,6 +746,10 @@ internal object UniffiLib {
     external fun uniffi_chudo_core_fn_func_parse_vision_response(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_classify_query(`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_chudo_core_fn_func_ean13_bars(`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_chudo_core_fn_func_ean13_full(`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_is_barcode(`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -909,6 +917,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_chudo_core_checksum_func_classify_query() and 0xFFFF) != 52665) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_chudo_core_checksum_func_ean13_bars() and 0xFFFF) != 47284) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_chudo_core_checksum_func_ean13_full() and 0xFFFF) != 19673) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_chudo_core_checksum_func_is_barcode() and 0xFFFF) != 10963) {
@@ -1615,6 +1629,92 @@ public object FfiConverterTypeShopAvailability: FfiConverterRustBuffer<ShopAvail
 
 
 
+
+sealed class BarcodeException: kotlin.Exception() {
+    
+    class BadLength(
+        ) : BarcodeException() {
+        override val message
+            get() = ""
+    }
+    
+    class NotDigits(
+        ) : BarcodeException() {
+        override val message
+            get() = ""
+    }
+    
+    class BadChecksum(
+        ) : BarcodeException() {
+        override val message
+            get() = ""
+    }
+    
+
+    
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<BarcodeException> {
+        override fun lift(error_buf: RustBuffer.ByValue): BarcodeException = FfiConverterTypeBarcodeError.lift(error_buf)
+    }
+
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBarcodeError : FfiConverterRustBuffer<BarcodeException> {
+    override fun read(buf: ByteBuffer): BarcodeException {
+        
+
+        return when(buf.getInt()) {
+            1 -> BarcodeException.BadLength()
+            2 -> BarcodeException.NotDigits()
+            3 -> BarcodeException.BadChecksum()
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BarcodeException): ULong {
+        return when(value) {
+            is BarcodeException.BadLength -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BarcodeException.NotDigits -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is BarcodeException.BadChecksum -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: BarcodeException, buf: ByteBuffer) {
+        when(value) {
+            is BarcodeException.BadLength -> {
+                buf.putInt(1)
+                Unit
+            }
+            is BarcodeException.NotDigits -> {
+                buf.putInt(2)
+                Unit
+            }
+            is BarcodeException.BadChecksum -> {
+                buf.putInt(3)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+
 enum class BlockKind {
     
     /**
@@ -2020,6 +2120,34 @@ public object FfiConverterOptionalTypeBlockKind: FfiConverterRustBuffer<BlockKin
 /**
  * @suppress
  */
+public object FfiConverterSequenceBoolean: FfiConverterRustBuffer<List<kotlin.Boolean>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Boolean> {
+        val len = buf.getInt()
+        return List<kotlin.Boolean>(len) {
+            FfiConverterBoolean.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Boolean>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterBoolean.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Boolean>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterBoolean.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
     override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
@@ -2182,6 +2310,36 @@ public object FfiConverterSequenceTypeShopAvailability: FfiConverterRustBuffer<L
     
         
         FfiConverterString.lower(`input`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Модули штрихкода EAN-13 слева направо: 95 штук, `true` — чёрный.
+         */
+    @Throws(BarcodeException::class) fun `ean13Bars`(`code`: kotlin.String): List<kotlin.Boolean> {
+            return FfiConverterSequenceBoolean.lift(
+    uniffiRustCallWithError(BarcodeException) { _status ->
+    UniffiLib.uniffi_chudo_core_fn_func_ean13_bars(
+    
+        
+        FfiConverterString.lower(`code`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Полные 13 цифр: 13 — проверяем контрольную; 12 — UPC-A (добавляем 0) или EAN-13 без контрольной цифры.
+         */
+    @Throws(BarcodeException::class) fun `ean13Full`(`code`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(BarcodeException) { _status ->
+    UniffiLib.uniffi_chudo_core_fn_func_ean13_full(
+    
+        
+        FfiConverterString.lower(`code`),_status)
 }
     )
     }

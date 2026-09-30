@@ -66,6 +66,7 @@ import ua.chudo.scanner.ui.common.SectionTitle
 import uniffi.chudo_core.Lang
 import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.i18n.title
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Storefront
 import ua.chudo.scanner.ui.common.openUrl
 
@@ -76,6 +77,7 @@ fun HomeScreen(
     onSearch: (String) -> Unit,
     onOpenProduct: (String) -> Unit,
     onProfile: () -> Unit,
+    onLabels: () -> Unit,
 ) {
     val prefs = LocalContext.current.chudoApp.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
@@ -123,6 +125,7 @@ fun HomeScreen(
                 IconButton(onClick = { ctx.openUrl(if (lang == Lang.RU) "https://chudo-ostriv.com.ua/ru/" else "https://chudo-ostriv.com.ua/ua/") }) {
                     Icon(Icons.Rounded.Storefront, tr("Сайт", "Сайт"))
                 }
+                IconButton(onClick = onLabels) { Icon(Icons.Rounded.Print, tr("Друк цінників", "Печать ценников")) }
                 MyAvatar(onProfile)
             }
         }
