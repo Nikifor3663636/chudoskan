@@ -674,14 +674,6 @@ internal object IntegrityCheckingUniffiLib {
     }
 
     internal fun ensureInitialized() = Unit
-    external fun uniffi_chudo_core_checksum_func_build_vision_body(
-    ): Int
-    external fun uniffi_chudo_core_checksum_func_default_ai_model(
-    ): Int
-    external fun uniffi_chudo_core_checksum_func_openai_url(
-    ): Int
-    external fun uniffi_chudo_core_checksum_func_parse_vision_response(
-    ): Int
     external fun uniffi_chudo_core_checksum_func_classify_query(
     ): Int
     external fun uniffi_chudo_core_checksum_func_ean13_bars(
@@ -737,14 +729,6 @@ internal object UniffiLib {
     }
 
     internal fun ensureInitialized() = Unit
-    external fun uniffi_chudo_core_fn_func_build_vision_body(`model`: RustBuffer.ByValue,`jpegBase64`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_chudo_core_fn_func_default_ai_model(uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_chudo_core_fn_func_openai_url(uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_chudo_core_fn_func_parse_vision_response(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_classify_query(`input`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_ean13_bars(`code`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -904,18 +888,6 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
-    if ((lib.uniffi_chudo_core_checksum_func_build_vision_body() and 0xFFFF) != 25242) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if ((lib.uniffi_chudo_core_checksum_func_default_ai_model() and 0xFFFF) != 17965) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if ((lib.uniffi_chudo_core_checksum_func_openai_url() and 0xFFFF) != 48280) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if ((lib.uniffi_chudo_core_checksum_func_parse_vision_response() and 0xFFFF) != 52320) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if ((lib.uniffi_chudo_core_checksum_func_classify_query() and 0xFFFF) != 52665) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1283,57 +1255,6 @@ public object FfiConverterTypeClassifiedQuery: FfiConverterRustBuffer<Classified
     override fun write(value: ClassifiedQuery, buf: ByteBuffer) {
             FfiConverterTypeQueryKind.write(value.`kind`, buf)
             FfiConverterString.write(value.`normalized`, buf)
-    }
-}
-
-
-
-data class PhotoGuess (
-    var `brand`: kotlin.String?
-    , 
-    var `name`: kotlin.String
-    , 
-    var `article`: kotlin.String?
-    , 
-    /**
-     * Что искать на сайте: артикул, если он есть, иначе «бренд назва».
-     */
-    var `searchQuery`: kotlin.String
-    
-){
-    
-
-    
-
-    
-    companion object
-}
-
-/**
- * @suppress
- */
-public object FfiConverterTypePhotoGuess: FfiConverterRustBuffer<PhotoGuess> {
-    override fun read(buf: ByteBuffer): PhotoGuess {
-        return PhotoGuess(
-            FfiConverterOptionalString.read(buf),
-            FfiConverterString.read(buf),
-            FfiConverterOptionalString.read(buf),
-            FfiConverterString.read(buf),
-        )
-    }
-
-    override fun allocationSize(value: PhotoGuess) = (
-            FfiConverterOptionalString.allocationSize(value.`brand`) +
-            FfiConverterString.allocationSize(value.`name`) +
-            FfiConverterOptionalString.allocationSize(value.`article`) +
-            FfiConverterString.allocationSize(value.`searchQuery`)
-    )
-
-    override fun write(value: PhotoGuess, buf: ByteBuffer) {
-            FfiConverterOptionalString.write(value.`brand`, buf)
-            FfiConverterString.write(value.`name`, buf)
-            FfiConverterOptionalString.write(value.`article`, buf)
-            FfiConverterString.write(value.`searchQuery`, buf)
     }
 }
 
@@ -1775,14 +1696,6 @@ sealed class CoreException: kotlin.Exception() {
             get() = "msg=${ `msg` }"
     }
     
-    class Ai(
-        
-        val `msg`: kotlin.String
-        ) : CoreException() {
-        override val message
-            get() = "msg=${ `msg` }"
-    }
-    
     class NotFound(
         ) : CoreException() {
         override val message
@@ -1814,10 +1727,7 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
             2 -> CoreException.GraphQl(
                 FfiConverterString.read(buf),
                 )
-            3 -> CoreException.Ai(
-                FfiConverterString.read(buf),
-                )
-            4 -> CoreException.NotFound()
+            3 -> CoreException.NotFound()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -1830,11 +1740,6 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
                 + FfiConverterString.allocationSize(value.`msg`)
             )
             is CoreException.GraphQl -> (
-                // Add the size for the Int that specifies the variant plus the size needed for all fields
-                4UL
-                + FfiConverterString.allocationSize(value.`msg`)
-            )
-            is CoreException.Ai -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
                 + FfiConverterString.allocationSize(value.`msg`)
@@ -1858,13 +1763,8 @@ public object FfiConverterTypeCoreError : FfiConverterRustBuffer<CoreException> 
                 FfiConverterString.write(value.`msg`, buf)
                 Unit
             }
-            is CoreException.Ai -> {
-                buf.putInt(3)
-                FfiConverterString.write(value.`msg`, buf)
-                Unit
-            }
             is CoreException.NotFound -> {
-                buf.putInt(4)
+                buf.putInt(3)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -2252,55 +2152,7 @@ public object FfiConverterSequenceTypeShopAvailability: FfiConverterRustBuffer<L
             FfiConverterTypeShopAvailability.write(it, buf)
         }
     }
-} fun `buildVisionBody`(`model`: kotlin.String, `jpegBase64`: kotlin.String): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.uniffi_chudo_core_fn_func_build_vision_body(
-    
-        
-        FfiConverterString.lower(`model`),
-        FfiConverterString.lower(`jpegBase64`),_status)
 }
-    )
-    }
-    
- fun `defaultAiModel`(): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.uniffi_chudo_core_fn_func_default_ai_model(
-    
-        _status)
-}
-    )
-    }
-    
- fun `openaiUrl`(): kotlin.String {
-            return FfiConverterString.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.uniffi_chudo_core_fn_func_openai_url(
-    
-        _status)
-}
-    )
-    }
-    
-
-        /**
-         * Разбирает ответ chat/completions. Если модель ответила не JSON,
-         * весь текст считается названием (поведение старого APK).
-         */
-    @Throws(CoreException::class) fun `parseVisionResponse`(`json`: kotlin.String): PhotoGuess {
-            return FfiConverterTypePhotoGuess.lift(
-    uniffiRustCallWithError(CoreException) { _status ->
-    UniffiLib.uniffi_chudo_core_fn_func_parse_vision_response(
-    
-        
-        FfiConverterString.lower(`json`),_status)
-}
-    )
-    }
-    
-
         /**
          * Определяет, что ввёл/отсканировал пользователь.
          */ fun `classifyQuery`(`input`: kotlin.String): ClassifiedQuery {

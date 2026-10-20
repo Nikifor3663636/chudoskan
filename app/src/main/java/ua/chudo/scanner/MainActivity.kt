@@ -22,7 +22,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,8 +39,6 @@ import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
-import ua.chudo.scanner.i18n.LocalLang
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.layout.StoreLayoutScreen
 import ua.chudo.scanner.ui.print.LabelsScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
@@ -50,8 +47,6 @@ import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
-import ua.chudo.scanner.ui.results.PHOTO_QUERY
-import ua.chudo.scanner.ui.scan.ScanMode
 import ua.chudo.scanner.ui.scan.ScannerScreen
 import ua.chudo.scanner.ui.theme.ChudoTheme
 
@@ -60,11 +55,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val lang by chudoApp.prefs.lang.collectAsStateWithLifecycle()
-            CompositionLocalProvider(LocalLang provides lang) {
-                ChudoTheme {
-                    Surface(color = MaterialTheme.colorScheme.background) { AuthGate { AppNav(it) } }
-                }
+            ChudoTheme {
+                Surface(color = MaterialTheme.colorScheme.background) { AuthGate { AppNav(it) } }
             }
         }
     }
@@ -89,7 +81,7 @@ private object Routes {
     const val LABELS = "labels"
     const val PRINTERS = "printers"
 
-    fun scan(mode: ScanMode = ScanMode.BARCODE) = "scan?mode=${mode.name}"
+    fun scan() = "scan?mode=barcode"
     fun results(q: String) = "results/${Uri.encode(q)}"
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
@@ -155,23 +147,23 @@ private fun BottomTabs(
     NavigationBar {
         NavigationBarItem(
             selected = tab == Tab.SEARCH, onClick = onSearch,
-            icon = { Icon(Icons.Rounded.Search, null) }, label = { Text(tr("Пошук", "Поиск")) },
+            icon = { Icon(Icons.Rounded.Search, null) }, label = { Text("Пошук") },
         )
         NavigationBarItem(
             selected = false, onClick = onScan,
-            icon = { Icon(Icons.Rounded.QrCodeScanner, null) }, label = { Text(tr("Сканер", "Сканер")) },
+            icon = { Icon(Icons.Rounded.QrCodeScanner, null) }, label = { Text("Сканер") },
         )
         NavigationBarItem(
             selected = tab == Tab.STOCK, onClick = onStock,
-            icon = { Icon(Icons.Rounded.Inventory2, null) }, label = { Text(tr("Залишки", "Остатки")) },
+            icon = { Icon(Icons.Rounded.Inventory2, null) }, label = { Text("Залишки") },
         )
         NavigationBarItem(
             selected = tab == Tab.LAYOUT, onClick = onLayout,
-            icon = { Icon(Icons.Rounded.Map, null) }, label = { Text(tr("Планування", "Планировка"), maxLines = 1) },
+            icon = { Icon(Icons.Rounded.Map, null) }, label = { Text("Планування", maxLines = 1) },
         )
         NavigationBarItem(
             selected = false, onClick = onCity,
-            icon = { Icon(Icons.Rounded.LocationOn, null) }, label = { Text(tr("Місто", "Город")) },
+            icon = { Icon(Icons.Rounded.LocationOn, null) }, label = { Text("Місто") },
         )
     }
 }
@@ -207,7 +199,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
         composable(Routes.HOME) {
             HomeScreen(
                 onScan = { nav.navigate(Routes.scan()) },
-                onPhoto = { nav.navigate(Routes.scan(ScanMode.PHOTO)) },
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onProfile = { nav.navigate(Routes.PROFILE) },
@@ -216,9 +207,8 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
         }
         composable(
             Routes.SCAN,
-            arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = ScanMode.BARCODE.name }),
+            arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "barcode" }),
         ) { entry ->
-            val app = LocalContext.current.chudoApp
             val arg = entry.arguments?.getString("mode").orEmpty()
             // mode=stock / mode=label — код возвращаем на предыдущий экран («Залишки» / «Друк цінників»).
             val returnKey = when (arg) {
@@ -226,9 +216,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 LABEL_MODE -> LABEL_CODE
                 else -> null
             }
-            val mode = runCatching { ScanMode.valueOf(arg) }.getOrDefault(ScanMode.BARCODE)
             ScannerScreen(
-                startMode = mode,
                 onBarcode = { code ->
                     if (returnKey != null) {
                         nav.previousBackStackEntry?.savedStateHandle?.set(returnKey, code)
@@ -236,10 +224,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                     } else {
                         nav.navigate(Routes.results(code)) { popUpTo(Routes.SCAN) { inclusive = true } }
                     }
-                },
-                onPhoto = { jpeg ->
-                    app.pendingPhoto = jpeg
-                    nav.navigate(Routes.results(PHOTO_QUERY)) { popUpTo(Routes.SCAN) { inclusive = true } }
                 },
                 onClose = { nav.popBackStack() },
             )
@@ -254,9 +238,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 },
                 onScanAgain = {
                     nav.navigate(Routes.scan()) { popUpTo(Routes.HOME) }
-                },
-                onPhotoAgain = {
-                    nav.navigate(Routes.scan(ScanMode.PHOTO)) { popUpTo(Routes.HOME) }
                 },
             )
         }

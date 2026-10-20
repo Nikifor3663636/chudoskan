@@ -19,12 +19,9 @@ class ChudoApp : Application() {
     private val okHttp by lazy {
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS) // фото в ChatGPT отвечает дольше сайта
+            .readTimeout(45, TimeUnit.SECONDS)
             .build()
     }
-
-    /** Снимок из камеры для экрана результатов (в навигацию байты не передаём). */
-    @Volatile var pendingPhoto: ByteArray? = null
 
     val repository by lazy {
         ChudoRepository(SiteClient(okHttp, WebViewFetcher(this)), prefs)

@@ -4,8 +4,6 @@ pub enum CoreError {
     BadJson { msg: String },
     #[error("ошибка GraphQL: {msg}")]
     GraphQl { msg: String },
-    #[error("ошибка распознавания: {msg}")]
-    Ai { msg: String },
     #[error("товар не найден")]
     NotFound,
 }

@@ -19,16 +19,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Store
 import androidx.compose.material.icons.rounded.Print
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,38 +49,35 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.ShopStockInfo
-import ua.chudo.scanner.i18n.LocalLang
-import ua.chudo.scanner.i18n.title
-import ua.chudo.scanner.i18n.tr
+import ua.chudo.scanner.ui.auth.PasswordDialog
 import ua.chudo.scanner.ui.auth.authMessage
+import ua.chudo.scanner.ui.common.formatPhone
 import ua.chudo.scanner.ui.common.Avatar
 import ua.chudo.scanner.ui.theme.InStockGreen
-import uniffi.chudo_core.Lang
 import java.text.DateFormat
 
 @Composable
 fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit) {
     val app = LocalContext.current.chudoApp
-    val lang = LocalLang.current
     val scope = rememberCoroutineScope()
     var info by remember { mutableStateOf<ShopStockInfo?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var editName by rememberSaveable { mutableStateOf(false) }
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
+    var changePassword by rememberSaveable { mutableStateOf(false) }
+    var hasPassword by remember { mutableStateOf(app.auth.hasPassword()) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
-    val currentLang by app.prefs.lang.collectAsStateWithLifecycle()
 
     LaunchedEffect(employee.shopId) { info = runCatching { app.shopStock.info(employee.shopId) }.getOrNull() }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
-            Text(tr("Профіль", "Профиль"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+            Text("Профіль", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(16.dp))
 
@@ -94,32 +89,31 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Verified, null, Modifier.size(16.dp), tint = InStockGreen)
                     Spacer(Modifier.width(4.dp))
-                    Text(tr("Співробітник підтверджений", "Сотрудник подтверждён"), style = MaterialTheme.typography.bodySmall, color = InStockGreen)
+                    Text("Співробітник підтверджений", style = MaterialTheme.typography.bodySmall, color = InStockGreen)
                 }
             }
-            IconButton(onClick = { editName = true }) { Icon(Icons.Rounded.Edit, tr("Змінити ім'я", "Изменить имя")) }
+            IconButton(onClick = { editName = true }) { Icon(Icons.Rounded.Edit, "Змінити ім'я") }
         }
         Spacer(Modifier.height(20.dp))
 
         Card {
-            if (employee.phone.isNotEmpty()) InfoRow(Icons.Rounded.Phone, tr("Телефон", "Телефон"), formatPhone(employee.phone))
-            else InfoRow(Icons.Rounded.Email, "Email", employee.email)
+            InfoRow(Icons.Rounded.Phone, "Телефон", formatPhone(employee.phone))
             HorizontalDivider()
-            InfoRow(Icons.Rounded.LocationOn, tr("Місто", "Город"), region?.title() ?: employee.region)
+            InfoRow(Icons.Rounded.LocationOn, "Місто", region?.name ?: employee.region)
             HorizontalDivider()
-            InfoRow(Icons.Rounded.Store, tr("Магазин", "Магазин"), employee.shop)
+            InfoRow(Icons.Rounded.Store, "Магазин", employee.shop)
             HorizontalDivider()
             InfoRow(
                 Icons.Rounded.Inventory2,
-                tr("Залишки 1С", "Остатки 1С"),
+                "Залишки 1С",
                 info?.let { i ->
                     val date = i.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"
-                    tr("${i.rows} позицій · $date", "${i.rows} позиций · $date")
-                } ?: tr("ще не завантажено", "ещё не загружены"),
+                    "${i.rows} позицій · $date"
+                } ?: "ще не завантажено",
             )
         }
         Text(
-            tr("Магазин змінює адміністратор.", "Магазин меняет администратор."),
+            "Магазин змінює адміністратор.",
             Modifier.padding(start = 4.dp, top = 6.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -127,18 +121,11 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
         Spacer(Modifier.height(20.dp))
 
         Card {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Translate, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(14.dp))
-                Text(tr("Мова", "Язык"), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                FilterChip(selected = currentLang == Lang.UA, onClick = { app.prefs.setLang(Lang.UA) }, label = { Text("UA") })
-                Spacer(Modifier.width(8.dp))
-                FilterChip(selected = currentLang == Lang.RU, onClick = { app.prefs.setLang(Lang.RU) }, label = { Text("RU") })
-            }
+            ActionRow(Icons.Rounded.Lock, if (hasPassword) "Змінити пароль" else "Встановити пароль") { changePassword = true }
             HorizontalDivider()
-            ActionRow(Icons.Rounded.Print, tr("Принтери", "Принтеры"), onClick = onPrinters)
+            ActionRow(Icons.Rounded.Print, "Принтери", onClick = onPrinters)
             HorizontalDivider()
-            ActionRow(Icons.AutoMirrored.Rounded.Logout, tr("Вийти", "Выйти"), danger = true) { confirmLogout = true }
+            ActionRow(Icons.AutoMirrored.Rounded.Logout, "Вийти", danger = true) { confirmLogout = true }
         }
         message?.let {
             Text(it, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
@@ -146,12 +133,26 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
         Spacer(Modifier.height(32.dp))
     }
 
+    if (changePassword) {
+        PasswordDialog(
+            title = if (hasPassword) "Змінити пароль" else "Встановити пароль",
+            text = if (hasPassword) "Забув поточний — вийди й натисни «Забув пароль» на екрані входу." else null,
+            needCurrent = hasPassword,
+            onDismiss = { changePassword = false },
+            onDone = {
+                changePassword = false
+                hasPassword = true
+                message = "Пароль збережено."
+            },
+        )
+    }
+
     if (editName) {
         var name by rememberSaveable { mutableStateOf(employee.name) }
         var error by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { editName = false },
-            title = { Text(tr("Ім'я та прізвище", "Имя и фамилия")) },
+            title = { Text("Ім'я та прізвище") },
             text = {
                 Column {
                     OutlinedTextField(name, { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -165,28 +166,24 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
                         try {
                             app.auth.updateName(name); editName = false
                         } catch (e: Exception) {
-                            error = e.authMessage(lang)
+                            error = e.authMessage()
                         }
                     }
-                }) { Text(tr("Зберегти", "Сохранить")) }
+                }) { Text("Зберегти") }
             },
-            dismissButton = { TextButton(onClick = { editName = false }) { Text(tr("Скасувати", "Отмена")) } },
+            dismissButton = { TextButton(onClick = { editName = false }) { Text("Скасувати") } },
         )
     }
     if (confirmLogout) {
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
-            title = { Text(tr("Вийти з акаунта?", "Выйти из аккаунта?")) },
-            text = { Text(employee.phone.ifEmpty { employee.email }) },
-            confirmButton = { TextButton(onClick = { confirmLogout = false; app.auth.signOut() }) { Text(tr("Вийти", "Выйти")) } },
-            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text(tr("Скасувати", "Отмена")) } },
+            title = { Text("Вийти з акаунта?") },
+            text = { Text(formatPhone(employee.phone)) },
+            confirmButton = { TextButton(onClick = { confirmLogout = false; app.auth.signOut() }) { Text("Вийти") } },
+            dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("Скасувати") } },
         )
     }
 }
-
-/** +380671234567 → +380 67 123 45 67 */
-private fun formatPhone(p: String): String =
-    if (p.length == 13 && p.startsWith("+380")) "+380 ${p.substring(4, 6)} ${p.substring(6, 9)} ${p.substring(9, 11)} ${p.substring(11)}" else p
 
 @Composable
 private fun Card(content: @Composable () -> Unit) {

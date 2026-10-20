@@ -8,9 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
-import uniffi.chudo_core.Lang
 import uniffi.chudo_core.Region
-import uniffi.chudo_core.defaultAiModel
 import uniffi.chudo_core.defaultRegion
 import uniffi.chudo_core.regions
 
@@ -29,9 +27,6 @@ class AppPrefs(context: Context) {
     private val _region = MutableStateFlow(regionByCode(sp.getString(KEY_REGION, null)))
     val region: StateFlow<Region> = _region.asStateFlow()
 
-    private val _lang = MutableStateFlow(if (sp.getString(KEY_LANG, "ua") == "ru") Lang.RU else Lang.UA)
-    val lang: StateFlow<Lang> = _lang.asStateFlow()
-
     private val _history = MutableStateFlow(readHistory())
     val history: StateFlow<List<HistoryItem>> = _history.asStateFlow()
 
@@ -39,35 +34,6 @@ class AppPrefs(context: Context) {
         sp.edit { putString(KEY_REGION, code) }
         _region.value = regionByCode(code)
     }
-
-    fun setLang(lang: Lang) {
-        sp.edit { putString(KEY_LANG, if (lang == Lang.RU) "ru" else "ua") }
-        _lang.value = lang
-    }
-
-    // Ключ OpenAI живёт там же, где его хранил старый APK (prefs/openai_key),
-    // поэтому после обновления поверх старой версии вводить заново не нужно.
-    private val legacy = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-
-    private val _aiKey = MutableStateFlow(legacy.getString("openai_key", null)?.takeIf { it.isNotBlank() })
-    val aiKey: StateFlow<String?> = _aiKey.asStateFlow()
-
-    private val _aiModel = MutableStateFlow(sp.getString(KEY_AI_MODEL, null) ?: defaultAiModel())
-    val aiModel: StateFlow<String> = _aiModel.asStateFlow()
-
-    fun setAi(key: String?, model: String) {
-        val k = key?.trim()?.takeIf { it.isNotEmpty() }
-        val m = model.trim().ifEmpty { defaultAiModel() }
-        legacy.edit { if (k == null) remove("openai_key") else putString("openai_key", k) }
-        sp.edit { putString(KEY_AI_MODEL, m) }
-        _aiKey.value = k
-        _aiModel.value = m
-    }
-
-    /** Привязать телефон старому email-аккаунту предлагаем один раз. */
-    fun phoneLinkOffered(uid: String): Boolean = sp.getBoolean("phone_link_offered:$uid", false)
-
-    fun markPhoneLinkOffered(uid: String) = sp.edit { putBoolean("phone_link_offered:$uid", true) }
 
     /** Штрихкод → url_key товара, который пользователь подтвердил вручную. */
     fun rememberedProduct(barcode: String): String? = sp.getString("$KEY_BARCODE$barcode", null)
@@ -114,10 +80,8 @@ class AppPrefs(context: Context) {
 
     private companion object {
         const val KEY_REGION = "region"
-        const val KEY_LANG = "lang"
         const val KEY_HISTORY = "history"
         const val KEY_BARCODE = "bc:"
-        const val KEY_AI_MODEL = "ai_model"
         const val MAX_HISTORY = 20
     }
 }

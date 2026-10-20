@@ -8,7 +8,6 @@ import androidx.compose.material.icons.rounded.Map
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.common.MessageState
 
 /** Схема магазина: где лежит товар (ряд, стеллаж, полка). Раздел в разработке. */
@@ -17,11 +16,8 @@ fun StoreLayoutScreen() {
     Box(Modifier.fillMaxSize().statusBarsPadding(), contentAlignment = Alignment.Center) {
         MessageState(
             icon = Icons.Rounded.Map,
-            title = tr("Планування магазину", "Планировка магазина"),
-            text = tr(
-                "Розділ у розробці. Тут буде схема магазину: знайдеш товар — побачиш ряд, стелаж і полицю, де він лежить.",
-                "Раздел в разработке. Здесь будет схема магазина: найдёшь товар — увидишь ряд, стеллаж и полку, где он лежит.",
-            ),
+            title = "Планування магазину",
+            text = "Розділ у розробці. Тут буде схема магазину: знайдеш товар — побачиш ряд, стелаж і полицю, де він лежить.",
         )
     }
 }

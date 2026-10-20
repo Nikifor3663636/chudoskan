@@ -86,7 +86,6 @@ import kotlinx.coroutines.withContext
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.LookupResult
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.print.LabelKind
 import ua.chudo.scanner.print.LabelTemplate
 import ua.chudo.scanner.print.PriceTag
@@ -96,7 +95,6 @@ import ua.chudo.scanner.print.QueueItem
 import ua.chudo.scanner.print.TagRenderer
 import ua.chudo.scanner.print.formatPrice
 import ua.chudo.scanner.ui.common.toUiError
-import uniffi.chudo_core.Lang
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
 
@@ -118,7 +116,6 @@ sealed interface PrintStatus {
 class LabelsViewModel(
     private val repo: ChudoRepository,
     private val svc: PrintService,
-    private val lang: () -> Lang,
 ) : ViewModel() {
     private val _find = MutableStateFlow<FindState>(FindState.Idle)
     val find = _find.asStateFlow()
@@ -156,7 +153,7 @@ class LabelsViewModel(
         val q = raw.trim().ifEmpty { return }
         findJob?.cancel()
         findJob = viewModelScope.launch {
-            _find.value = FindState.Loading(lang().tr("Шукаємо…", "Ищем…"))
+            _find.value = FindState.Loading("Шукаємо…")
             _find.value = try {
                 when (val r = repo.lookup(q) { _find.value = FindState.Loading(it) }) {
                     is LookupResult.Single -> { setProduct(repo.details(r.urlKey), r.barcode); FindState.Idle }
@@ -166,7 +163,7 @@ class LabelsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                FindState.Failed(e.toUiError(lang()).let { "${it.title}. ${it.hint}" })
+                FindState.Failed(e.toUiError().let { "${it.title}. ${it.hint}" })
             }
         }
     }
@@ -174,7 +171,7 @@ class LabelsViewModel(
     fun pick(s: ProductSummary, barcode: String?) {
         findJob?.cancel()
         findJob = viewModelScope.launch {
-            _find.value = FindState.Loading(lang().tr("Завантажуємо товар…", "Загружаем товар…"))
+            _find.value = FindState.Loading("Завантажуємо товар…")
             _find.value = try {
                 setProduct(repo.details(s.urlKey), barcode); FindState.Idle
             } catch (e: CancellationException) {
@@ -243,7 +240,6 @@ class LabelsViewModel(
         val items = jobItems()
         if (items.isEmpty() || _status.value == PrintStatus.Printing) return
         val t = _template.value
-        val l = lang()
         val kind = t.kind
         val printer = printers.value.filter { it.role == kind }.let { list -> list.firstOrNull { it.id == _printerId.value[kind] } ?: list.firstOrNull() }
         _status.value = PrintStatus.Printing
@@ -251,11 +247,11 @@ class LabelsViewModel(
             _status.value = try {
                 when {
                     kind == LabelKind.STICKY -> {
-                        printer ?: return@launch fail(l.tr("Додай принтер для липких: Профіль → Принтери.", "Добавь принтер для липких: Профиль → Принтеры."))
+                        printer ?: return@launch fail("Додай принтер для липких: Профіль → Принтери.")
                         svc.printSticky(printer, items, t)
                     }
                     direct.value -> {
-                        printer ?: return@launch fail(l.tr("Для прямої печаті додай Brother: Профіль → Принтери.", "Для прямой печати добавь Brother: Профиль → Принтеры."))
+                        printer ?: return@launch fail("Для прямої печаті додай Brother: Профіль → Принтери.")
                         svc.printPlainDirect(printer, items)
                     }
                     else -> svc.printPlainSystem(activity ?: return@launch fail("No activity"), items)
@@ -263,13 +259,13 @@ class LabelsViewModel(
                 val n = items.sumOf { it.copies }
                 _queue.value = emptyList()
                 _current.value = null
-                PrintStatus.Done(l.tr("Надіслано на друк: $n шт.", "Отправлено на печать: $n шт."))
+                PrintStatus.Done("Надіслано на друк: $n шт.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: PrinterNotFoundException) {
-                PrintStatus.Error(l.tr("Принтер «${e.printer.name}» не знайдено в мережі.", "Принтер «${e.printer.name}» не найден в сети."))
+                PrintStatus.Error("Принтер «${e.printer.name}» не знайдено в мережі.")
             } catch (e: Exception) {
-                PrintStatus.Error(l.tr("Не вдалося надрукувати: ${e.message}", "Не удалось напечатать: ${e.message}"))
+                PrintStatus.Error("Не вдалося надрукувати: ${e.message}")
             }
         }
     }
@@ -287,7 +283,7 @@ fun LabelsScreen(
 ) {
     val app = LocalContext.current.chudoApp
     val activity = LocalContext.current.findActivity()
-    val vm: LabelsViewModel = viewModel(factory = viewModelFactory { initializer { LabelsViewModel(app.repository, app.printing) { app.prefs.lang.value } } })
+    val vm: LabelsViewModel = viewModel(factory = viewModelFactory { initializer { LabelsViewModel(app.repository, app.printing) } })
     val find by vm.find.collectAsStateWithLifecycle()
     val current by vm.current.collectAsStateWithLifecycle()
     val copies by vm.copies.collectAsStateWithLifecycle()
@@ -308,20 +304,20 @@ fun LabelsScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
-                Text(tr("Друк цінників", "Печать ценников"), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                IconButton(onClick = onPrinters) { Icon(Icons.Rounded.Settings, tr("Принтери", "Принтеры")) }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                Text("Друк цінників", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onPrinters) { Icon(Icons.Rounded.Settings, "Принтери") }
             }
         }
         item {
             OutlinedTextField(
                 value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                 shape = RoundedCornerShape(16.dp),
-                placeholder = { Text(tr("Артикул, штрихкод або назва", "Артикул, штрихкод или название")) },
+                placeholder = { Text("Артикул, штрихкод або назва") },
                 trailingIcon = {
                     Row {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, tr("Очистити", "Очистить")) }
-                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, tr("Сканувати", "Сканировать")) }
+                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Очистити") }
+                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, "Сканувати") }
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -346,8 +342,8 @@ fun LabelsScreen(
             }
             is FindState.NotFound -> item {
                 Column {
-                    Text(tr("Не знайшли «${f.query}» на сайті.", "Не нашли «${f.query}» на сайте."))
-                    TextButton(onClick = { vm.manual(f.query) }) { Text(tr("Заповнити цінник вручну", "Заполнить ценник вручную")) }
+                    Text("Не знайшли «${f.query}» на сайті.")
+                    TextButton(onClick = { vm.manual(f.query) }) { Text("Заповнити цінник вручну") }
                 }
             }
             is FindState.Failed -> item { Text(f.message, color = MaterialTheme.colorScheme.error) }
@@ -356,14 +352,14 @@ fun LabelsScreen(
         current?.let { tag -> item { TagEditor(tag, copies, vm) } }
 
         if (queue.isNotEmpty()) {
-            item { Text(tr("Черга (${queue.size})", "Очередь (${queue.size})"), style = MaterialTheme.typography.titleMedium) }
+            item { Text("Черга (${queue.size})", style = MaterialTheme.typography.titleMedium) }
             itemsIndexed(queue) { i, q ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(q.tag.name.ifEmpty { q.tag.barcode }, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${q.tag.price} ₴ · ×${q.copies}", style = MaterialTheme.typography.bodySmall)
                     }
-                    IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, tr("Прибрати", "Убрать")) }
+                    IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, "Прибрати") }
                 }
             }
         }
@@ -374,7 +370,7 @@ fun LabelsScreen(
             preview?.let { img ->
                 item {
                     Image(
-                        img, tr("Попередній перегляд", "Предпросмотр"),
+                        img, "Попередній перегляд",
                         Modifier.fillMaxWidth().heightIn(max = 220.dp)
                             .aspectRatio(template.widthMm.toFloat() / template.heightMm)
                             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline)),
@@ -390,7 +386,7 @@ fun LabelsScreen(
                     modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
                 ) {
                     if (status == PrintStatus.Printing) CircularProgressIndicator(Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp, color = Color.White)
-                    else { Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(8.dp)); Text(tr("Друкувати ($total)", "Печатать ($total)")) }
+                    else { Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(8.dp)); Text("Друкувати ($total)") }
                 }
             }
         }
@@ -408,28 +404,28 @@ private fun TagEditor(tag: PriceTag, copies: Int, vm: LabelsViewModel) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("Товар", "Товар"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = vm::dropCurrent) { Icon(Icons.Rounded.Close, tr("Прибрати", "Убрать")) }
+                Text("Товар", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = vm::dropCurrent) { Icon(Icons.Rounded.Close, "Прибрати") }
             }
-            OutlinedTextField(tag.name, { v -> vm.edit { it.copy(name = v) } }, Modifier.fillMaxWidth(), label = { Text(tr("Назва", "Название")) }, maxLines = 2)
+            OutlinedTextField(tag.name, { v -> vm.edit { it.copy(name = v) } }, Modifier.fillMaxWidth(), label = { Text("Назва") }, maxLines = 2)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PriceField(tag.price, tr("Ціна", "Цена"), Modifier.weight(1f)) { v -> vm.edit { it.copy(price = v) } }
-                PriceField(tag.oldPrice, tr("Стара ціна", "Старая цена"), Modifier.weight(1f)) { v -> vm.edit { it.copy(oldPrice = v) } }
+                PriceField(tag.price, "Ціна", Modifier.weight(1f)) { v -> vm.edit { it.copy(price = v) } }
+                PriceField(tag.oldPrice, "Стара ціна", Modifier.weight(1f)) { v -> vm.edit { it.copy(oldPrice = v) } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(tag.article, { v -> vm.edit { it.copy(article = v) } }, Modifier.weight(1f), singleLine = true, label = { Text(tr("Артикул", "Артикул")) })
+                OutlinedTextField(tag.article, { v -> vm.edit { it.copy(article = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Артикул") })
                 OutlinedTextField(
                     tag.barcode, { v -> vm.edit { it.copy(barcode = v.filter(Char::isDigit).take(13)) } }, Modifier.weight(1f), singleLine = true,
-                    label = { Text(tr("Штрихкод", "Штрихкод")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Штрихкод") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("Кількість", "Количество"), Modifier.weight(1f))
+                Text("Кількість", Modifier.weight(1f))
                 IconButton(onClick = { vm.setCopies(copies - 1) }, enabled = copies > 1) { Icon(Icons.Rounded.Remove, "−") }
                 Text("$copies", style = MaterialTheme.typography.titleMedium)
                 IconButton(onClick = { vm.setCopies(copies + 1) }, enabled = copies < 99) { Icon(Icons.Rounded.Add, "+") }
             }
-            OutlinedButton(onClick = vm::addToQueue, modifier = Modifier.fillMaxWidth()) { Text(tr("Додати в чергу й шукати ще", "Добавить в очередь и искать ещё")) }
+            OutlinedButton(onClick = vm::addToQueue, modifier = Modifier.fillMaxWidth()) { Text("Додати в чергу й шукати ще") }
         }
     }
 }
@@ -465,10 +461,10 @@ private fun PrinterPicker(kind: LabelKind, vm: LabelsViewModel, onPrinters: () -
         if (kind == LabelKind.PLAIN) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(tr("Пряма печать", "Прямая печать"))
+                    Text("Пряма печать")
                     Text(
-                        if (direct) tr("PDF напряму на IP:9100 Brother", "PDF напрямую на IP:9100 Brother")
-                        else tr("Через системний друк Android", "Через системную печать Android"),
+                        if (direct) "PDF напряму на IP:9100 Brother"
+                        else "Через системний друк Android",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -477,7 +473,7 @@ private fun PrinterPicker(kind: LabelKind, vm: LabelsViewModel, onPrinters: () -
             if (!direct) return@Column
         }
         if (mine.isEmpty()) {
-            TextButton(onClick = onPrinters) { Text(tr("Додати принтер", "Добавить принтер")) }
+            TextButton(onClick = onPrinters) { Text("Додати принтер") }
         } else {
             val current = mine.firstOrNull { it.id == selected[kind] } ?: mine.first()
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -51,7 +51,6 @@ class ProductViewModel(
     init {
         load()
         viewModelScope.launch { prefs.region.drop(1).collect { loadShops() } }
-        viewModelScope.launch { prefs.lang.drop(1).collect { load() } }
     }
 
     fun load(refresh: Boolean = false) = viewModelScope.launch {
@@ -64,7 +63,7 @@ class ProductViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _state.update { it.copy(loading = false, refreshing = false, error = e.toUiError(prefs.lang.value)) }
+            _state.update { it.copy(loading = false, refreshing = false, error = e.toUiError()) }
         }
     }
 
@@ -78,7 +77,7 @@ class ProductViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ShopsState.Failed(e.toUiError(prefs.lang.value))
+                ShopsState.Failed(e.toUiError())
             }
             _state.update { it.copy(shops = next) }
         }

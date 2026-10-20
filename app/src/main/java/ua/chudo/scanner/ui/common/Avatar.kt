@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.AuthState
-import ua.chudo.scanner.i18n.tr
 
 fun initials(name: String): String =
     name.split(Regex("\\s+")).filter { it.isNotEmpty() }.take(2).joinToString("") { it.first().uppercase() }.ifEmpty { "?" }
@@ -29,7 +28,7 @@ fun initials(name: String): String =
 /** Кружок с инициалами сотрудника; по нажатию — профиль. */
 @Composable
 fun Avatar(name: String, size: Dp = 36.dp, onClick: (() -> Unit)? = null) {
-    val label = tr("Профіль", "Профиль")
+    val label = "Профіль"
     Box(
         Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primary)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)

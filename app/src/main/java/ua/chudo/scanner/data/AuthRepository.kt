@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseException
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.PhoneAuthCredential
@@ -24,7 +25,6 @@ import java.util.concurrent.TimeUnit
 data class Employee(
     val uid: String,
     val name: String,
-    val email: String,
     val phone: String,
     val region: String,
     /** Адрес магазина как на сайте — по нему находим строку наличия. */
@@ -40,7 +40,7 @@ sealed interface AuthState {
     data object Loading : AuthState
     data object SignedOut : AuthState
     /** Аккаунт есть, а анкеты сотрудника нет (регистрация прервалась). */
-    data class NoProfile(val email: String) : AuthState
+    data class NoProfile(val phone: String) : AuthState
     data class Pending(val employee: Employee) : AuthState
     data class Ready(val employee: Employee) : AuthState
     data class Failed(val message: String) : AuthState
@@ -74,6 +74,10 @@ class AuthRepository(context: Context) {
 
     private var profileListener: ListenerRegistration? = null
 
+    /** Попросить задать пароль: вход был по SMS («Забув пароль») или пароля ещё нет. */
+    private val _askPassword = MutableStateFlow(false)
+    val askPassword: StateFlow<Boolean> = _askPassword.asStateFlow()
+
     init {
         if (configured) auth.addAuthStateListener { onUser(it.currentUser) }
     }
@@ -82,16 +86,18 @@ class AuthRepository(context: Context) {
         profileListener?.remove()
         profileListener = null
         if (user == null) {
+            _askPassword.value = false
             _state.value = AuthState.SignedOut
             return
         }
         _state.value = AuthState.Loading
+        if (!hasPassword()) _askPassword.value = true
         // Слушаем анкету: как только администратор поставит approved = true, вход откроется сам.
         profileListener = db.collection(USERS).document(user.uid).addSnapshotListener { snap, err ->
             if (auth.currentUser?.uid != user.uid) return@addSnapshotListener
             _state.value = when {
                 err != null -> AuthState.Failed(err.message ?: err.javaClass.simpleName)
-                snap == null || !snap.exists() -> AuthState.NoProfile(user.email?.takeIf { it.isNotEmpty() } ?: user.phoneNumber.orEmpty())
+                snap == null || !snap.exists() -> AuthState.NoProfile(user.phoneNumber.orEmpty())
                 else -> snap.toEmployee(user).let { if (it.approved) AuthState.Ready(it) else AuthState.Pending(it) }
             }
         }
@@ -121,37 +127,52 @@ class AuthRepository(context: Context) {
     fun credential(verificationId: String, code: String): PhoneAuthCredential =
         PhoneAuthProvider.getCredential(verificationId, code.trim())
 
-    /** Вход по телефону. При регистрации ([profile] != null) создаёт анкету, если её ещё нет. */
-    suspend fun signInWithPhone(credential: PhoneAuthCredential, profile: NewProfile?) {
-        val user = auth.signInWithCredential(credential).await().user ?: error("Firebase не вернул пользователя")
+    /**
+     * Вход по SMS: регистрация ([profile] + [password]) или «Забув пароль».
+     * После входа без пароля попросим задать новый.
+     */
+    suspend fun signInWithPhone(credential: PhoneAuthCredential, profile: NewProfile?, password: String?) {
+        val user = auth.signInWithCredential(credential).await().user ?: error("Firebase не повернув користувача")
         if (profile != null && !db.collection(USERS).document(user.uid).get().await().exists()) {
             saveProfile(user, profile.name, profile.region, profile.shop)
         }
+        if (password != null) setPassword(password) else _askPassword.value = true
     }
 
-    /** Старый аккаунт с email: вход есть, телефон не привязан. */
-    fun needsPhoneLink(): Boolean = auth.currentUser?.phoneNumber.isNullOrEmpty() && auth.currentUser != null
-
-    /** Привязать телефон к текущему аккаунту — uid не меняется. */
-    suspend fun linkPhone(credential: PhoneAuthCredential) {
-        val user = auth.currentUser ?: error("Не выполнен вход")
-        val linked = user.linkWithCredential(credential).await().user ?: user
-        linked.getIdToken(true).await() // правила проверяют phone_number из свежего токена
-        val doc = db.collection(USERS).document(linked.uid)
-        if (doc.get().await().exists()) doc.update("phone", linked.phoneNumber.orEmpty()).await()
+    /** Вход по номеру и паролю. [digits] — 9 цифр после +380. */
+    suspend fun signInWithPassword(digits: String, password: String) {
+        auth.signInWithEmailAndPassword(loginFor("+380$digits"), password).await()
     }
 
-    suspend fun signIn(email: String, password: String) {
-        auth.signInWithEmailAndPassword(email.trim(), password).await()
+    fun hasPassword(): Boolean = auth.currentUser?.providerData?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true
+
+    /**
+     * Задать пароль. Сразу после входа по SMS старый пароль не нужен;
+     * иначе Firebase требует свежий вход — тогда сначала [reauthenticate].
+     */
+    suspend fun setPassword(password: String) {
+        val user = auth.currentUser ?: error("Не виконано вхід")
+        val phone = user.phoneNumber?.takeIf { it.isNotEmpty() } ?: error("До акаунта не прив'язано телефон")
+        if (hasPassword()) {
+            user.updatePassword(password).await()
+        } else {
+            user.linkWithCredential(EmailAuthProvider.getCredential(loginFor(phone), password)).await()
+        }
+        _askPassword.value = false
     }
+
+    /** Подтвердить текущий пароль перед сменой. */
+    suspend fun reauthenticate(currentPassword: String) {
+        val user = auth.currentUser ?: error("Не виконано вхід")
+        val login = user.email ?: loginFor(user.phoneNumber.orEmpty())
+        user.reauthenticate(EmailAuthProvider.getCredential(login, currentPassword)).await()
+    }
+
+    fun skipPassword() { _askPassword.value = false }
 
     /** Дописать анкету, если аккаунт уже создан. */
     suspend fun completeProfile(name: String, region: String, shop: String) {
         saveProfile(auth.currentUser ?: error("Не выполнен вход"), name, region, shop)
-    }
-
-    suspend fun resetPassword(email: String) {
-        auth.sendPasswordResetEmail(email.trim()).await()
     }
 
     fun signOut() = auth.signOut()
@@ -166,7 +187,6 @@ class AuthRepository(context: Context) {
         db.collection(USERS).document(user.uid).set(
             mapOf(
                 "name" to name.trim(),
-                "email" to (user.email ?: ""),
                 "phone" to (user.phoneNumber ?: ""),
                 "region" to region,
                 "shop" to shop.trim(),
@@ -180,7 +200,6 @@ class AuthRepository(context: Context) {
     private fun DocumentSnapshot.toEmployee(user: FirebaseUser) = Employee(
         uid = user.uid,
         name = getString("name").orEmpty(),
-        email = getString("email") ?: user.email.orEmpty(),
         phone = getString("phone")?.takeIf { it.isNotEmpty() } ?: user.phoneNumber.orEmpty(),
         region = getString("region").orEmpty(),
         shop = getString("shop").orEmpty(),
@@ -190,6 +209,12 @@ class AuthRepository(context: Context) {
 
     companion object {
         const val USERS = "users"
+
+        /**
+         * Firebase умеет пароль только в паре с email, поэтому логин — служебный адрес из номера
+         * (+380961234567 → 380961234567@tel.chudoostriv.app). Пользователь его не видит; писем на него нет.
+         */
+        fun loginFor(phone: String): String = phone.filter(Char::isDigit) + "@tel.chudoostriv.app"
 
         /** Стабильный id магазина: город + хеш адреса (адрес бывает длинным и с «/»). */
         fun shopId(region: String, shop: String): String {

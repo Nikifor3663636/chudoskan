@@ -3,19 +3,13 @@ package ua.chudo.scanner.ui.scan
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.net.Uri
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.lifecycle.awaitInstance
@@ -27,8 +21,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,22 +33,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashOff
 import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -65,11 +51,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -89,26 +73,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import ua.chudo.scanner.chudoApp
-import ua.chudo.scanner.ui.common.AiSettingsDialog
 import ua.chudo.scanner.ui.common.MessageState
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
-import kotlin.math.max
-import ua.chudo.scanner.i18n.tr
-
-enum class ScanMode { BARCODE, PHOTO }
 
 @Composable
 fun ScannerScreen(
-    startMode: ScanMode,
     onBarcode: (String) -> Unit,
-    onPhoto: (ByteArray) -> Unit,
     onClose: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -124,15 +98,15 @@ fun ScannerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            CameraScreen(startMode, onBarcode, onPhoto, onClose)
+            CameraScreen(onBarcode, onClose)
         } else if (askedOnce) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 MessageState(
                     icon = Icons.Rounded.CameraAlt,
-                    title = tr("Потрібен доступ до камери", "Нужен доступ к камере"),
-                    text = tr("Камера читає штрихкод. Фото товару надсилається в ChatGPT лише в режимі «Фото» і лише коли ти натискаєш кнопку.", "Камера читает штрихкод. Фото товара отправляется в ChatGPT только в режиме «Фото» и только когда ты нажимаешь кнопку."),
-                    primary = tr("Дозволити", "Разрешить") to { launcher.launch(Manifest.permission.CAMERA) },
-                    secondary = tr("Відкрити налаштування", "Открыть настройки") to {
+                    title = "Потрібен доступ до камери",
+                    text = "Камера потрібна, щоб прочитати штрихкод. Знімки нікуди не надсилаються.",
+                    primary = "Дозволити" to { launcher.launch(Manifest.permission.CAMERA) },
+                    secondary = "Відкрити налаштування" to {
                         ctx.startActivity(
                             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null))
                         )
@@ -145,28 +119,18 @@ fun ScannerScreen(
 
 @Composable
 private fun CameraScreen(
-    startMode: ScanMode,
     onBarcode: (String) -> Unit,
-    onPhoto: (ByteArray) -> Unit,
     onClose: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    val prefs = ctx.chudoApp.prefs
-    val aiKey by prefs.aiKey.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
     val currentOnBarcode by rememberUpdatedState(onBarcode)
-    val currentOnPhoto by rememberUpdatedState(onPhoto)
     val previewView = remember { PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
-    var mode by rememberSaveable { mutableStateOf(startMode) }
-    val currentMode by rememberUpdatedState(mode)
     var camera by remember { mutableStateOf<Camera?>(null) }
-    var capture by remember { mutableStateOf<ImageCapture?>(null) }
     var torch by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var showKey by remember { mutableStateOf(false) }
 
     val scanner = remember {
         BarcodeScanning.getClient(
@@ -191,14 +155,14 @@ private fun CameraScreen(
             .also { a ->
                 a.setAnalyzer(executor) { proxy ->
                     val media = proxy.image
-                    if (media == null || done || currentMode != ScanMode.BARCODE) {
+                    if (media == null || done) {
                         proxy.close(); return@setAnalyzer
                     }
                     val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                     scanner.process(image)
                         .addOnSuccessListener { codes ->
                             val value = codes.firstNotNullOfOrNull { it.rawValue?.trim()?.takeIf(String::isNotEmpty) }
-                            if (value != null && value == last && !done && currentMode == ScanMode.BARCODE) {
+                            if (value != null && value == last && !done) {
                                 done = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 currentOnBarcode(value)
@@ -208,16 +172,8 @@ private fun CameraScreen(
                         .addOnCompleteListener { proxy.close() }
                 }
             }
-        val ic = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
         provider.unbindAll()
-        camera = runCatching {
-            provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, ic)
-                .also { capture = ic }
-        }.getOrElse {
-            // Слабые камеры не тянут три use case сразу — тогда без фото-режима.
-            provider.unbindAll()
-            provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-        }
+        camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
     }
 
     DisposableEffect(Unit) {
@@ -228,59 +184,22 @@ private fun CameraScreen(
         }
     }
 
-    fun shoot() {
-        if (aiKey == null) { showKey = true; return }
-        val ic = capture ?: run {
-            Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Камера цього телефону не підтримує фото разом зі сканером", "Камера этого телефона не поддерживает фото вместе со сканером"), Toast.LENGTH_LONG).show()
-            return
-        }
-        busy = true
-        val main = ContextCompat.getMainExecutor(ctx)
-        ic.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
-            override fun onCaptureSuccess(image: ImageProxy) {
-                val bytes = runCatching { image.toJpegForAi() }.getOrNull()
-                image.close()
-                main.execute {
-                    busy = false
-                    if (bytes != null) {
-                        done = true
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        currentOnPhoto(bytes)
-                    } else {
-                        Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Не вдалося обробити фото", "Не удалось обработать фото"), Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                main.execute {
-                    busy = false
-                    Toast.makeText(ctx, ctx.chudoApp.prefs.lang.value.tr("Не вдалося зробити фото", "Не удалось сделать фото"), Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-    }
-
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        ScanOverlay(Modifier.fillMaxSize(), photo = mode == ScanMode.PHOTO)
+        ScanOverlay(Modifier.fillMaxSize())
 
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, tr("Закрити", "Закрыть")) }
+            RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, "Закрити") }
             Spacer(Modifier.weight(1f))
-            if (mode == ScanMode.PHOTO) {
-                RoundIcon(onClick = { showKey = true }) { Icon(Icons.Rounded.Key, tr("Ключ OpenAI", "Ключ OpenAI")) }
-                Spacer(Modifier.size(8.dp))
-            }
             if (camera?.cameraInfo?.hasFlashUnit() == true) {
                 RoundIcon(onClick = {
                     torch = !torch
                     camera?.cameraControl?.enableTorch(torch)
                 }) {
-                    Icon(if (torch) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, tr("Ліхтарик", "Фонарик"))
+                    Icon(if (torch) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, "Ліхтарик")
                 }
             }
         }
@@ -291,79 +210,22 @@ private fun CameraScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                if (mode == ScanMode.BARCODE) tr("Наведи рамку на штрихкод", "Наведи рамку на штрихкод") else tr("Сфотографуй упаковку цілком", "Сфотографируй упаковку целиком"),
+                "Наведи рамку на штрихкод",
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
             )
             Text(
-                if (mode == ScanMode.BARCODE) tr("EAN-13 / EAN-8 / UPC з упаковки", "EAN-13 / EAN-8 / UPC с упаковки")
-                else if (aiKey == null) tr("Потрібен ключ OpenAI — натисни кнопку, щоб ввести", "Нужен ключ OpenAI — нажми кнопку, чтобы ввести")
-                else tr("ChatGPT визначить бренд і артикул", "ChatGPT определит бренд и артикул"),
+                "EAN-13 / EAN-8 / UPC з упаковки",
                 color = Color.White.copy(alpha = 0.75f),
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
             )
 
-            if (mode == ScanMode.PHOTO) {
-                Shutter(busy = busy, onClick = ::shoot)
-            }
-
-            SingleChoiceSegmentedButtonRow {
-                ScanMode.entries.forEachIndexed { i, m ->
-                    SegmentedButton(
-                        selected = mode == m,
-                        onClick = { mode = m },
-                        shape = SegmentedButtonDefaults.itemShape(i, ScanMode.entries.size),
-                        colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            activeContentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            inactiveContainerColor = Color.Black.copy(alpha = 0.45f),
-                            inactiveContentColor = Color.White,
-                        ),
-                    ) { Text(if (m == ScanMode.BARCODE) tr("Штрихкод", "Штрихкод") else tr("Фото товару", "Фото товара")) }
-                }
-            }
-            FilledTonalButton(onClick = onClose) { Text(tr("Ввести вручну", "Ввести вручную")) }
+            FilledTonalButton(onClick = onClose) { Text("Ввести вручну") }
         }
     }
-
-    if (showKey) AiSettingsDialog(prefs) { showKey = false }
 }
-
-@Composable
-private fun Shutter(busy: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(76.dp)
-            .clip(CircleShape)
-            .border(4.dp, Color.White, CircleShape)
-            .padding(7.dp)
-            .clip(CircleShape)
-            .background(if (busy) Color.White.copy(alpha = 0.4f) else Color.White)
-            .clickable(enabled = !busy, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (busy) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
-    }
-}
-
-/** Поворот по EXIF камеры и уменьшение до 1024px: ChatGPT-у больше не нужно, трафик меньше. */
-private fun ImageProxy.toJpegForAi(): ByteArray {
-    val src = toBitmap()
-    val matrix = Matrix().apply {
-        postRotate(imageInfo.rotationDegrees.toFloat())
-        val scale = MAX_SIDE / max(src.width, src.height).toFloat()
-        if (scale < 1f) postScale(scale, scale)
-    }
-    val bmp = Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
-    return ByteArrayOutputStream().use { out ->
-        bmp.compress(Bitmap.CompressFormat.JPEG, 82, out)
-        out.toByteArray()
-    }
-}
-
-private const val MAX_SIDE = 1024f
 
 @Composable
 private fun RoundIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
@@ -376,23 +238,23 @@ private fun RoundIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Штрихкод: затемнение, уголки и бегущая линия. Фото: только мягкая рамка-подсказка. */
+/** Затемнение, уголки и бегущая линия. */
 @Composable
-private fun ScanOverlay(modifier: Modifier, photo: Boolean) {
+private fun ScanOverlay(modifier: Modifier) {
     val accent = MaterialTheme.colorScheme.tertiaryContainer
     val t = rememberInfiniteTransition(label = "laser")
     val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "p")
 
     Canvas(modifier) {
         val w = size.width * 0.82f
-        val h = if (photo) w * 1.05f else w * 0.55f
+        val h = w * 0.55f
         val left = (size.width - w) / 2
-        val top = (size.height - h) / if (photo) 2.6f else 2.3f
+        val top = (size.height - h) / 2.3f
         val rect = Rect(Offset(left, top), Size(w, h))
         val r = 24.dp.toPx()
         val hole = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(r))) }
 
-        clipPath(hole, ClipOp.Difference) { drawRect(Color.Black.copy(alpha = if (photo) 0.35f else 0.55f)) }
+        clipPath(hole, ClipOp.Difference) { drawRect(Color.Black.copy(alpha = 0.55f)) }
 
         val len = 34.dp.toPx()
         val stroke = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)
@@ -406,17 +268,15 @@ private fun ScanOverlay(modifier: Modifier, photo: Boolean) {
             moveTo(rect.left + len, rect.bottom); lineTo(rect.left + r / 2, rect.bottom)
             quadraticTo(rect.left, rect.bottom, rect.left, rect.bottom - r / 2); lineTo(rect.left, rect.bottom - len)
         }
-        drawPath(corners, if (photo) Color.White else accent, style = stroke)
+        drawPath(corners, accent, style = stroke)
 
-        if (!photo) {
-            val y = rect.top + 14.dp.toPx() + (rect.height - 28.dp.toPx()) * p
-            drawLine(
-                accent.copy(alpha = 0.9f),
-                Offset(rect.left + 18.dp.toPx(), y),
-                Offset(rect.right - 18.dp.toPx(), y),
-                strokeWidth = 2.5.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
+        val y = rect.top + 14.dp.toPx() + (rect.height - 28.dp.toPx()) * p
+        drawLine(
+            accent.copy(alpha = 0.9f),
+            Offset(rect.left + 18.dp.toPx(), y),
+            Offset(rect.right - 18.dp.toPx(), y),
+            strokeWidth = 2.5.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
     }
 }

@@ -55,16 +55,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.print.FoundPrinter
 import ua.chudo.scanner.print.LabelKind
 import ua.chudo.scanner.print.ONLY_9100
 import ua.chudo.scanner.print.PrintService
 import ua.chudo.scanner.print.SavedPrinter
-import uniffi.chudo_core.Lang
 import java.util.UUID
 
-class PrintersViewModel(private val svc: PrintService, private val lang: () -> Lang) : ViewModel() {
+class PrintersViewModel(private val svc: PrintService) : ViewModel() {
     val printers = svc.store.printers.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _scanning = MutableStateFlow(false)
     val scanning = _scanning.asStateFlow()
@@ -80,7 +78,7 @@ class PrintersViewModel(private val svc: PrintService, private val lang: () -> L
         viewModelScope.launch {
             try {
                 if (svc.discovery.localIp() == null) {
-                    _message.value = lang().tr("Підключись до Wi-Fi магазину.", "Подключись к Wi-Fi магазина.")
+                    _message.value = "Підключись до Wi-Fi магазину."
                     _found.value = emptyList()
                 } else {
                     val saved = printers.value.map { it.host }.toSet()
@@ -114,30 +112,29 @@ class PrintersViewModel(private val svc: PrintService, private val lang: () -> L
     fun remove(p: SavedPrinter) = viewModelScope.launch { svc.store.remove(p.id) }
 
     fun test(host: String, port: Int, role: LabelKind, onResult: (String) -> Unit) = viewModelScope.launch {
-        val l = lang()
         val msg = try {
             if (svc.test(host, port, role)) {
-                if (role == LabelKind.STICKY) l.tr("Тестову етикетку надіслано.", "Тестовая этикетка отправлена.")
-                else l.tr("Принтер відповідає.", "Принтер отвечает.")
+                if (role == LabelKind.STICKY) "Тестову етикетку надіслано."
+                else "Принтер відповідає."
             } else {
-                l.tr("Немає відповіді від $host:$port.", "Нет ответа от $host:$port.")
+                "Немає відповіді від $host:$port."
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            l.tr("Помилка: ${e.message}", "Ошибка: ${e.message}")
+            "Помилка: ${e.message}"
         }
         onResult(msg)
     }
 }
 
 @Composable
-fun roleTitle(role: LabelKind) = if (role == LabelKind.STICKY) tr("Липкі", "Липкие") else tr("Звичайні", "Обычные")
+fun roleTitle(role: LabelKind) = if (role == LabelKind.STICKY) "Липкі" else "Звичайні"
 
 @Composable
 fun PrintersScreen(onBack: () -> Unit) {
     val app = LocalContext.current.chudoApp
-    val vm: PrintersViewModel = viewModel(factory = viewModelFactory { initializer { PrintersViewModel(app.printing) { app.prefs.lang.value } } })
+    val vm: PrintersViewModel = viewModel(factory = viewModelFactory { initializer { PrintersViewModel(app.printing) } })
     val printers by vm.printers.collectAsStateWithLifecycle()
     val scanning by vm.scanning.collectAsStateWithLifecycle()
     val found by vm.found.collectAsStateWithLifecycle()
@@ -151,19 +148,16 @@ fun PrintersScreen(onBack: () -> Unit) {
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
-                Text(tr("Принтери", "Принтеры"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                Text("Принтери", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             Text(
-                tr(
-                    "Лише мережеві принтери (Wi-Fi/LAN). Липкі — Godex, звичайні (A4) — Brother.",
-                    "Только сетевые принтеры (Wi-Fi/LAN). Липкие — Godex, обычные (A4) — Brother.",
-                ),
+                "Лише мережеві принтери (Wi-Fi/LAN). Липкі — Godex, звичайні (A4) — Brother.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (printers.isEmpty()) item {
-            Text(tr("Принтерів ще немає.", "Принтеров пока нет."), Modifier.padding(vertical = 8.dp))
+            Text("Принтерів ще немає.", Modifier.padding(vertical = 8.dp))
         }
         items(printers, key = { it.id }) { p ->
             Card(Modifier.fillMaxWidth()) {
@@ -175,8 +169,8 @@ fun PrintersScreen(onBack: () -> Unit) {
                             FilterChip(selected = p.role == r, onClick = { vm.setRole(p, r) }, label = { Text(roleTitle(r)) })
                         }
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { vm.test(p.host, p.port, p.role) { info = it } }) { Text(tr("Тест", "Тест")) }
-                        IconButton(onClick = { vm.remove(p) }) { Icon(Icons.Rounded.Delete, tr("Видалити", "Удалить")) }
+                        TextButton(onClick = { vm.test(p.host, p.port, p.role) { info = it } }) { Text("Тест") }
+                        IconButton(onClick = { vm.remove(p) }) { Icon(Icons.Rounded.Delete, "Видалити") }
                     }
                 }
             }
@@ -185,22 +179,22 @@ fun PrintersScreen(onBack: () -> Unit) {
             info?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = { manual = true }) {
-                    Icon(Icons.Rounded.Add, null); Text(tr("Додати вручну", "Добавить вручную"))
+                    Icon(Icons.Rounded.Add, null); Text("Додати вручну")
                 }
                 Button(onClick = vm::discover, enabled = !scanning) {
-                    Icon(Icons.Rounded.Wifi, null); Text(tr("Знайти в мережі", "Найти в сети"))
+                    Icon(Icons.Rounded.Wifi, null); Text("Знайти в мережі")
                 }
             }
         }
         if (scanning) item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                Text(tr("  Шукаємо принтери…", "  Ищем принтеры…"))
+                Text("  Шукаємо принтери…")
             }
         }
         message?.let { m -> item { Text(m, color = MaterialTheme.colorScheme.error) } }
         found?.let { list ->
-            if (list.isEmpty() && !scanning) item { Text(tr("Нових принтерів не знайдено.", "Новых принтеров не найдено.")) }
+            if (list.isEmpty() && !scanning) item { Text("Нових принтерів не знайдено.") }
             items(list, key = { "f" + it.host }) { f -> FoundRow(f) { role -> vm.add(f, role) } }
         }
         item { Spacer(Modifier.height(24.dp)) }
@@ -213,8 +207,8 @@ fun PrintersScreen(onBack: () -> Unit) {
 private fun fingerprintTitle(fp: String) = when {
     fp.startsWith("brother:") -> "Brother (NSD)"
     fp.startsWith("godex:") -> "Godex (~HI)"
-    fp == ONLY_9100 -> tr("єдиний :9100", "единственный :9100")
-    else -> tr("лише за IP", "только по IP")
+    fp == ONLY_9100 -> "єдиний :9100"
+    else -> "лише за IP"
 }
 
 @Composable
@@ -227,7 +221,7 @@ private fun FoundRow(f: FoundPrinter, onAdd: (LabelKind) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LabelKind.entries.forEach { r -> FilterChip(selected = role == r, onClick = { role = r }, label = { Text(roleTitle(r)) }) }
                 Spacer(Modifier.weight(1f))
-                Button(onClick = { onAdd(role) }) { Text(tr("Додати", "Добавить")) }
+                Button(onClick = { onAdd(role) }) { Text("Додати") }
             }
         }
     }
@@ -245,7 +239,7 @@ private fun ManualDialog(vm: PrintersViewModel, busy: Boolean, onDismiss: () -> 
     val valid = ipOk && portNum != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(tr("Новий принтер", "Новый принтер")) },
+        title = { Text("Новий принтер") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -255,21 +249,21 @@ private fun ManualDialog(vm: PrintersViewModel, busy: Boolean, onDismiss: () -> 
                 )
                 OutlinedTextField(
                     port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true,
-                    label = { Text(tr("Порт", "Порт")) },
+                    label = { Text("Порт") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     LabelKind.entries.forEach { r -> FilterChip(selected = role == r, onClick = { role = r }, label = { Text(roleTitle(r)) }) }
                 }
-                TextButton(enabled = valid, onClick = { vm.test(host.trim(), portNum!!, role) { result = it } }) { Text(tr("Тест", "Тест")) }
+                TextButton(enabled = valid, onClick = { vm.test(host.trim(), portNum!!, role) { result = it } }) { Text("Тест") }
                 result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
             TextButton(enabled = valid && !busy, onClick = { vm.addManual(host.trim(), portNum!!, role, onDismiss) }) {
-                Text(tr("Зберегти", "Сохранить"))
+                Text("Зберегти")
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Скасувати", "Отмена")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
     )
 }

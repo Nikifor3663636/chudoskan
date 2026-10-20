@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,9 +29,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -55,7 +51,6 @@ import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.data.Via
-import ua.chudo.scanner.ui.common.AiSettingsDialog
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MessageState
 import ua.chudo.scanner.ui.common.ProductCard
@@ -63,8 +58,6 @@ import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.openUrl
 import ua.chudo.scanner.ui.common.toUiError
 import uniffi.chudo_core.siteSearchUrl
-import ua.chudo.scanner.i18n.tr
-import ua.chudo.scanner.i18n.LocalLang
 import uniffi.chudo_core.Lang
 
 sealed interface ResultsState {
@@ -73,18 +66,13 @@ sealed interface ResultsState {
     data class Failed(val error: UiError) : ResultsState
 }
 
-const val PHOTO_QUERY = "@photo"
-
 class ResultsViewModel(
     private val repo: ChudoRepository,
     private val app: ChudoApp,
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
-    val isPhoto = query == PHOTO_QUERY
-    /** Снимок забираем один раз: переживает поворот экрана вместе с ViewModel. */
-    private val photo: ByteArray? = if (isPhoto) app.pendingPhoto.also { app.pendingPhoto = null } else null
-    private val _state = MutableStateFlow<ResultsState>(ResultsState.Loading(app.prefs.lang.value.tr("Шукаємо…", "Ищем…")))
+    private val _state = MutableStateFlow<ResultsState>(ResultsState.Loading("Шукаємо…"))
     val state = _state.asStateFlow()
     private var job: Job? = null
 
@@ -93,17 +81,14 @@ class ResultsViewModel(
     fun load() {
         job?.cancel()
         job = viewModelScope.launch {
-            _state.value = ResultsState.Loading(app.prefs.lang.value.tr("Шукаємо…", "Ищем…"))
+            _state.value = ResultsState.Loading("Шукаємо…")
             _state.value = try {
                 val step: (String) -> Unit = { _state.value = ResultsState.Loading(it) }
-                ResultsState.Done(
-                    if (isPhoto) repo.lookupPhoto(photo ?: error(app.prefs.lang.value.tr("Фото втрачено — зроби ще одне", "Фото потеряно — сделай ещё одно")), step)
-                    else repo.lookup(query, step)
-                )
+                ResultsState.Done(repo.lookup(query, step))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ResultsState.Failed(e.toUiError(app.prefs.lang.value))
+                ResultsState.Failed(e.toUiError())
             }
         }
     }
@@ -115,7 +100,6 @@ fun ResultsScreen(
     onBack: () -> Unit,
     onOpenProduct: (urlKey: String, barcode: String?, replace: Boolean) -> Unit,
     onScanAgain: () -> Unit,
-    onPhotoAgain: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: ResultsViewModel = viewModel(factory = viewModelFactory {
@@ -123,9 +107,6 @@ fun ResultsScreen(
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
-    val lang by app.prefs.lang.collectAsStateWithLifecycle()
-    var showKey by remember { mutableStateOf(false) }
-    if (showKey) AiSettingsDialog(app.prefs) { showKey = false; vm.load() }
 
     // Один товар — сразу открываем карточку, экран результатов убираем из стека.
     LaunchedEffect(state) {
@@ -139,9 +120,9 @@ fun ResultsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (vm.isPhoto) tr("Фото товару", "Фото товара") else vm.query, maxLines = 1) },
+                title = { Text(vm.query, maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Назад", "Назад")) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
                 },
             )
         },
@@ -151,28 +132,10 @@ fun ResultsScreen(
                 when (s) {
                     is ResultsState.Loading -> Loading(s.step)
                     is ResultsState.Failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        if (s.error.needsKey) {
-                            MessageState(
-                                icon = Icons.Rounded.Key,
-                                title = s.error.title,
-                                text = s.error.hint,
-                                primary = tr("Ввести ключ", "Ввести ключ") to { showKey = true },
-                                secondary = tr("Сканувати ще", "Сканировать ещё") to onScanAgain,
-                            )
-                        } else if (vm.isPhoto) {
-                            MessageState(
-                                icon = Icons.Rounded.SearchOff,
-                                title = s.error.title,
-                                text = s.error.hint,
-                                primary = tr("Зробити інше фото", "Сделать другое фото") to onPhotoAgain,
-                                secondary = tr("Сканувати штрихкод", "Сканировать штрихкод") to onScanAgain,
-                            )
-                        } else {
-                            ErrorState(s.error, siteSearchUrl(lang, vm.query), vm::load)
-                        }
+                        ErrorState(s.error, siteSearchUrl(Lang.UA, vm.query), vm::load)
                     }
                     is ResultsState.Done -> when (val r = s.result) {
-                        is LookupResult.Single -> Loading(tr("Відкриваємо товар…", "Открываем товар…"))
+                        is LookupResult.Single -> Loading("Відкриваємо товар…")
                         is LookupResult.Many -> ManyList(r) { urlKey ->
                             val bc = r.barcode.takeIf { r.via !is Via.Direct }
                             onOpenProduct(urlKey, bc, false)
@@ -183,16 +146,15 @@ fun ResultsScreen(
                         ) {
                             MessageState(
                                 icon = Icons.Rounded.SearchOff,
-                                title = if (vm.isPhoto) tr("Не знайшли на сайті", "Не нашли на сайте") else tr("Не знайшли «${r.query}»", "Не нашли «${r.query}»"),
+                                title = "Не знайшли «${r.query}»",
                                 text = buildString {
-                                    if (vm.isPhoto) append(tr("ChatGPT шукав «${r.query}». ", "ChatGPT искал «${r.query}». "))
-                                    append(tr("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.", "Попробуй ввести артикул с ценника — обычно он в скобках в названии."))
+                                    append("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.")
                                     if (r.triedArticles.isNotEmpty()) {
-                                        append(tr("\n\nПеревірили артикули: ${r.triedArticles.joinToString()}", "\n\nПроверили артикулы: ${r.triedArticles.joinToString()}"))
+                                        append("\n\nПеревірили артикули: ${r.triedArticles.joinToString()}")
                                     }
                                 },
-                                primary = tr("Шукати на сайті", "Искать на сайте") to { ctx.openUrl(siteSearchUrl(lang, r.query)) },
-                                secondary = tr("Сканувати ще", "Сканировать ещё") to onScanAgain,
+                                primary = "Шукати на сайті" to { ctx.openUrl(siteSearchUrl(Lang.UA, r.query)) },
+                                secondary = "Сканувати ще" to onScanAgain,
                             )
                         }
                     }
@@ -225,19 +187,18 @@ private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(tr("Знайдено ${r.items.size}", "Найдено ${r.items.size}"), style = MaterialTheme.typography.titleMedium)
-                viaNote(r.via, LocalLang.current)?.let { ViaNote(it) }
+                Text("Знайдено ${r.items.size}", style = MaterialTheme.typography.titleMedium)
+                viaNote(r.via)?.let { ViaNote(it) }
             }
         }
         items(r.items, key = { it.id }) { item -> ProductCard(item, onClick = { onClick(item.urlKey) }) }
     }
 }
 
-private fun viaNote(via: Via, lang: Lang): String? = when (via) {
+private fun viaNote(via: Via): String? = when (via) {
     Via.Direct, Via.Remembered -> null
-    is Via.UpcArticle -> lang.tr("Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо.", "Штрихкод нашли в открытой базе → артикул ${via.article}. Выбери свой товар — мы его запомним.")
-    is Via.UpcTitle -> lang.tr("Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар.", "Искали по названию из открытой базы: «${via.title}». Проверь, что это именно твой товар.")
-    is Via.Photo -> lang.tr("ChatGPT розпізнав на фото: ${via.guess}. Перевір, що це саме твій товар.", "ChatGPT распознал на фото: ${via.guess}. Проверь, что это именно твой товар.")
+    is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
+    is Via.UpcTitle -> "Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар."
 }
 
 @Composable

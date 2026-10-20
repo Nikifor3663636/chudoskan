@@ -50,23 +50,6 @@ class SiteClient(
         }
     }
 
-    /**
-     * POST во внешний API (OpenAI). Тело ошибки (401, 404 модели) возвращаем
-     * как есть: его разбирает Rust и показывает понятное сообщение.
-     */
-    suspend fun postExternal(url: String, body: String, headers: Map<String, String>): String =
-        withContext(Dispatchers.IO) {
-            val req = Request.Builder().url(url).post(body.toRequestBody(JSON)).apply {
-                headers.forEach { (k, v) -> header(k, v) }
-            }.build()
-            ok.newCall(req).execute().use { r ->
-                val text = r.body?.string().orEmpty()
-                // 429 у OpenAI — это и лимит, и закончившийся баланс; текст ошибки покажет, что именно.
-                if (!r.isSuccessful && !text.trimStart().startsWith("{")) throw HttpException(r.code)
-                text
-            }
-        }
-
     private suspend fun site(method: String, url: String, headers: Map<String, String>, body: String?): String {
         if (preferWebView) return viaWebView(method, url, headers, body)
 

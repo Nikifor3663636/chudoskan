@@ -65,7 +65,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ua.chudo.scanner.chudoApp
@@ -80,7 +79,6 @@ import ua.chudo.scanner.data.ShopStockRepository
 import ua.chudo.scanner.data.StockFileException
 import ua.chudo.scanner.data.StockFileParser
 import ua.chudo.scanner.data.StockItem
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.Avatar
 import ua.chudo.scanner.ui.common.ErrorState
@@ -140,11 +138,9 @@ class StockViewModel(
 
     private var job: Job? = null
     private var last: Pair<String, String?>? = null // urlKey, barcode
-    private val lang get() = prefs.lang.value
 
     init {
         refreshInfo()
-        viewModelScope.launch { prefs.lang.drop(1).collect { last?.let { (k, bc) -> open(k, bc) } } }
     }
 
     private fun refreshInfo() {
@@ -154,7 +150,7 @@ class StockViewModel(
     fun search(raw: String) {
         val q = raw.trim().ifEmpty { return }
         launchState {
-            _state.value = StockState.Loading(lang.tr("Шукаємо…", "Ищем…"))
+            _state.value = StockState.Loading("Шукаємо…")
             when (val r = repo.lookup(q) { _state.value = StockState.Loading(it) }) {
                 is LookupResult.Single -> load(r.urlKey, r.barcode)
                 is LookupResult.Many -> { last = null; StockState.Pick(q, r.items) }
@@ -171,14 +167,14 @@ class StockViewModel(
     /** Скан: одно чтение stock/bc_{код}, без сайта. */
     fun scanned(code: String) = launchState {
         last = null
-        _state.value = StockState.Loading(lang.tr("Перевіряємо твій магазин…", "Проверяем твой магазин…"))
+        _state.value = StockState.Loading("Перевіряємо твій магазин…")
         try {
             stock.byBarcode(employee.shopId, code)?.let { StockState.Ready(null, null, it, null) }
                 ?: StockState.NotInExport(code)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            StockState.Ready(null, null, null, e.authMessage(lang))
+            StockState.Ready(null, null, null, e.authMessage())
         }
     }
 
@@ -190,7 +186,7 @@ class StockViewModel(
 
     private suspend fun load(key: String, barcode: String?): StockState {
         last = key to barcode
-        _state.value = StockState.Loading(lang.tr("Перевіряємо твій магазин…", "Проверяем твой магазин…"))
+        _state.value = StockState.Loading("Перевіряємо твій магазин…")
         val p = repo.details(key)
         val site = runCatching { repo.shops(p.id, employee.region) }.getOrNull()
         val mine = site?.firstOrNull { same(it.address, employee.shop) }?.available
@@ -200,7 +196,7 @@ class StockViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            err = e.authMessage(lang); null
+            err = e.authMessage(); null
         }
         return StockState.Ready(p, mine, item, err)
     }
@@ -241,7 +237,7 @@ class StockViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ImportState.Failed(e.authMessage(lang))
+                ImportState.Failed(e.authMessage())
             }
         }
     }
@@ -256,7 +252,7 @@ class StockViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                StockState.Failed(e.toUiError(lang))
+                StockState.Failed(e.toUiError())
             }
         }
     }
@@ -305,14 +301,14 @@ fun StockScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
-                placeholder = { Text(tr("Артикул, штрихкод або назва", "Артикул, штрихкод или название")) },
+                placeholder = { Text("Артикул, штрихкод або назва") },
                 leadingIcon = { Icon(Icons.Rounded.Inventory2, null) },
                 trailingIcon = {
                     Row {
                         if (query.isNotEmpty()) IconButton(onClick = { query = ""; vm.clear() }) {
-                            Icon(Icons.Rounded.Close, tr("Очистити", "Очистить"))
+                            Icon(Icons.Rounded.Close, "Очистити")
                         }
-                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, tr("Сканувати", "Сканировать")) }
+                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, "Сканувати") }
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -333,22 +329,22 @@ fun StockScreen(
             is StockState.NotFound -> item {
                 MessageState(
                     Icons.Rounded.SearchOff,
-                    tr("Не знайшли «${st.query}»", "Не нашли «${st.query}»"),
-                    tr("Ні на сайті, ні у вивантаженні твого магазину.", "Ни на сайте, ни в выгрузке твоего магазина."),
+                    "Не знайшли «${st.query}»",
+                    "Ні на сайті, ні у вивантаженні твого магазину.",
                 )
             }
             is StockState.NotInExport -> item {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     MessageState(
                         Icons.Rounded.SearchOff,
-                        tr("Немає у вивантаженні 1С", "Нет в выгрузке 1С"),
-                        tr("Штрихкод ${st.code}", "Штрихкод ${st.code}"),
+                        "Немає у вивантаженні 1С",
+                        "Штрихкод ${st.code}",
                     )
-                    Button(onClick = { vm.search(st.code) }) { Text(tr("Шукати на сайті", "Искать на сайте")) }
+                    Button(onClick = { vm.search(st.code) }) { Text("Шукати на сайті") }
                 }
             }
             is StockState.Pick -> {
-                item { Text(tr("Обери товар", "Выбери товар"), style = MaterialTheme.typography.titleMedium) }
+                item { Text("Обери товар", style = MaterialTheme.typography.titleMedium) }
                 items(st.items, key = { it.id }) { ProductCard(it, onClick = { vm.open(it.urlKey) }) }
             }
             is StockState.Ready -> {
@@ -374,7 +370,7 @@ private val FILE_TYPES = arrayOf(
 private fun ShopHeader(e: Employee, onProfile: () -> Unit) {
     Row(verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(tr("Залишки магазину", "Остатки магазина"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Залишки магазину", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Store, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -393,13 +389,10 @@ private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Text(
                 if (info == null) {
-                    tr("Залишки магазину ще не завантажено.", "Остатки магазина ещё не загружены.")
+                    "Залишки магазину ще не завантажено."
                 } else {
                     val date = info.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"
-                    tr(
-                        "Вивантаження 1С: $date · ${info.rows} позицій" + (info.updatedBy?.let { " · $it" } ?: ""),
-                        "Выгрузка 1С: $date · ${info.rows} позиций" + (info.updatedBy?.let { " · $it" } ?: ""),
-                    )
+                    "Вивантаження 1С: $date · ${info.rows} позицій" + (info.updatedBy?.let { " · $it" } ?: "")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -408,11 +401,10 @@ private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
             FilledTonalButton(onClick = onUpload) {
                 Icon(Icons.Rounded.UploadFile, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(tr("Завантажити вивантаження 1С", "Загрузить выгрузку 1С"))
+                Text("Завантажити вивантаження 1С")
             }
             Text(
-                tr("Excel (.xlsx) або CSV з колонками «Артикул» / «Штрихкод» і «Кількість» / «Залишок».",
-                    "Excel (.xlsx) или CSV с колонками «Артикул» / «Штрихкод» и «Количество» / «Остаток»."),
+                "Excel (.xlsx) або CSV з колонками «Артикул» / «Штрихкод» і «Кількість» / «Залишок».",
                 Modifier.padding(top = 6.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -429,7 +421,7 @@ private fun ProductHeader(p: ProductDetails?, item: StockItem?) {
         Column(Modifier.weight(1f)) {
             Text(p?.name ?: item?.name ?: "—", style = MaterialTheme.typography.titleSmall, maxLines = 2)
             (p?.article ?: item?.article)?.let {
-                Text(tr("Арт. $it", "Арт. $it"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -451,19 +443,19 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
                         color = if (item.qty > 0) InStockGreen else OutOfStockGrey,
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(tr("шт. на залишку", "шт. на остатке"), Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.titleMedium)
+                    Text("шт. на залишку", Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.titleMedium)
                 }
                 st.stockError != null -> Text(st.stockError, color = MaterialTheme.colorScheme.error)
-                !uploaded -> Text(tr("Завантаж вивантаження 1С, щоб бачити кількість.", "Загрузи выгрузку 1С, чтобы видеть количество."))
+                !uploaded -> Text("Завантаж вивантаження 1С, щоб бачити кількість.")
                 else -> Text(
-                    tr("У вивантаженні магазину цього товару немає (0 шт. або інший артикул).", "В выгрузке магазина этого товара нет (0 шт. или другой артикул)."),
+                    "У вивантаженні магазину цього товару немає (0 шт. або інший артикул).",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             st.siteAvailable?.let { have ->
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    tr("На сайті: ", "На сайте: ") + if (have) tr("є", "есть") else tr("немає", "нет"),
+                    "На сайті: " + if (have) "є" else "немає",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (have) InStockGreen else OutOfStockGrey,
                 )
@@ -479,22 +471,22 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
         ImportState.Idle -> {}
         ImportState.Reading -> AlertDialog(
             onDismissRequest = {},
-            title = { Text(tr("Читаємо файл…", "Читаем файл…")) },
+            title = { Text("Читаємо файл…") },
             text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
             confirmButton = {},
         )
         is ImportState.Preview -> AlertDialog(
             onDismissRequest = vm::dismissImport,
-            title = { Text(tr("Завантажити залишки?", "Загрузить остатки?")) },
+            title = { Text("Завантажити залишки?") },
             text = {
                 val c = s.parsed.columns
                 Column {
-                    Text(tr("Позицій: ${s.parsed.rows.size}", "Позиций: ${s.parsed.rows.size}"), fontWeight = FontWeight.Bold)
+                    Text("Позицій: ${s.parsed.rows.size}", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
-                    c.article?.let { Text(tr("Артикул: «$it»", "Артикул: «$it»")) }
-                    c.barcode?.let { Text(tr("Штрихкод: «$it»", "Штрихкод: «$it»")) }
-                    c.name?.let { Text(tr("Назва: «$it»", "Название: «$it»")) }
-                    Text(tr("Кількість: «${c.qty}»", "Количество: «${c.qty}»"))
+                    c.article?.let { Text("Артикул: «$it»") }
+                    c.barcode?.let { Text("Штрихкод: «$it»") }
+                    c.name?.let { Text("Назва: «$it»") }
+                    Text("Кількість: «${c.qty}»")
                     Spacer(Modifier.height(8.dp))
                     s.parsed.rows.take(3).forEach { r ->
                         Text(
@@ -504,43 +496,40 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        tr("Залишки магазину «${e.shop}» буде замінено цим файлом.", "Остатки магазина «${e.shop}» будут заменены этим файлом."),
+                        "Залишки магазину «${e.shop}» буде замінено цим файлом.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
-            confirmButton = { TextButton(onClick = { vm.upload(s.parsed) }) { Text(tr("Завантажити", "Загрузить")) } },
-            dismissButton = { TextButton(onClick = vm::dismissImport) { Text(tr("Скасувати", "Отмена")) } },
+            confirmButton = { TextButton(onClick = { vm.upload(s.parsed) }) { Text("Завантажити") } },
+            dismissButton = { TextButton(onClick = vm::dismissImport) { Text("Скасувати") } },
         )
         is ImportState.Uploading -> AlertDialog(
             onDismissRequest = {},
-            title = { Text(tr("Завантажуємо…", "Загружаем…")) },
+            title = { Text("Завантажуємо…") },
             text = {
                 Column {
                     if (s.total > 0) LinearProgressIndicator({ s.done.toFloat() / s.total }, Modifier.fillMaxWidth())
                     else LinearProgressIndicator(Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
-                    Text(tr("Порівнюємо з попереднім вивантаженням і пишемо зміни.", "Сравниваем с прошлой выгрузкой и пишем изменения."), style = MaterialTheme.typography.bodySmall)
+                    Text("Порівнюємо з попереднім вивантаженням і пишемо зміни.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {},
         )
         is ImportState.Done -> AlertDialog(
             onDismissRequest = vm::dismissImport,
-            title = { Text(tr("Готово", "Готово")) },
+            title = { Text("Готово") },
             text = {
                 Text(
-                    tr(
-                        "Позицій у магазині: ${s.result.total}. Змінено: ${s.result.changed}, прибрано: ${s.result.removed}.",
-                        "Позиций в магазине: ${s.result.total}. Изменено: ${s.result.changed}, убрано: ${s.result.removed}.",
-                    ),
+                    "Позицій у магазині: ${s.result.total}. Змінено: ${s.result.changed}, прибрано: ${s.result.removed}.",
                 )
             },
             confirmButton = { TextButton(onClick = vm::dismissImport) { Text("OK") } },
         )
         is ImportState.Failed -> AlertDialog(
             onDismissRequest = vm::dismissImport,
-            title = { Text(tr("Не вдалося завантажити", "Не удалось загрузить")) },
+            title = { Text("Не вдалося завантажити") },
             text = { Text(s.message) },
             confirmButton = { TextButton(onClick = vm::dismissImport) { Text("OK") } },
         )

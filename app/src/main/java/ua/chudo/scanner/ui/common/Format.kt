@@ -6,8 +6,10 @@ import android.net.Uri
 import android.widget.Toast
 import java.text.NumberFormat
 import java.util.Locale
-import ua.chudo.scanner.i18n.tr
-import ua.chudo.scanner.chudoApp
+
+/** +380671234567 → +380 67 123 45 67 */
+fun formatPhone(p: String): String =
+    if (p.length == 13 && p.startsWith("+380")) "+380 ${p.substring(4, 6)} ${p.substring(6, 9)} ${p.substring(9, 11)} ${p.substring(11)}" else p
 
 private val priceFormat = NumberFormat.getIntegerInstance(Locale.forLanguageTag("uk-UA"))
 
@@ -15,7 +17,7 @@ fun formatPrice(value: Double): String = "${priceFormat.format(value)} грн"
 
 fun Context.openUrl(url: String) {
     runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-        .onFailure { Toast.makeText(this, chudoApp.prefs.lang.value.tr("Немає застосунку, щоб відкрити посилання", "Нет приложения, чтобы открыть ссылку"), Toast.LENGTH_SHORT).show() }
+        .onFailure { Toast.makeText(this, "Немає застосунку, щоб відкрити посилання", Toast.LENGTH_SHORT).show() }
 }
 
 fun Context.openMap(address: String) {

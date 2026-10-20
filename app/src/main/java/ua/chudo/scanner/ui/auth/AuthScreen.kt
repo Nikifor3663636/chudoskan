@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -73,6 +74,7 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.FirebaseTooManyRequestsException
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.PhoneAuthCredential
@@ -93,10 +95,8 @@ import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.NewProfile
 import ua.chudo.scanner.data.PhoneEvent
-import ua.chudo.scanner.i18n.title
-import ua.chudo.scanner.i18n.tr
 import ua.chudo.scanner.ui.common.RegionPickerSheet
-import uniffi.chudo_core.Lang
+import ua.chudo.scanner.ui.common.formatPhone
 
 /** Список магазинов города не зависит от товара: сайт отдаёт все магазины для любого id. */
 private const val ANY_PRODUCT_ID = 1L
@@ -124,7 +124,6 @@ class AuthViewModel(
     private val _shops = MutableStateFlow<ShopsState>(ShopsState.Loading)
     val shops = _shops.asStateFlow()
     private var shopsJob: Job? = null
-    private val lang get() = prefs.lang.value
 
     fun loadShops(region: String) {
         shopsJob?.cancel()
@@ -140,7 +139,7 @@ class AuthViewModel(
         }
     }
 
-    // --- Вход, регистрация и привязка по телефону ---
+    // --- Вход и регистрация по телефону ---
     private val _codeSent = MutableStateFlow(false)
     val codeSent = _codeSent.asStateFlow()
     private val _code = MutableStateFlow("")
@@ -148,22 +147,20 @@ class AuthViewModel(
     /** SystemClock.elapsedRealtime(), с которого можно отправить код повторно. */
     private val _resendAt = MutableStateFlow(0L)
     val resendAt = _resendAt.asStateFlow()
-    /** Телефон привязан к старому аккаунту. */
-    private val _linked = MutableStateFlow(false)
-    val linked = _linked.asStateFlow()
     private var verificationId: String? = null
     private var resendToken: PhoneAuthProvider.ForceResendingToken? = null
     private var lastRequest: (Activity, Boolean) -> Unit = { _, _ -> }
 
     fun setCode(value: String) { _code.value = value.filter(Char::isDigit).take(6) }
 
-    /** Отправить SMS. [profile] — для регистрации, [link] — привязка к текущему (email) аккаунту. */
-    fun requestCode(activity: Activity, digits: String, profile: NewProfile?, link: Boolean, resend: Boolean = false) {
+    /** Отправить SMS. [profile] и [password] — для регистрации; без них — вход по SMS («Забув пароль»). */
+    fun requestCode(activity: Activity, digits: String, profile: NewProfile?, password: Passwords?, resend: Boolean = false) {
         if (_busy.value) return
         clearMessages()
         profile?.let { p -> check(p.name, p.shop)?.let { return fail(it) } }
-        if (digits.length != 9) return fail(lang.tr("Введи номер повністю: +380 XX XXX XX XX.", "Введи номер полностью: +380 XX XXX XX XX."))
-        lastRequest = { a, r -> requestCode(a, digits, profile, link, r) }
+        if (digits.length != 9) return fail("Введи номер повністю: +380 XX XXX XX XX.")
+        password?.problem()?.let { return fail(it) }
+        lastRequest = { a, r -> requestCode(a, digits, profile, password, r) }
         _busy.value = true
         auth.sendCode(activity, "+380$digits", if (resend) resendToken else null) { ev ->
             when (ev) {
@@ -178,11 +175,11 @@ class AuthViewModel(
                     ev.credential.smsCode?.let { _code.value = it }
                     _codeSent.value = true
                     _busy.value = false
-                    finish(ev.credential, profile, link)
+                    finish(ev.credential, profile, password)
                 }
                 is PhoneEvent.Failed -> {
                     _busy.value = false
-                    _error.value = ev.error.authMessage(lang)
+                    _error.value = ev.error.authMessage()
                 }
             }
         }
@@ -190,19 +187,14 @@ class AuthViewModel(
 
     fun resend(activity: Activity) = lastRequest(activity, true)
 
-    fun verify(profile: NewProfile?, link: Boolean) {
+    fun verify(profile: NewProfile?, password: Passwords?) {
         val id = verificationId ?: return
-        if (_code.value.length != 6) return fail(lang.tr("Введи 6 цифр із SMS.", "Введи 6 цифр из SMS."))
-        finish(auth.credential(id, _code.value), profile, link)
+        if (_code.value.length != 6) return fail("Введи 6 цифр із SMS.")
+        finish(auth.credential(id, _code.value), profile, password)
     }
 
-    private fun finish(credential: PhoneAuthCredential, profile: NewProfile?, link: Boolean) = submit {
-        if (link) {
-            auth.linkPhone(credential)
-            _linked.value = true
-        } else {
-            auth.signInWithPhone(credential, profile)
-        }
+    private fun finish(credential: PhoneAuthCredential, profile: NewProfile?, password: Passwords?) = submit {
+        auth.signInWithPhone(credential, profile, password?.new)
     }
 
     fun resetPhone() {
@@ -212,10 +204,10 @@ class AuthViewModel(
         verificationId = null
     }
 
-    /** Вход в старый аккаунт по email — только чтобы потом привязать телефон. */
-    fun signIn(email: String, password: String) = submit {
-        if (email.isBlank() || password.isEmpty()) return@submit fail(lang.tr("Введи email і пароль.", "Введи email и пароль."))
-        auth.signIn(email, password)
+    fun signIn(digits: String, password: String) = submit {
+        if (digits.length != 9) return@submit fail("Введи номер повністю: +380 XX XXX XX XX.")
+        if (password.isEmpty()) return@submit fail("Введи пароль.")
+        auth.signInWithPassword(digits, password)
     }
 
     fun completeProfile(name: String, region: String, shop: String) = submit {
@@ -223,17 +215,11 @@ class AuthViewModel(
         auth.completeProfile(name, region, shop)
     }
 
-    fun resetPassword(email: String) = submit {
-        if (email.isBlank()) return@submit fail(lang.tr("Спочатку введи email.", "Сначала введи email."))
-        auth.resetPassword(email)
-        _info.value = lang.tr("Лист для зміни пароля надіслано на $email.", "Письмо для смены пароля отправлено на $email.")
-    }
-
     fun clearMessages() { _error.value = null; _info.value = null }
 
     private fun check(name: String, shop: String): String? = when {
-        name.isBlank() -> lang.tr("Введи ім'я.", "Введи имя.")
-        shop.isBlank() -> lang.tr("Обери свій магазин.", "Выбери свой магазин.")
+        name.isBlank() -> "Введи ім'я."
+        shop.isBlank() -> "Обери свій магазин."
         else -> null
     }
 
@@ -249,7 +235,7 @@ class AuthViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _error.value = e.authMessage(lang)
+                _error.value = e.authMessage()
             } finally {
                 _busy.value = false
             }
@@ -257,18 +243,30 @@ class AuthViewModel(
     }
 }
 
-fun Throwable.authMessage(lang: Lang): String = with(lang) {
+/** Новый пароль и повтор. */
+data class Passwords(val new: String, val repeat: String) {
+    fun problem(): String? = when {
+        new.length < MIN_PASSWORD -> "Пароль — щонайменше $MIN_PASSWORD символів."
+        new != repeat -> "Паролі не збігаються."
+        else -> null
+    }
+}
+
+const val MIN_PASSWORD = 6
+
+fun Throwable.authMessage(): String = run {
     when (val e = this@authMessage) {
-        is FirebaseNetworkException -> tr("Немає інтернету.", "Нет интернета.")
-        is FirebaseTooManyRequestsException -> tr("Забагато спроб. Зачекай кілька хвилин.", "Слишком много попыток. Подожди несколько минут.")
-        is FirebaseAuthWeakPasswordException -> tr("Пароль закороткий — щонайменше 6 символів.", "Пароль слишком короткий — минимум 6 символов.")
-        is FirebaseAuthUserCollisionException -> tr("Цей номер уже прив'язано до іншого акаунта.", "Этот номер уже привязан к другому аккаунту.")
-        is FirebaseAuthInvalidUserException -> tr("Такого акаунта немає або його вимкнено.", "Такого аккаунта нет или он отключён.")
-        is FirebaseAuthInvalidCredentialsException -> tr("Невірний код або дані входу.", "Неверный код или данные входа.")
+        is FirebaseAuthRecentLoginRequiredException -> "Для зміни пароля введи поточний пароль або увійди ще раз через SMS."
+        is FirebaseNetworkException -> "Немає інтернету."
+        is FirebaseTooManyRequestsException -> "Забагато спроб. Зачекай кілька хвилин."
+        is FirebaseAuthWeakPasswordException -> "Пароль закороткий — щонайменше 6 символів."
+        is FirebaseAuthUserCollisionException -> "Цей номер уже прив'язано до іншого акаунта."
+        is FirebaseAuthInvalidUserException -> "Акаунта з таким номером немає або його вимкнено."
+        is FirebaseAuthInvalidCredentialsException -> "Невірний номер, пароль або код."
         is FirebaseFirestoreException -> if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-            tr("Немає доступу. Перевір правила Firestore (firestore.rules).", "Нет доступа. Проверь правила Firestore (firestore.rules).")
+            "Немає доступу. Перевір правила Firestore (firestore.rules)."
         } else {
-            tr("Помилка бази: ${e.message}", "Ошибка базы: ${e.message}")
+            "Помилка бази: ${e.message}"
         }
         else -> e.message ?: e.javaClass.simpleName
     }
@@ -291,54 +289,91 @@ fun AuthGate(content: @Composable (Employee) -> Unit) {
                 }
             }
             content(s.employee)
-            PhoneLinkOffer(s.employee.uid)
+            SetPasswordPrompt()
         }
         is AuthState.Pending -> {
             AuthScreen(s)
-            PhoneLinkOffer(s.employee.uid)
+            SetPasswordPrompt()
         }
         else -> AuthScreen(s)
     }
 }
 
-/** Старому email-аккаунту один раз предлагаем привязать телефон (uid не меняется). */
+/** После входа по SMS (или если пароля ещё нет) — предложить задать пароль. */
 @Composable
-private fun PhoneLinkOffer(uid: String) {
+private fun SetPasswordPrompt() {
     val app = LocalContext.current.chudoApp
-    val activity = LocalContext.current.findActivity()
-    var show by remember(uid) { mutableStateOf(app.auth.needsPhoneLink() && !app.prefs.phoneLinkOffered(uid)) }
-    if (!show) return
-    val vm: AuthViewModel = viewModel(key = "link", factory = viewModelFactory { initializer { AuthViewModel(app.auth, app.repository, app.prefs) } })
-    val codeSent by vm.codeSent.collectAsStateWithLifecycle()
-    val busy by vm.busy.collectAsStateWithLifecycle()
-    val linked by vm.linked.collectAsStateWithLifecycle()
-    var digits by rememberSaveable { mutableStateOf("") }
-    val close = { app.prefs.markPhoneLinkOffered(uid); show = false }
-    LaunchedEffect(linked) { if (linked) close() }
+    val ask by app.auth.askPassword.collectAsStateWithLifecycle()
+    if (!ask) return
+    PasswordDialog(
+        title = "Встанови пароль",
+        text = "Далі входитимеш за номером телефону і паролем. Забудеш — відновиш через SMS.",
+        needCurrent = false,
+        onDismiss = app.auth::skipPassword,
+        dismissText = "Пізніше",
+    )
+}
+
+/**
+ * Задать или сменить пароль. [needCurrent] — спросить текущий пароль
+ * (Firebase требует свежий вход для смены).
+ */
+@Composable
+fun PasswordDialog(
+    title: String,
+    text: String?,
+    needCurrent: Boolean,
+    onDismiss: () -> Unit,
+    dismissText: String = "Скасувати",
+    onDone: () -> Unit = onDismiss,
+) {
+    val app = LocalContext.current.chudoApp
+    val scope = rememberCoroutineScope()
+    var current by rememberSaveable { mutableStateOf("") }
+    var new by rememberSaveable { mutableStateOf("") }
+    var repeat by rememberSaveable { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
     AlertDialog(
-        onDismissRequest = {},
-        title = { Text(tr("Прив'яжи телефон", "Привяжи телефон")) },
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(title) },
         text = {
             Column {
-                Text(
-                    tr(
-                        "Вхід по email більше не підтримується. Прив'яжи номер — далі входитимеш за кодом з SMS. Дані акаунта збережуться.",
-                        "Вход по email больше не поддерживается. Привяжи номер — дальше будешь входить по коду из SMS. Данные аккаунта сохранятся.",
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(12.dp))
-                if (codeSent) CodeFields(vm, digits) else PhoneField(digits, !busy) { digits = it }
-                Messages(vm)
+                text?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(12.dp))
+                }
+                if (needCurrent) {
+                    PasswordField(current, "Поточний пароль") { current = it }
+                    Spacer(Modifier.height(10.dp))
+                }
+                PasswordField(new, "Новий пароль") { new = it }
+                Spacer(Modifier.height(10.dp))
+                PasswordField(repeat, "Повтори пароль") { repeat = it }
+                error?.let { Text(it, Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
         },
         confirmButton = {
             TextButton(enabled = !busy, onClick = {
-                if (codeSent) vm.verify(null, link = true)
-                else activity?.let { vm.requestCode(it, digits, null, link = true) }
-            }) { Text(if (codeSent) tr("Підтвердити", "Подтвердить") else tr("Надіслати код", "Отправить код")) }
+                error = Passwords(new, repeat).problem() ?: if (needCurrent && current.isEmpty()) "Введи поточний пароль." else null
+                if (error != null) return@TextButton
+                busy = true
+                scope.launch {
+                    try {
+                        if (needCurrent) app.auth.reauthenticate(current)
+                        app.auth.setPassword(new)
+                        onDone()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        error = if (needCurrent && e is FirebaseAuthInvalidCredentialsException) "Поточний пароль невірний." else e.authMessage()
+                    } finally {
+                        busy = false
+                    }
+                }
+            }) { if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Зберегти") }
         },
-        dismissButton = { TextButton(onClick = close) { Text(tr("Пізніше", "Позже")) } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(dismissText) } },
     )
 }
 
@@ -351,7 +386,6 @@ private fun AuthScreen(state: AuthState) {
             .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LangSwitch(app.prefs)
         Icon(
             painterResource(R.drawable.logo_wordmark), null,
             Modifier.fillMaxWidth(0.7f).height(72.dp),
@@ -361,60 +395,44 @@ private fun AuthScreen(state: AuthState) {
         when (state) {
             AuthState.NotConfigured -> Notice(
                 Icons.Rounded.CloudOff,
-                tr("Вхід не підключено", "Вход не подключён"),
-                tr(
-                    "У цій збірці немає google-services.json. Додай файл з консолі Firebase у папку app/ і збери APK заново.",
-                    "В этой сборке нет google-services.json. Добавь файл из консоли Firebase в папку app/ и собери APK заново.",
-                ),
+                "Вхід не підключено",
+                "У цій збірці немає google-services.json. Додай файл з консолі Firebase у папку app/ і збери APK заново.",
             )
             AuthState.Loading, is AuthState.Ready -> CircularProgressIndicator(Modifier.padding(top = 48.dp))
             AuthState.SignedOut -> SignedOutForm(vm)
             is AuthState.NoProfile -> {
-                Text(tr("Заповни дані співробітника", "Заполни данные сотрудника"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(state.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Заповни дані співробітника", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(formatPhone(state.phone), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
                 ProfileFields(vm, needsAccount = false)
-                TextButton(onClick = app.auth::signOut) { Text(tr("Вийти", "Выйти")) }
+                TextButton(onClick = app.auth::signOut) { Text("Вийти") }
             }
             is AuthState.Pending -> {
                 Notice(
                     Icons.Rounded.HourglassTop,
-                    tr("Заявку надіслано", "Заявка отправлена"),
-                    tr(
-                        "${state.employee.name}, адміністратор має підтвердити, що ти працюєш у магазині:\n${state.employee.shop}\n\nЩойно підтвердять — застосунок відкриється сам.",
-                        "${state.employee.name}, администратор должен подтвердить, что ты работаешь в магазине:\n${state.employee.shop}\n\nКак только подтвердят — приложение откроется само.",
-                    ),
+                    "Заявку надіслано",
+                    "${state.employee.name}, адміністратор має підтвердити, що ти працюєш у магазині:\n${state.employee.shop}\n\nЩойно підтвердять — застосунок відкриється сам.",
                 )
-                TextButton(onClick = app.auth::signOut) { Text(tr("Вийти", "Выйти")) }
+                TextButton(onClick = app.auth::signOut) { Text("Вийти") }
             }
             is AuthState.Failed -> {
-                Notice(Icons.Rounded.WarningAmber, tr("Не вдалося завантажити профіль", "Не удалось загрузить профиль"), state.message)
-                TextButton(onClick = app.auth::signOut) { Text(tr("Вийти", "Выйти")) }
+                Notice(Icons.Rounded.WarningAmber, "Не вдалося завантажити профіль", state.message)
+                TextButton(onClick = app.auth::signOut) { Text("Вийти") }
             }
-        }
-    }
-}
-
-@Composable
-private fun LangSwitch(prefs: AppPrefs) {
-    val lang by prefs.lang.collectAsStateWithLifecycle()
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = { prefs.setLang(if (lang == Lang.RU) Lang.UA else Lang.RU) }) {
-            Text(if (lang == Lang.RU) "RU → UA" else "UA → RU")
         }
     }
 }
 
 @Composable
 private fun SignedOutForm(vm: AuthViewModel) {
-    // 0 — вход по телефону, 1 — регистрация, 2 — старый аккаунт с email.
+    // 0 — вход по номеру и паролю, 1 — регистрация, 2 — вход по SMS («Забув пароль»).
     var mode by rememberSaveable { mutableIntStateOf(0) }
     val switchTo = { m: Int -> vm.resetPhone(); mode = m }
     Text(
         when (mode) {
-            1 -> tr("Реєстрація співробітника", "Регистрация сотрудника")
-            2 -> tr("Старий акаунт з email", "Старый аккаунт с email")
-            else -> tr("Вхід для співробітників", "Вход для сотрудников")
+            1 -> "Реєстрація співробітника"
+            2 -> "Відновлення пароля"
+            else -> "Вхід для співробітників"
         },
         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
     )
@@ -422,24 +440,28 @@ private fun SignedOutForm(vm: AuthViewModel) {
     when (mode) {
         1 -> {
             ProfileFields(vm, needsAccount = true)
-            TextButton(onClick = { switchTo(0) }) { Text(tr("Вже є акаунт? Увійти", "Уже есть аккаунт? Войти")) }
+            TextButton(onClick = { switchTo(0) }) { Text("Вже є акаунт? Увійти") }
         }
         2 -> {
-            LoginFields(vm)
-            TextButton(onClick = { switchTo(0) }) { Text(tr("Увійти за номером телефону", "Войти по номеру телефона")) }
+            Text(
+                "Надішлемо код з SMS — після входу задаси новий пароль.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(12.dp))
+            SmsLogin(vm)
+            TextButton(onClick = { switchTo(0) }) { Text("Увійти з паролем") }
         }
         else -> {
-            PhoneLogin(vm)
-            TextButton(onClick = { switchTo(1) }) { Text(tr("Немає акаунта? Зареєструватися", "Нет аккаунта? Зарегистрироваться")) }
-            TextButton(onClick = { switchTo(2) }) {
-                Text(tr("Раніше входив по email?", "Раньше входил по email?"), style = MaterialTheme.typography.bodySmall)
-            }
+            LoginFields(vm)
+            TextButton(onClick = { switchTo(2) }) { Text("Забув пароль або ще не задавав його") }
+            TextButton(onClick = { switchTo(1) }) { Text("Немає акаунта? Зареєструватися") }
         }
     }
 }
 
 @Composable
-private fun PhoneLogin(vm: AuthViewModel) {
+private fun SmsLogin(vm: AuthViewModel) {
     val activity = LocalContext.current.findActivity()
     var digits by rememberSaveable { mutableStateOf("") }
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -448,13 +470,13 @@ private fun PhoneLogin(vm: AuthViewModel) {
         CodeFields(vm, digits)
         Messages(vm)
         Spacer(Modifier.height(16.dp))
-        SubmitButton(tr("Увійти", "Войти"), busy) { vm.verify(null, link = false) }
+        SubmitButton("Увійти", busy) { vm.verify(null, null) }
     } else {
         PhoneField(digits, !busy) { digits = it }
         Messages(vm)
         Spacer(Modifier.height(16.dp))
-        SubmitButton(tr("Отримати код", "Получить код"), busy) {
-            activity?.let { vm.requestCode(it, digits, null, link = false) }
+        SubmitButton("Отримати код", busy) {
+            activity?.let { vm.requestCode(it, digits, null, null) }
         }
     }
 }
@@ -470,7 +492,7 @@ private fun PhoneField(digits: String, enabled: Boolean, onChange: (String) -> U
             onChange(d.trimStart('0').take(9))
         },
         enabled = enabled, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text(tr("Номер телефону", "Номер телефона")) },
+        label = { Text("Номер телефону") },
         prefix = { Text("+380 ") },
         placeholder = { Text("XX XXX XX XX") },
         leadingIcon = { Icon(Icons.Rounded.Phone, null) },
@@ -511,21 +533,21 @@ private fun CodeFields(vm: AuthViewModel, digits: String) {
         }
     }
     Text(
-        tr("Код надіслано на +380 ${PhoneMask.filter(AnnotatedString(digits)).text}", "Код отправлен на +380 ${PhoneMask.filter(AnnotatedString(digits)).text}"),
+        "Код надіслано на +380 ${PhoneMask.filter(AnnotatedString(digits)).text}",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(10.dp))
     OutlinedTextField(
         value = code, onValueChange = vm::setCode, enabled = !busy,
         modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text(tr("Код з SMS", "Код из SMS")) },
+        label = { Text("Код з SMS") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
         shape = RoundedCornerShape(14.dp),
     )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(onClick = vm::resetPhone, enabled = !busy) { Text(tr("Змінити номер", "Изменить номер")) }
+        TextButton(onClick = vm::resetPhone, enabled = !busy) { Text("Змінити номер") }
         TextButton(onClick = { activity?.let(vm::resend) }, enabled = left == 0 && !busy) {
-            Text(if (left > 0) tr("Ще раз через $left с", "Ещё раз через $left с") else tr("Надіслати ще раз", "Отправить ещё раз"))
+            Text(if (left > 0) "Ще раз через $left с" else "Надіслати ще раз")
         }
     }
 }
@@ -538,19 +560,18 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 @Composable
 private fun LoginFields(vm: AuthViewModel) {
-    var email by rememberSaveable { mutableStateOf("") }
+    var digits by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     val busy by vm.busy.collectAsStateWithLifecycle()
-    EmailField(email) { email = it }
+    PhoneField(digits, !busy) { digits = it }
     Spacer(Modifier.height(10.dp))
-    PasswordField(password) { password = it }
+    PasswordField(password, "Пароль") { password = it }
     Messages(vm)
     Spacer(Modifier.height(16.dp))
-    SubmitButton(tr("Увійти", "Войти"), busy) { vm.signIn(email, password) }
-    TextButton(onClick = { vm.resetPassword(email) }, enabled = !busy) { Text(tr("Забув пароль", "Забыл пароль")) }
+    SubmitButton("Увійти", busy) { vm.signIn(digits, password) }
 }
 
-/** Регистрация (имя + телефон + город + магазин) или дозаполнение анкеты. */
+/** Регистрация (имя + телефон + пароль + город + магазин) или дозаполнение анкеты. */
 @Composable
 private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     val app = LocalContext.current.chudoApp
@@ -559,6 +580,8 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     var digits by rememberSaveable { mutableStateOf("") }
     var region by rememberSaveable { mutableStateOf(app.prefs.region.value.code) }
     var shop by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var repeat by rememberSaveable { mutableStateOf("") }
     var manualShop by rememberSaveable { mutableStateOf(false) }
     var showRegions by rememberSaveable { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -572,26 +595,30 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
         CodeFields(vm, digits)
         Messages(vm)
         Spacer(Modifier.height(16.dp))
-        SubmitButton(tr("Зареєструватися", "Зарегистрироваться"), busy) {
-            vm.verify(NewProfile(name, region, shop), link = false)
+        SubmitButton("Зареєструватися", busy) {
+            vm.verify(NewProfile(name, region, shop), Passwords(password, repeat))
         }
         return
     }
 
     OutlinedTextField(
         value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text(tr("Ім'я та прізвище", "Имя и фамилия")) }, shape = RoundedCornerShape(14.dp),
+        label = { Text("Ім'я та прізвище") }, shape = RoundedCornerShape(14.dp),
     )
     if (needsAccount) {
         Spacer(Modifier.height(10.dp))
         PhoneField(digits, !busy) { digits = it }
+        Spacer(Modifier.height(10.dp))
+        PasswordField(password, "Пароль (щонайменше $MIN_PASSWORD символів)") { password = it }
+        Spacer(Modifier.height(10.dp))
+        PasswordField(repeat, "Повтори пароль") { repeat = it }
     }
     Spacer(Modifier.height(16.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(tr("Твій магазин", "Твой магазин"), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Text("Твій магазин", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         AssistChip(
             onClick = { showRegions = true },
-            label = { Text(regionObj.title()) },
+            label = { Text(regionObj.name) },
             leadingIcon = { Icon(Icons.Rounded.LocationOn, null, Modifier.size(18.dp)) },
         )
     }
@@ -611,13 +638,13 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
                     }
                 }
             }
-            TextButton(onClick = { manualShop = true; shop = "" }) { Text(tr("Мого магазину немає в списку", "Моего магазина нет в списке")) }
+            TextButton(onClick = { manualShop = true; shop = "" }) { Text("Мого магазину немає в списку") }
         } else {
             ManualShop(shop) { shop = it }
         }
         ShopsState.Failed -> {
             Text(
-                tr("Не вдалося завантажити магазини з сайту — впиши адресу вручну.", "Не удалось загрузить магазины с сайта — впиши адрес вручную."),
+                "Не вдалося завантажити магазини з сайту — впиши адресу вручну.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             ManualShop(shop) { shop = it }
@@ -625,15 +652,12 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     }
     Messages(vm)
     Spacer(Modifier.height(16.dp))
-    SubmitButton(if (needsAccount) tr("Отримати код", "Получить код") else tr("Зберегти", "Сохранить"), busy) {
-        if (needsAccount) activity?.let { vm.requestCode(it, digits, NewProfile(name, region, shop), link = false) }
+    SubmitButton(if (needsAccount) "Отримати код" else "Зберегти", busy) {
+        if (needsAccount) activity?.let { vm.requestCode(it, digits, NewProfile(name, region, shop), Passwords(password, repeat)) }
         else vm.completeProfile(name, region, shop)
     }
     Text(
-        tr(
-            "Магазин змінити потім може лише адміністратор. Після реєстрації адміністратор підтверджує акаунт.",
-            "Магазин потом может сменить только администратор. После регистрации администратор подтверждает аккаунт.",
-        ),
+        "Магазин змінити потім може лише адміністратор. Після реєстрації адміністратор підтверджує акаунт.",
         Modifier.padding(top = 8.dp),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -654,27 +678,18 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
 private fun ManualShop(value: String, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(),
-        label = { Text(tr("Адреса магазину", "Адрес магазина")) },
+        label = { Text("Адреса магазину") },
         leadingIcon = { Icon(Icons.Rounded.Store, null) },
         shape = RoundedCornerShape(14.dp),
     )
 }
 
 @Composable
-private fun EmailField(value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text("Email") }, shape = RoundedCornerShape(14.dp),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-    )
-}
-
-@Composable
-private fun PasswordField(value: String, onChange: (String) -> Unit) {
+private fun PasswordField(value: String, label: String, onChange: (String) -> Unit) {
     var visible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text(tr("Пароль", "Пароль")) }, shape = RoundedCornerShape(14.dp),
+        label = { Text(label) }, shape = RoundedCornerShape(14.dp),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {

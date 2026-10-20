@@ -1,14 +1,10 @@
 package ua.chudo.scanner.data
 
-import android.util.Base64
-import uniffi.chudo_core.PhotoGuess
+import uniffi.chudo_core.Lang
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
 import uniffi.chudo_core.ShopAvailability
 import uniffi.chudo_core.buildDetailsBody
-import uniffi.chudo_core.buildVisionBody
-import uniffi.chudo_core.openaiUrl
-import uniffi.chudo_core.parseVisionResponse
 import uniffi.chudo_core.buildSearchBody
 import uniffi.chudo_core.classifyQuery
 import uniffi.chudo_core.isBarcode
@@ -19,7 +15,6 @@ import uniffi.chudo_core.shopsUrl
 import uniffi.chudo_core.upcCandidates
 import uniffi.chudo_core.upcLookupUrl
 import uniffi.chudo_core.upcTitle
-import ua.chudo.scanner.i18n.tr
 
 /** Как нашли товар — показываем пользователю, чтобы было понятно, чему верить. */
 sealed interface Via {
@@ -27,11 +22,7 @@ sealed interface Via {
     data object Remembered : Via
     data class UpcArticle(val article: String) : Via
     data class UpcTitle(val title: String) : Via
-    /** ChatGPT распознал товар на фото. */
-    data class Photo(val guess: String) : Via
 }
-
-class NoAiKeyException : Exception("Немає ключа OpenAI")
 
 sealed interface LookupResult {
     val query: String
@@ -63,7 +54,8 @@ class ChudoRepository(
     private val client: SiteClient,
     private val prefs: AppPrefs,
 ) {
-    private val lang get() = prefs.lang.value
+    /** Застосунок лише українською — і дані сайту теж. */
+    private val lang = Lang.UA
 
     suspend fun search(query: String, pageSize: Int = 20): List<ProductSummary> =
         parseSearch(client.graphql(buildSearchBody(query, pageSize.toUInt()), lang), query)
@@ -90,65 +82,26 @@ class ChudoRepository(
             prefs.rememberedProduct(bc)?.let { return LookupResult.Single(code, bc, it, Via.Remembered) }
         }
 
-        onStep(lang.tr("Шукаємо «$code» на сайті…", "Ищем «$code» на сайте…"))
+        onStep("Шукаємо «$code» на сайті…")
         pick(code, barcode, search(code), Via.Direct)?.let { return it }
         if (barcode == null) return LookupResult.NotFound(code, null, emptyList())
 
-        onStep(lang.tr("Сайт не знає штрихкодів — шукаємо у відкритій базі…", "Сайт не знает штрихкодов — ищем в открытой базе…"))
+        onStep("Сайт не знає штрихкодів — шукаємо у відкритій базі…")
         val upc = runCatching { client.getExternal(upcLookupUrl(barcode)) }.getOrNull()
             ?: return LookupResult.NotFound(code, barcode, emptyList())
 
         val articles = upcCandidates(upc, barcode, 4u)
         for (article in articles) {
-            onStep(lang.tr("Пробуємо артикул $article…", "Пробуем артикул $article…"))
+            onStep("Пробуємо артикул $article…")
             pick(code, barcode, search(article), Via.UpcArticle(article))?.let { return it }
         }
 
         upcTitle(upc)?.let { title ->
-            onStep(lang.tr("Шукаємо за назвою…", "Ищем по названию…"))
+            onStep("Шукаємо за назвою…")
             val short = title.split(' ').take(6).joinToString(" ")
             pick(code, barcode, search(short), Via.UpcTitle(title))?.let { return it }
         }
         return LookupResult.NotFound(code, barcode, articles)
-    }
-
-    /** Фото → ChatGPT → поисковый запрос. */
-    suspend fun identify(jpeg: ByteArray): PhotoGuess {
-        val key = prefs.aiKey.value ?: throw NoAiKeyException()
-        val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
-        val json = client.postExternal(
-            openaiUrl(),
-            buildVisionBody(prefs.aiModel.value, b64),
-            mapOf("Authorization" to "Bearer $key"),
-        )
-        return parseVisionResponse(json)
-    }
-
-    /**
-     * Фото → распознавание → обычный поиск. Если по артикулу с упаковки
-     * ничего нет, пробуем «бренд + назва».
-     */
-    suspend fun lookupPhoto(jpeg: ByteArray, onStep: (String) -> Unit): LookupResult {
-        onStep(lang.tr("ChatGPT визначає товар…", "ChatGPT определяет товар…"))
-        val g = identify(jpeg)
-        val label = listOfNotNull(g.brand, g.name.ifBlank { null }, g.article?.let { lang.tr("арт. $it", "арт. $it") })
-            .distinct().joinToString(" · ")
-        val via = Via.Photo(label.ifBlank { g.searchQuery })
-
-        onStep(lang.tr("ChatGPT: «${g.searchQuery}» — шукаємо…", "ChatGPT: «${g.searchQuery}» — ищем…"))
-        val first = withVia(lookup(g.searchQuery), via)
-        if (first !is LookupResult.NotFound || g.article == null) return first
-
-        val byName = listOfNotNull(g.brand, g.name).distinct().joinToString(" ").trim()
-        if (byName.isEmpty() || byName == g.searchQuery) return first
-        onStep(lang.tr("Шукаємо за назвою «$byName»…", "Ищем по названию «$byName»…"))
-        return withVia(lookup(byName), via)
-    }
-
-    private fun withVia(r: LookupResult, via: Via): LookupResult = when (r) {
-        is LookupResult.Single -> r.copy(via = via)
-        is LookupResult.Many -> r.copy(via = via)
-        is LookupResult.NotFound -> r
     }
 
     private fun pick(query: String, barcode: String?, list: List<ProductSummary>, via: Via): LookupResult? {

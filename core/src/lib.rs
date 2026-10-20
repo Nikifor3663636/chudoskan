@@ -3,7 +3,6 @@
 
 uniffi::setup_scaffolding!();
 
-pub mod ai;
 pub mod barcode;
 pub mod error;
 pub mod graphql;
