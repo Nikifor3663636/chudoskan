@@ -77,6 +77,21 @@ Firestore: `users/{uid}` — анкета (`shop`, `shopId`, `approved`), `shops
 Если сотрудник перешёл в другой магазин — удалить его документ в `users`: при следующем входе приложение
 попросит выбрать магазин заново, и анкету нужно будет подтвердить ещё раз.
 
+## Печать ценников
+
+Профиль → «Принтери». Любой принтер, три способа подключения (`print/`):
+
+| Подключение | Как | Код |
+|---|---|---|
+| Сеть магазина | скан /24 на :9100 + mDNS; модель по SNMP (`hrDeviceDescr`/`sysDescr`), Godex по `~HI`; при смене IP принтер находится заново по отпечатку | `PrinterDiscovery`, `Snmp` |
+| Wi-Fi принтера (без роутера) | Brother Wireless Direct `DIRECT-…`, Wi-Fi Direct, AP-режим: `WifiNetworkSpecifier` на время печати (Android 10+), адрес — шлюз сети | `WifiDirectLink` |
+| Bluetooth | спаренный принтер, SPP (RFCOMM) | `BluetoothLink` |
+
+Липкие этикетки — картинка ценника в языке принтера: ZPL (Zebra, Godex), TSPL (TSC, Xprinter и др.), EPL, ESC/POS
+(`LabelEncoder`, байты проверены в `app/src/test`). Язык угадывается по модели, меняется в карточке принтера; «Тест» печатает пробную этикетку.
+A4 — системный друк Android (любой принтер с сервисом печати) или PDF напрямую.
+SSID и пароль Wi-Fi у Godex/Brother задаются с самого принтера или программой производителя: открытой команды для этого у них нет.
+
 ## Сборка APK (Windows)
 
 Нужно: Android Studio (SDK + **NDK** через SDK Manager → SDK Tools), Rust (`rustup`).

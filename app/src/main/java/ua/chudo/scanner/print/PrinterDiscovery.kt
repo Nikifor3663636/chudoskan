@@ -22,8 +22,8 @@ import kotlin.coroutines.resume
 data class NsdHit(val name: String, val host: String)
 
 /**
- * Поиск принтеров только по сети: TCP-connect к :9100 по своей /24 (300 мс) + NsdManager
- * (`_pdl-datastream._tcp`, `_ipp._tcp`).
+ * Поиск принтеров в сети магазина: TCP-connect к :9100 по своей /24 (300 мс) + NsdManager
+ * (`_pdl-datastream._tcp`, `_ipp._tcp`, `_printer._tcp`) + SNMP для модели.
  */
 class PrinterDiscovery(context: Context) {
     private val app = context.applicationContext
@@ -50,7 +50,7 @@ class PrinterDiscovery(context: Context) {
     }
 
     suspend fun nsdHits(windowMs: Long = 2500): List<NsdHit> = coroutineScope {
-        val services = listOf("_pdl-datastream._tcp", "_ipp._tcp")
+        val services = listOf("_pdl-datastream._tcp", "_ipp._tcp", "_printer._tcp")
             .map { async { browse(it, windowMs) } }.awaitAll().flatten()
             .distinctBy { it.serviceName }
         services.mapNotNull { s -> resolve(s)?.let { r -> hostOf(r)?.let { NsdHit(s.serviceName, it) } } }
@@ -61,36 +61,59 @@ class PrinterDiscovery(context: Context) {
         RawTcp.query(host, port, "~HI\r\n".toByteArray(Charsets.US_ASCII))
             ?.filter { it in ' '..'~' }?.trim()?.take(60)?.ifEmpty { null }
 
+    /**
+     * Все принтеры в сети магазина: открытый :9100 (сырая печать) + mDNS (`_pdl-datastream`, `_ipp`).
+     * Модель — по SNMP, затем по имени mDNS, у Godex — по ~HI; по модели угадываем роль и язык.
+     */
     suspend fun discover(port: Int = 9100): List<FoundPrinter> = coroutineScope {
         val hitsJob = async { nsdHits() }
         val open = scanSubnet(port)
-        val brothers = hitsJob.await().filter { it.name.contains("brother", ignoreCase = true) }.associateBy { it.host }
-        val found = open.map { host ->
-            async {
-                brothers[host]?.let { FoundPrinter(host, port, "brother:${it.name}", it.name, LabelKind.PLAIN) }
-                    ?: godexId(host, port)?.let { FoundPrinter(host, port, "godex:$it", "Godex · $it", LabelKind.STICKY) }
-                    ?: FoundPrinter(host, port, ONLY_9100, "Принтер :$port", LabelKind.STICKY)
-            }
-        }.awaitAll()
-        found + brothers.values.filter { b -> found.none { it.host == b.host } }
-            .map { FoundPrinter(it.host, port, "brother:${it.name}", it.name, LabelKind.PLAIN) }
+        val hits = hitsJob.await().associateBy { it.host }
+        val found = open.map { host -> async { identify(host, port, hits[host]?.name) } }.awaitAll()
+        // Офисные принтеры без :9100 (только IPP) — печать через системний друк Android.
+        found + hits.values.filter { h -> found.none { it.host == h.host } }
+            .map { FoundPrinter(it.host, port, "nsd:${it.name}", it.name, LabelKind.PLAIN, PrintLang.PDF) }
+    }
+
+    /** Кто отвечает на [host]:[port]. ~HI шлём только не-офисным: офисный A4 напечатал бы её текстом. */
+    suspend fun identify(host: String, port: Int, nsdName: String? = null): FoundPrinter {
+        val model = Snmp.model(host)
+        val name = model ?: nsdName
+        val guess = name?.let(::guessByModel)
+        if (nsdName != null && nsdName.contains("brother", true)) {
+            return FoundPrinter(host, port, "brother:$nsdName", nsdName, guess?.first ?: LabelKind.PLAIN, guess?.second ?: PrintLang.PDF)
+        }
+        if (guess?.first == LabelKind.PLAIN) return FoundPrinter(host, port, "snmp:$name", name, LabelKind.PLAIN, PrintLang.PDF)
+        // Godex узнаём по ~HI (отпечаток совместим с принтерами, сохранёнными раньше).
+        if (model == null || model.contains("godex", true)) {
+            godexId(host, port)?.let { return FoundPrinter(host, port, "godex:$it", model ?: "Godex · $it", LabelKind.STICKY, PrintLang.ZPL) }
+        }
+        if (name != null) return FoundPrinter(host, port, "snmp:$name", name, guess?.first ?: LabelKind.STICKY, guess?.second ?: PrintLang.ZPL)
+        return FoundPrinter(host, port, ONLY_9100, "Принтер $host", LabelKind.STICKY, PrintLang.ZPL)
     }
 
     /** Отпечаток для принтера, добавленного вручную. */
     suspend fun fingerprintOf(host: String, port: Int, role: LabelKind): Pair<String, String?> {
-        nsdHits().firstOrNull { it.host == host && it.name.contains("brother", true) }?.let { return "brother:${it.name}" to it.name }
-        if (role == LabelKind.PLAIN) return "ip:$host" to null
-        godexId(host, port)?.let { return "godex:$it" to "Godex · $it" }
-        return ONLY_9100 to null
+        val nsdName = nsdHits().firstOrNull { it.host == host }?.name
+        val f = if (role == LabelKind.PLAIN && Snmp.model(host) == null && nsdName == null) null else identify(host, port, nsdName)
+        return when {
+            f == null -> "ip:$host" to null
+            f.fingerprint == ONLY_9100 -> ONLY_9100 to null
+            else -> f.fingerprint to f.name
+        }
     }
 
     /** Новый адрес принтера по отпечатку (тихий пересканирование /24). */
     suspend fun locate(p: SavedPrinter): String? {
         if (p.fingerprint.startsWith("ip:")) return null
         val found = discover(p.port)
-        found.firstOrNull { it.fingerprint == p.fingerprint }?.let { return it.host }
+        found.filter { it.fingerprint == p.fingerprint }.let { same ->
+            // Две одинаковые модели — не угадываем, какая наша.
+            if (same.size == 1) return same.first().host
+            if (same.size > 1) return same.firstOrNull { it.host == p.host }?.host
+        }
         if (p.fingerprint == ONLY_9100) {
-            return found.filter { !it.fingerprint.startsWith("brother:") }.singleOrNull()?.host
+            return found.filter { it.role == LabelKind.STICKY && it.fingerprint == ONLY_9100 }.singleOrNull()?.host
         }
         return null
     }

@@ -13,7 +13,7 @@ import org.json.JSONObject
 
 private val Context.printerData by preferencesDataStore("printers")
 
-/** Принтеры (роль, IP, отпечаток), последний шаблон и последний принтер — в DataStore. */
+/** Принтеры (роль, способ подключения, язык, адрес, отпечаток), последний шаблон и последний принтер — в DataStore. */
 class PrinterStore(context: Context) {
     private val ds = context.applicationContext.printerData
 
@@ -37,7 +37,8 @@ class PrinterStore(context: Context) {
         list.forEach {
             put(
                 JSONObject().put("id", it.id).put("name", it.name).put("role", it.role.name)
-                    .put("host", it.host).put("port", it.port).put("fp", it.fingerprint),
+                    .put("host", it.host).put("port", it.port).put("fp", it.fingerprint)
+                    .put("tr", it.transport.name).put("lang", it.lang.name).put("ssid", it.ssid).put("pass", it.pass),
             )
         }
     }.toString()
@@ -46,13 +47,18 @@ class PrinterStore(context: Context) {
         val arr = JSONArray(s ?: "[]")
         (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
+            val role = runCatching { LabelKind.valueOf(o.getString("role")) }.getOrDefault(LabelKind.STICKY)
             SavedPrinter(
                 id = o.getString("id"),
                 name = o.optString("name"),
-                role = runCatching { LabelKind.valueOf(o.getString("role")) }.getOrDefault(LabelKind.STICKY),
-                host = o.getString("host"),
+                role = role,
+                host = o.optString("host"),
                 port = o.optInt("port", 9100),
                 fingerprint = o.optString("fp"),
+                transport = runCatching { Transport.valueOf(o.getString("tr")) }.getOrDefault(Transport.LAN),
+                lang = runCatching { PrintLang.valueOf(o.getString("lang")) }.getOrDefault(defaultLang(role)),
+                ssid = o.optString("ssid"),
+                pass = o.optString("pass"),
             )
         }
     }.getOrDefault(emptyList())

@@ -9,7 +9,7 @@ data class PriceTag(
     val barcode: String,
 )
 
-/** «Липкі» — термоэтикетки (Godex), «Звичайні» — лист A4 (Brother). */
+/** «Липкі» — термоэтикетки, «Звичайні» — лист A4. */
 enum class LabelKind { STICKY, PLAIN }
 
 enum class LabelTemplate(val kind: LabelKind, val widthMm: Int, val heightMm: Int, val title: String) {
@@ -26,9 +26,38 @@ enum class LabelTemplate(val kind: LabelKind, val widthMm: Int, val heightMm: In
 
 data class QueueItem(val tag: PriceTag, val copies: Int)
 
+/** Как телефон достаёт до принтера. */
+enum class Transport(val title: String) {
+    /** Wi-Fi/LAN магазина: IP + порт (обычно 9100). */
+    LAN("Мережа магазину"),
+
+    /** Собственная Wi-Fi сеть принтера (Wireless Direct / Wi-Fi Direct / точка доступа), без роутера. */
+    WIFI_DIRECT("Wi-Fi принтера"),
+
+    /** Bluetooth Classic (SPP); принтер спарений у налаштуваннях телефона. */
+    BLUETOOTH("Bluetooth"),
+}
+
+/** Язык команд принтера. Для этикеток — картинка ценника в формате этого языка. */
+enum class PrintLang(val title: String, val hint: String) {
+    ZPL("ZPL", "Zebra, Godex, Honeywell, Citizen"),
+    TSPL("TSPL", "TSC, Xprinter, HPRT, Gprinter, більшість китайських"),
+    EPL("EPL", "старі Zebra / Eltron"),
+    ESCPOS("ESC/POS", "чекові та прості мобільні принтери"),
+    PDF("PDF", "офісні A4: Brother, HP, Canon, Epson…"),
+    ;
+
+    companion object {
+        val LABEL = listOf(ZPL, TSPL, EPL, ESCPOS)
+    }
+}
+
 /**
- * Сетевой принтер. [fingerprint] — чем узнать принтер, если сменился IP:
- * `brother:<имя из NSD>`, `godex:<ответ на ~HI>`, [ONLY_9100] или `ip:<адрес>` (только по IP).
+ * Сохранённый принтер.
+ * - [Transport.LAN]: [host]:[port]; [fingerprint] — чем узнать принтер, если сменился IP:
+ *   `brother:<имя из NSD>`, `godex:<ответ на ~HI>`, `snmp:<модель>`, [ONLY_9100] или `ip:<адрес>`.
+ * - [Transport.WIFI_DIRECT]: сеть принтера [ssid]/[pass]; [host] пустой — берём шлюз этой сети.
+ * - [Transport.BLUETOOTH]: [host] — MAC-адрес.
  */
 data class SavedPrinter(
     val id: String,
@@ -37,15 +66,29 @@ data class SavedPrinter(
     val host: String,
     val port: Int,
     val fingerprint: String,
+    val transport: Transport = Transport.LAN,
+    val lang: PrintLang = defaultLang(role),
+    val ssid: String = "",
+    val pass: String = "",
 )
 
-/** Отпечаток «единственный :9100 в сети, который не Brother». */
+fun defaultLang(role: LabelKind) = if (role == LabelKind.STICKY) PrintLang.ZPL else PrintLang.PDF
+
+/** Отпечаток «единственный :9100 в сети, который не офисный A4». */
 const val ONLY_9100 = "only9100"
 
-/** Найденный в сети принтер. */
-data class FoundPrinter(val host: String, val port: Int, val fingerprint: String, val name: String, val role: LabelKind)
+/** Найденный в сети принтер. [lang] — предположение по модели (SNMP / NSD / ~HI). */
+data class FoundPrinter(
+    val host: String,
+    val port: Int,
+    val fingerprint: String,
+    val name: String,
+    val role: LabelKind,
+    val lang: PrintLang = defaultLang(role),
+)
 
-class PrinterNotFoundException(val printer: SavedPrinter) : Exception("Printer not found: ${printer.name}")
+/** Принтер недоступен; [reason] — по-людськи, що перевірити. */
+class PrinterNotFoundException(val printer: SavedPrinter, val reason: String) : Exception(reason)
 
 fun formatPrice(v: Double): String =
     if (v == Math.floor(v)) v.toLong().toString() else String.format(java.util.Locale.US, "%.2f", v).replace('.', ',')

@@ -251,7 +251,7 @@ class LabelsViewModel(
                         svc.printSticky(printer, items, t)
                     }
                     direct.value -> {
-                        printer ?: return@launch fail("Для прямої печаті додай Brother: Профіль → Принтери.")
+                        printer ?: return@launch fail("Для прямої печаті додай принтер A4: Профіль → Принтери.")
                         svc.printPlainDirect(printer, items)
                     }
                     else -> svc.printPlainSystem(activity ?: return@launch fail("No activity"), items)
@@ -263,7 +263,7 @@ class LabelsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: PrinterNotFoundException) {
-                PrintStatus.Error("Принтер «${e.printer.name}» не знайдено в мережі.")
+                PrintStatus.Error(e.reason)
             } catch (e: Exception) {
                 PrintStatus.Error("Не вдалося надрукувати: ${e.message}")
             }
@@ -463,7 +463,7 @@ private fun PrinterPicker(kind: LabelKind, vm: LabelsViewModel, onPrinters: () -
                 Column(Modifier.weight(1f)) {
                     Text("Пряма печать")
                     Text(
-                        if (direct) "PDF напряму на IP:9100 Brother"
+                        if (direct) "PDF напряму на принтер (Brother, HP та ін.)"
                         else "Через системний друк Android",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
