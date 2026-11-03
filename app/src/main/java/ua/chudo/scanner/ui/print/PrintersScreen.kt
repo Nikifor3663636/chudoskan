@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Router
@@ -103,7 +104,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
     val message = _message.asStateFlow()
     private val _status = MutableStateFlow<Map<String, PrinterStatus?>>(emptyMap())
     val status = _status.asStateFlow()
-    /** id РїСЂРёРЅС‚РµСЂР°, РґР»СЏ РєРѕС‚РѕСЂРѕРіРѕ РёРґС‘С‚ С‚РµСЃС‚. */
+    /** id принтера, для которого идёт тест. */
     private val _testing = MutableStateFlow<String?>(null)
     val testing = _testing.asStateFlow()
 
@@ -114,7 +115,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
         viewModelScope.launch {
             val list = svc.store.printers.first()
             refreshStatus(list)
-            // РџСЂРёРЅС‚РµСЂРѕРІ РµС‰С‘ РЅРµС‚ вЂ” СЃСЂР°Р·Сѓ РёС‰РµРј РІ СЃРµС‚Рё, РєР°Рє Zebra Setup Utility.
+            // Принтеров ещё нет — сразу ищем в сети, как Zebra Setup Utility.
             if (list.isEmpty()) discover()
         }
     }
@@ -123,7 +124,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
         list.forEach { p ->
             _status.value = _status.value + (p.id to null)
             viewModelScope.launch {
-                val s = runCatching { svc.status(p) }.getOrElse { PrinterStatus(false, it.message ?: "РџРѕРјРёР»РєР°") }
+                val s = runCatching { svc.status(p) }.getOrElse { PrinterStatus(false, it.message ?: "Помилка") }
                 _status.value = _status.value + (p.id to s)
             }
         }
@@ -136,7 +137,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
         viewModelScope.launch {
             try {
                 if (svc.discovery.localIp() == null) {
-                    _message.value = "РўРµР»РµС„РѕРЅ РЅРµ РІ Wi-Fi. РџС–РґРєР»СЋС‡РёСЃСЊ РґРѕ Wi-Fi РјР°РіР°Р·РёРЅСѓ Р°Р±Рѕ РґРѕРґР°Р№ РїСЂРёРЅС‚РµСЂ С‡РµСЂРµР· В«Wi-Fi РїСЂРёРЅС‚РµСЂР°В» С‡Рё Bluetooth."
+                    _message.value = "Телефон не в Wi-Fi. Підключись до Wi-Fi магазину або додай принтер через «Wi-Fi принтера» чи Bluetooth."
                     _found.value = emptyList()
                 } else {
                     val saved = printers.value.filter { it.transport == Transport.LAN }.map { it.host }.toSet()
@@ -155,12 +156,12 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
         refreshStatus(listOf(p))
     }
 
-    /** Р СѓС‡РЅРѕРµ РґРѕР±Р°РІР»РµРЅРёРµ РїРѕ IP: РѕС‚РїРµС‡Р°С‚РѕРє Рё РјРѕРґРµР»СЊ РѕРїСЂРµРґРµР»СЏРµРј РїРѕ СЃРµС‚Рё (SNMP / mDNS / ~HI). */
+    /** Ручное добавление по IP: отпечаток и модель определяем по сети (SNMP / mDNS / ~HI). */
     fun addManual(host: String, port: Int, role: LabelKind, lang: PrintLang, onDone: () -> Unit) = viewModelScope.launch {
         _scanning.value = true
         try {
             val (fp, name) = svc.discovery.fingerprintOf(host, port, role)
-            val p = SavedPrinter(UUID.randomUUID().toString(), name ?: "РџСЂРёРЅС‚РµСЂ $host", role, host, port, fp, Transport.LAN, lang)
+            val p = SavedPrinter(UUID.randomUUID().toString(), name ?: "Принтер $host", role, host, port, fp, Transport.LAN, lang)
             svc.store.upsert(p)
             refreshStatus(listOf(p))
             onDone()
@@ -187,7 +188,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: SecurityException) {
-                "Р”РѕР·РІРѕР»СЊ Р·Р°СЃС‚РѕСЃСѓРЅРєСѓ РґРѕСЃС‚СѓРї РґРѕ Bluetooth / Wi-Fi."
+                "Дозволь застосунку доступ до Bluetooth / Wi-Fi."
             } catch (e: Exception) {
                 e.message ?: e.javaClass.simpleName
             } finally {
@@ -199,7 +200,7 @@ class PrintersViewModel(private val svc: PrintService) : ViewModel() {
 }
 
 @Composable
-fun roleTitle(role: LabelKind) = if (role == LabelKind.STICKY) "Р›РёРїРєС–" else "Р—РІРёС‡Р°Р№РЅС–"
+fun roleTitle(role: LabelKind) = if (role == LabelKind.STICKY) "Липкі" else "Звичайні"
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -213,6 +214,7 @@ fun PrintersScreen(onBack: () -> Unit) {
     val status by vm.status.collectAsStateWithLifecycle()
     var dialog by rememberSaveable { mutableStateOf<String?>(null) } // ip / wifi / bt
     var info by remember { mutableStateOf<String?>(null) }
+    var guide by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
@@ -220,48 +222,54 @@ fun PrintersScreen(onBack: () -> Unit) {
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "РќР°Р·Р°Рґ") }
-                Text("РџСЂРёРЅС‚РµСЂРё", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { vm.refreshStatus() }) { Icon(Icons.Rounded.Refresh, "РћРЅРѕРІРёС‚Рё СЃС‚Р°С‚СѓСЃ") }
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                Text("Принтери", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                IconButton(onClick = { guide = true }) { Icon(Icons.AutoMirrored.Rounded.HelpOutline, "Інструкція") }
+                IconButton(onClick = { vm.refreshStatus() }) { Icon(Icons.Rounded.Refresh, "Оновити статус") }
             }
             Text(
-                "Р‘СѓРґСЊ-СЏРєРёР№ РїСЂРёРЅС‚РµСЂ: С‡РµСЂРµР· РјРµСЂРµР¶Сѓ РјР°РіР°Р·РёРЅСѓ, РЅР°РїСЂСЏРјСѓ С‡РµСЂРµР· Wi-Fi РїСЂРёРЅС‚РµСЂР° Р°Р±Рѕ Bluetooth. " +
-                    "Р›РёРїРєС– РµС‚РёРєРµС‚РєРё вЂ” ZPL, TSPL, EPL Р°Р±Рѕ ESC/POS; Р·РІРёС‡Р°Р№РЅС– A4 вЂ” СЃРёСЃС‚РµРјРЅРёР№ РґСЂСѓРє Android.",
+                "Будь-який принтер: через мережу магазину, напряму через Wi-Fi принтера або Bluetooth. " +
+                    "Липкі етикетки — ZPL, TSPL, EPL або ESC/POS; звичайні A4 — системний друк Android.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        if (printers.isEmpty()) item { Text("РџСЂРёРЅС‚РµСЂС–РІ С‰Рµ РЅРµРјР°С” вЂ” РґРѕРґР°Р№ РЅРёР¶С‡Рµ.", Modifier.padding(vertical = 4.dp)) }
+        if (printers.isEmpty()) {
+            item { Text("Принтерів ще немає — додай нижче.", Modifier.padding(vertical = 4.dp)) }
+            item { GuideEntry { guide = true } }
+        }
         items(printers, key = { it.id }) { p ->
             SavedCard(p, status[p.id], vm) { info = it }
         }
         info?.let { item { Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) { Text(it, Modifier.padding(12.dp)) } } }
 
         item {
-            Text("Р”РѕРґР°С‚Рё РїСЂРёРЅС‚РµСЂ", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+            Text("Додати принтер", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = vm::discover, enabled = !scanning) { Icon(Icons.Rounded.Search, null); Spacer(Modifier.width(6.dp)); Text("Р—РЅР°Р№С‚Рё РІ РјРµСЂРµР¶С–") }
-                FilledTonalButton(onClick = { dialog = "wifi" }) { Icon(Icons.Rounded.Wifi, null); Spacer(Modifier.width(6.dp)); Text("Wi-Fi РїСЂРёРЅС‚РµСЂР°") }
+                Button(onClick = vm::discover, enabled = !scanning) { Icon(Icons.Rounded.Search, null); Spacer(Modifier.width(6.dp)); Text("Знайти в мережі") }
+                FilledTonalButton(onClick = { dialog = "wifi" }) { Icon(Icons.Rounded.Wifi, null); Spacer(Modifier.width(6.dp)); Text("Wi-Fi принтера") }
                 FilledTonalButton(onClick = { dialog = "bt" }) { Icon(Icons.Rounded.Bluetooth, null); Spacer(Modifier.width(6.dp)); Text("Bluetooth") }
-                OutlinedButton(onClick = { dialog = "ip" }) { Icon(Icons.Rounded.Lan, null); Spacer(Modifier.width(6.dp)); Text("Р—Р° IP") }
+                OutlinedButton(onClick = { dialog = "ip" }) { Icon(Icons.Rounded.Lan, null); Spacer(Modifier.width(6.dp)); Text("За IP") }
             }
         }
         if (scanning) item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                Text("  РЁСѓРєР°С”РјРѕ РїСЂРёРЅС‚РµСЂРё РІ РјРµСЂРµР¶С– (РґРѕ 10 СЃ)вЂ¦")
+                Text("  Шукаємо принтери в мережі (до 10 с)…")
             }
         }
         message?.let { m -> item { Text(m, color = MaterialTheme.colorScheme.error) } }
         found?.let { list ->
             if (list.isEmpty() && !scanning && message == null) item {
-                Text("РќРѕРІРёС… РїСЂРёРЅС‚РµСЂС–РІ Сѓ РјРµСЂРµР¶С– РЅРµ Р·РЅР°Р№РґРµРЅРѕ. РџРµСЂРµРІС–СЂ, С‰Рѕ РїСЂРёРЅС‚РµСЂ СѓРІС–РјРєРЅРµРЅРёР№ С– РІ С‚РѕРјСѓ Р¶ Wi-Fi, Р°Р±Рѕ РїС–РґРєР»СЋС‡РёСЃСЊ С‡РµСЂРµР· В«Wi-Fi РїСЂРёРЅС‚РµСЂР°В» / Bluetooth.")
+                Text("Нових принтерів у мережі не знайдено. Перевір, що принтер увімкнений і в тому ж Wi-Fi, або підключись через «Wi-Fi принтера» / Bluetooth.")
             }
             items(list, key = { "f" + it.host }) { f -> FoundCard(f) { role, lang -> vm.add(f, role, lang) } }
         }
-        item { HowTo() }
+        if (printers.isNotEmpty()) item { GuideEntry { guide = true } }
         item { Spacer(Modifier.height(24.dp)) }
     }
+
+    if (guide) PrinterGuide(onClose = { guide = false })
 
     when (dialog) {
         "ip" -> ManualDialog(vm, scanning, onDismiss = { dialog = null })
@@ -277,17 +285,17 @@ private fun transportIcon(t: Transport): ImageVector = when (t) {
 }
 
 private fun address(p: SavedPrinter) = when (p.transport) {
-    Transport.LAN -> "${p.host}:${p.port} В· ${fingerprintTitle(p.fingerprint)}"
-    Transport.WIFI_DIRECT -> "РјРµСЂРµР¶Р° В«${p.ssid}В»" + (p.host.takeIf { it.isNotEmpty() }?.let { " В· $it" } ?: "")
+    Transport.LAN -> "${p.host}:${p.port} · ${fingerprintTitle(p.fingerprint)}"
+    Transport.WIFI_DIRECT -> "мережа «${p.ssid}»" + (p.host.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: "")
     Transport.BLUETOOTH -> p.host
 }
 
 private fun fingerprintTitle(fp: String) = when {
-    fp.startsWith("brother:") || fp.startsWith("nsd:") -> "Р·РЅР°Р№РґРµРЅРѕ Р·Р° С–РјРµРЅРµРј"
+    fp.startsWith("brother:") || fp.startsWith("nsd:") -> "знайдено за іменем"
     fp.startsWith("godex:") -> "Godex"
-    fp.startsWith("snmp:") -> "Р·РЅР°Р№РґРµРЅРѕ Р·Р° РјРѕРґРµР»Р»СЋ"
-    fp == ONLY_9100 -> "С”РґРёРЅРёР№ РїСЂРёРЅС‚РµСЂ РµС‚РёРєРµС‚РѕРє"
-    else -> "Р»РёС€Рµ Р·Р° IP"
+    fp.startsWith("snmp:") -> "знайдено за моделлю"
+    fp == ONLY_9100 -> "єдиний принтер етикеток"
+    else -> "лише за IP"
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -301,9 +309,9 @@ private fun SavedCard(p: SavedPrinter, status: PrinterStatus?, vm: PrintersViewM
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                    Text("${p.transport.title} В· ${address(p)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${p.transport.title} · ${address(p)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = { vm.remove(p) }) { Icon(Icons.Rounded.Delete, "Р’РёРґР°Р»РёС‚Рё") }
+                IconButton(onClick = { vm.remove(p) }) { Icon(Icons.Rounded.Delete, "Видалити") }
             }
             StatusLine(status)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -313,11 +321,11 @@ private fun SavedCard(p: SavedPrinter, status: PrinterStatus?, vm: PrintersViewM
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (p.role == LabelKind.STICKY) "РўРµСЃС‚ РґСЂСѓРєСѓС” РїСЂРѕР±РЅСѓ РµС‚РёРєРµС‚РєСѓ" else "РўРµСЃС‚ РїРµСЂРµРІС–СЂСЏС” Р·РІ'СЏР·РѕРє",
+                    if (p.role == LabelKind.STICKY) "Тест друкує пробну етикетку" else "Тест перевіряє зв'язок",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (testing == p.id) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else TextButton(onClick = { vm.test(p, onInfo) }, enabled = testing == null) { Text("РўРµСЃС‚") }
+                else TextButton(onClick = { vm.test(p, onInfo) }, enabled = testing == null) { Text("Тест") }
             }
         }
     }
@@ -334,16 +342,16 @@ private fun StatusLine(s: PrinterStatus?) {
         if (s == null) CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
         else Box(Modifier.size(10.dp).background(color, CircleShape))
         Spacer(Modifier.width(8.dp))
-        Text(s?.text ?: "РџРµСЂРµРІС–СЂСЏС”РјРѕвЂ¦", style = MaterialTheme.typography.bodySmall, color = if (s?.ok == false) color else MaterialTheme.colorScheme.onSurface)
+        Text(s?.text ?: "Перевіряємо…", style = MaterialTheme.typography.bodySmall, color = if (s?.ok == false) color else MaterialTheme.colorScheme.onSurface)
     }
 }
 
-/** Р’С‹РїР°РґР°СЋС‰РёР№ РІС‹Р±РѕСЂ СЏР·С‹РєР° РїСЂРёРЅС‚РµСЂР° СЌС‚РёРєРµС‚РѕРє. */
+/** Выпадающий выбор языка принтера этикеток. */
 @Composable
 private fun LangPicker(lang: PrintLang, onPick: (PrintLang) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        FilterChip(selected = true, onClick = { open = true }, label = { Text("РњРѕРІР°: ${lang.title} в–ѕ") })
+        FilterChip(selected = true, onClick = { open = true }, label = { Text("Мова: ${lang.title} ▾") })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             PrintLang.LABEL.forEach { l ->
                 DropdownMenuItem(
@@ -371,12 +379,12 @@ private fun FoundCard(f: FoundPrinter, onAdd: (LabelKind, PrintLang) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(f.name, style = MaterialTheme.typography.titleMedium)
-            Text("${f.host}:${f.port} В· ${fingerprintTitle(f.fingerprint)}", style = MaterialTheme.typography.bodySmall)
+            Text("${f.host}:${f.port} · ${fingerprintTitle(f.fingerprint)}", style = MaterialTheme.typography.bodySmall)
             RoleAndLang(role, lang, { r ->
                 role = r
                 lang = if (r == LabelKind.PLAIN) PrintLang.PDF else lang.takeIf { it != PrintLang.PDF } ?: PrintLang.ZPL
             }, { lang = it })
-            Button(onClick = { onAdd(role, lang) }, modifier = Modifier.align(Alignment.End)) { Text("Р”РѕРґР°С‚Рё") }
+            Button(onClick = { onAdd(role, lang) }, modifier = Modifier.align(Alignment.End)) { Text("Додати") }
         }
     }
 }
@@ -393,13 +401,13 @@ private fun ManualDialog(vm: PrintersViewModel, busy: Boolean, onDismiss: () -> 
         ?.groupValues?.drop(1)?.all { it.toInt() in 0..255 } == true
     val portNum = port.toIntOrNull()?.takeIf { it in 1..65535 }
     val valid = ipOk && portNum != null
-    fun draft() = SavedPrinter("draft", "РџСЂРёРЅС‚РµСЂ ${host.trim()}", role, host.trim(), portNum ?: 9100, "ip:${host.trim()}", Transport.LAN, if (role == LabelKind.PLAIN) PrintLang.PDF else lang)
+    fun draft() = SavedPrinter("draft", "Принтер ${host.trim()}", role, host.trim(), portNum ?: 9100, "ip:${host.trim()}", Transport.LAN, if (role == LabelKind.PLAIN) PrintLang.PDF else lang)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("РџСЂРёРЅС‚РµСЂ Р·Р° IP") },
+        title = { Text("Принтер за IP") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("IP РІРёРґРЅРѕ РЅР° СЃС‚РѕСЂС–РЅС†С– РЅР°Р»Р°С€С‚СѓРІР°РЅСЊ РїСЂРёРЅС‚РµСЂР° (РґСЂСѓРєСѓС”С‚СЊСЃСЏ РєРЅРѕРїРєРѕСЋ FEED / РјРµРЅСЋ).", style = MaterialTheme.typography.bodySmall)
+                Text("IP видно на сторінці налаштувань принтера (друкується кнопкою FEED / меню).", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     host, { host = it.filter { c -> c.isDigit() || c == '.' } }, singleLine = true,
                     label = { Text("IP") }, placeholder = { Text("192.168.1.50") },
@@ -407,25 +415,25 @@ private fun ManualDialog(vm: PrintersViewModel, busy: Boolean, onDismiss: () -> 
                 )
                 OutlinedTextField(
                     port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true,
-                    label = { Text("РџРѕСЂС‚") },
+                    label = { Text("Порт") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 RoleAndLang(role, lang, { role = it }, { lang = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(enabled = valid && testing == null, onClick = { vm.test(draft()) { result = it } }) { Text("РўРµСЃС‚") }
+                    TextButton(enabled = valid && testing == null, onClick = { vm.test(draft()) { result = it } }) { Text("Тест") }
                     if (testing == "draft") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 }
                 result?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
-            TextButton(enabled = valid && !busy, onClick = { vm.addManual(host.trim(), portNum!!, role, draft().lang, onDismiss) }) { Text("Р—Р±РµСЂРµРіС‚Рё") }
+            TextButton(enabled = valid && !busy, onClick = { vm.addManual(host.trim(), portNum!!, role, draft().lang, onDismiss) }) { Text("Зберегти") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("РЎРєР°СЃСѓРІР°С‚Рё") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
     )
 }
 
-/** Wi-Fi СЃР°РјРѕРіРѕ РїСЂРёРЅС‚РµСЂР°: DIRECT-xx (Brother Wireless Direct), Wi-Fi Direct, СЂРµР¶РёРј С‚РѕС‡РєРё РґРѕСЃС‚СѓРїР°. */
+/** Wi-Fi самого принтера: DIRECT-xx (Brother Wireless Direct), Wi-Fi Direct, режим точки доступа. */
 @Composable
 private fun WifiDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
@@ -445,42 +453,42 @@ private fun WifiDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
     )
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Wi-Fi РїСЂРёРЅС‚РµСЂР°") },
+        title = { Text("Wi-Fi принтера") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     Text(
-                        if (vm.wifiSupported) "Р‘РµР· СЂРѕСѓС‚РµСЂР°: С‚РµР»РµС„РѕРЅ РїС–РґРєР»СЋС‡РёС‚СЊСЃСЏ РґРѕ РјРµСЂРµР¶С– СЃР°РјРѕРіРѕ РїСЂРёРЅС‚РµСЂР° Р»РёС€Рµ РЅР° С‡Р°СЃ РґСЂСѓРєСѓ (Android РїРѕРїСЂРѕСЃРёС‚СЊ РґРѕР·РІС–Р»). " +
-                            "РќР°Р·РІР° РјРµСЂРµР¶С– Р№ РїР°СЂРѕР»СЊ вЂ” РЅР° СЃС‚РѕСЂС–РЅС†С– РЅР°Р»Р°С€С‚СѓРІР°РЅСЊ РїСЂРёРЅС‚РµСЂР°. Brother: Wireless Direct, РјРµСЂРµР¶Р° В«DIRECT-вЂ¦В»."
-                        else "РџРѕС‚СЂС–Р±РµРЅ Android 10 Р°Р±Рѕ РЅРѕРІС–С€Рµ. РќР° С†СЊРѕРјСѓ С‚РµР»РµС„РѕРЅС– РїС–РґРєР»СЋС‡РёСЃСЊ РґРѕ Wi-Fi РїСЂРёРЅС‚РµСЂР° РІ РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏС… С– РґРѕРґР°Р№ Р№РѕРіРѕ В«Р—Р° IPВ».",
+                        if (vm.wifiSupported) "Без роутера: телефон підключиться до мережі самого принтера лише на час друку (Android попросить дозвіл). " +
+                            "Назва мережі й пароль — на сторінці налаштувань принтера. Brother: Wireless Direct, мережа «DIRECT-…»."
+                        else "Потрібен Android 10 або новіше. На цьому телефоні підключись до Wi-Fi принтера в налаштуваннях і додай його «За IP».",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                item { OutlinedTextField(ssid, { ssid = it }, singleLine = true, label = { Text("РќР°Р·РІР° Wi-Fi РїСЂРёРЅС‚РµСЂР° (SSID)") }, placeholder = { Text("DIRECT-xxBRxxxx") }) }
+                item { OutlinedTextField(ssid, { ssid = it }, singleLine = true, label = { Text("Назва Wi-Fi принтера (SSID)") }, placeholder = { Text("DIRECT-xxBRxxxx") }) }
                 item {
                     OutlinedTextField(
-                        pass, { pass = it }, singleLine = true, label = { Text("РџР°СЂРѕР»СЊ Wi-Fi (РїРѕСЂРѕР¶РЅСЊРѕ вЂ” Р±РµР· РїР°СЂРѕР»СЏ)") },
+                        pass, { pass = it }, singleLine = true, label = { Text("Пароль Wi-Fi (порожньо — без пароля)") },
                         visualTransformation = PasswordVisualTransformation(),
                         isError = pass.isNotEmpty() && pass.length < 8,
-                        supportingText = { if (pass.isNotEmpty() && pass.length < 8) Text("Р©РѕРЅР°Р№РјРµРЅС€Рµ 8 СЃРёРјРІРѕР»С–РІ") },
+                        supportingText = { if (pass.isNotEmpty() && pass.length < 8) Text("Щонайменше 8 символів") },
                     )
                 }
-                item { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("РќР°Р·РІР° РІ Р·Р°СЃС‚РѕСЃСѓРЅРєСѓ (РЅРµРѕР±РѕРІ'СЏР·РєРѕРІРѕ)") }) }
+                item { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Назва в застосунку (необов'язково)") }) }
                 item {
                     OutlinedTextField(
                         host, { host = it.filter { c -> c.isDigit() || c == '.' } }, singleLine = true,
-                        label = { Text("IP РїСЂРёРЅС‚РµСЂР° (РїРѕСЂРѕР¶РЅСЊРѕ вЂ” РІРёР·РЅР°С‡РёРјРѕ СЃР°РјС–)") },
+                        label = { Text("IP принтера (порожньо — визначимо самі)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
                 }
                 item {
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true, label = { Text("РџРѕСЂС‚") },
+                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, singleLine = true, label = { Text("Порт") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
                 item { RoleAndLang(role, lang, { role = it }, { lang = it }) }
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(enabled = valid && vm.wifiSupported && testing == null, onClick = { vm.test(draft()) { result = it } }) { Text("РўРµСЃС‚") }
+                        TextButton(enabled = valid && vm.wifiSupported && testing == null, onClick = { vm.test(draft()) { result = it } }) { Text("Тест") }
                         if (testing == "draft") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     }
                 }
@@ -488,13 +496,13 @@ private fun WifiDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = valid && vm.wifiSupported, onClick = { vm.save(draft(UUID.randomUUID().toString())); onDismiss() }) { Text("Р—Р±РµСЂРµРіС‚Рё") }
+            TextButton(enabled = valid && vm.wifiSupported, onClick = { vm.save(draft(UUID.randomUUID().toString())); onDismiss() }) { Text("Зберегти") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("РЎРєР°СЃСѓРІР°С‚Рё") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
     )
 }
 
-/** Bluetooth: СЃРїРёСЃРѕРє СЃРїР°СЂРµРЅРЅС‹С… СѓСЃС‚СЂРѕР№СЃС‚РІ; СЃРїР°СЂРёРІР°РЅРёРµ вЂ” РІ РЅР°СЃС‚СЂРѕР№РєР°С… С‚РµР»РµС„РѕРЅР°. */
+/** Bluetooth: список спаренных устройств; спаривание — в настройках телефона. */
 @Composable
 private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
@@ -516,31 +524,31 @@ private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bluetooth-РїСЂРёРЅС‚РµСЂ") },
+        title = { Text("Bluetooth-принтер") },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 when {
-                    !bt.available -> item { Text("РќР° С†СЊРѕРјСѓ С‚РµР»РµС„РѕРЅС– РЅРµРјР°С” Bluetooth.") }
+                    !bt.available -> item { Text("На цьому телефоні немає Bluetooth.") }
                     !granted -> item {
                         Column {
-                            Text("РџРѕС‚СЂС–Р±РµРЅ РґРѕР·РІС–Р» РЅР° Bluetooth.")
-                            TextButton(onClick = { launcher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Р”РѕР·РІРѕР»РёС‚Рё") }
+                            Text("Потрібен дозвіл на Bluetooth.")
+                            TextButton(onClick = { launcher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Дозволити") }
                         }
                     }
                     !bt.enabled -> item {
                         Column {
-                            Text("Bluetooth РІРёРјРєРЅРµРЅРѕ.")
-                            TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) { Text("Р’С–РґРєСЂРёС‚Рё РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏ") }
+                            Text("Bluetooth вимкнено.")
+                            TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) { Text("Відкрити налаштування") }
                         }
                     }
                     else -> {
                         item {
                             Text(
-                                "РЎРїРѕС‡Р°С‚РєСѓ СЃРїР°СЂ РїСЂРёРЅС‚РµСЂ Сѓ РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏС… Bluetooth С‚РµР»РµС„РѕРЅР° (PIN Р·Р°Р·РІРёС‡Р°Р№ 0000 Р°Р±Рѕ 1234), РїРѕС‚С–Рј РѕР±РµСЂРё Р№РѕРіРѕ С‚СѓС‚.",
+                                "Спочатку спар принтер у налаштуваннях Bluetooth телефона (PIN зазвичай 0000 або 1234), потім обери його тут.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        if (devices.isEmpty()) item { Text("РЎРїР°СЂРµРЅРёС… РїСЂРёСЃС‚СЂРѕС—РІ РЅРµРјР°С”.") }
+                        if (devices.isEmpty()) item { Text("Спарених пристроїв немає.") }
                         items(devices, key = { it.second }) { d ->
                             Surface(
                                 Modifier.fillMaxWidth().clickable { picked = d; result = null },
@@ -556,15 +564,15 @@ private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
                         }
                         item {
                             Row {
-                                TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) { Text("РЎРїР°СЂРёС‚Рё РЅРѕРІРёР№") }
-                                TextButton(onClick = { refresh++ }) { Text("РћРЅРѕРІРёС‚Рё СЃРїРёСЃРѕРє") }
+                                TextButton(onClick = { ctx.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) { Text("Спарити новий") }
+                                TextButton(onClick = { refresh++ }) { Text("Оновити список") }
                             }
                         }
                         if (picked != null) {
                             item { RoleAndLang(role, lang, { role = it }, { lang = it }) }
                             item {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(enabled = testing == null, onClick = { draft()?.let { p -> vm.test(p) { result = it } } }) { Text("РўРµСЃС‚") }
+                                    TextButton(enabled = testing == null, onClick = { draft()?.let { p -> vm.test(p) { result = it } } }) { Text("Тест") }
                                     if (testing == "draft") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                                 }
                             }
@@ -575,36 +583,8 @@ private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(enabled = picked != null, onClick = { draft(UUID.randomUUID().toString())?.let(vm::save); onDismiss() }) { Text("Р—Р±РµСЂРµРіС‚Рё") }
+            TextButton(enabled = picked != null, onClick = { draft(UUID.randomUUID().toString())?.let(vm::save); onDismiss() }) { Text("Зберегти") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("РЎРєР°СЃСѓРІР°С‚Рё") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
     )
-}
-
-/** РљРѕСЂРѕС‚РєР° С–РЅСЃС‚СЂСѓРєС†С–СЏ вЂ” СЏРє Zebra Setup Utility, Р°Р»Рµ РґР»СЏ Р±СѓРґСЊ-СЏРєРѕРіРѕ РїСЂРёРЅС‚РµСЂР°. */
-@Composable
-private fun HowTo() {
-    var open by rememberSaveable { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Column(Modifier.padding(14.dp)) {
-            Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
-                Text("РЇРє РїС–РґРєР»СЋС‡РёС‚Рё РїСЂРёРЅС‚РµСЂ", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                Text(if (open) "в–ґ" else "в–ѕ")
-            }
-            if (open) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "вЂў РњРµСЂРµР¶Р° РјР°РіР°Р·РёРЅСѓ. РџСЂРёРЅС‚РµСЂ С– С‚РµР»РµС„РѕРЅ РјР°СЋС‚СЊ Р±СѓС‚Рё РІ РѕРґРЅРѕРјСѓ Wi-Fi. РќР°С‚РёСЃРЅРё В«Р—РЅР°Р№С‚Рё РІ РјРµСЂРµР¶С–В» вЂ” РјРѕРґРµР»СЊ С– РјРѕРІР° РІРёР·РЅР°С‡Р°С‚СЊСЃСЏ СЃР°РјС–.\n" +
-                        "  РџС–РґРєР»СЋС‡РёС‚Рё СЃР°Рј РїСЂРёРЅС‚РµСЂ РґРѕ Wi-Fi РјР°РіР°Р·РёРЅСѓ вЂ” РѕРґРёРЅ СЂР°Р· Р· Р№РѕРіРѕ РјРµРЅСЋ (Network / WLAN), РєРЅРѕРїРєРѕСЋ WPS РЅР° СЂРѕСѓС‚РµСЂС– " +
-                        "Р°Р±Рѕ РїСЂРѕРіСЂР°РјРѕСЋ РІРёСЂРѕР±РЅРёРєР° (Godex вЂ” GoLabel в†’ Wi-Fi Tool, Brother вЂ” РјРµРЅСЋ WLAN в†’ РњР°Р№СЃС‚РµСЂ РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏ).\n\n" +
-                        "вЂў Wi-Fi РїСЂРёРЅС‚РµСЂР° (Р±РµР· СЂРѕСѓС‚РµСЂР°). РЈРІС–РјРєРЅРё РЅР° РїСЂРёРЅС‚РµСЂС– Wireless Direct / Wi-Fi Direct, РІРІРµРґРё РЅР°Р·РІСѓ РјРµСЂРµР¶С– Р№ РїР°СЂРѕР»СЊ " +
-                        "Р· Р№РѕРіРѕ СЃС‚РѕСЂС–РЅРєРё РЅР°Р»Р°С€С‚СѓРІР°РЅСЊ.\n\n" +
-                        "вЂў Bluetooth. РЎРїР°СЂ РїСЂРёРЅС‚РµСЂ Сѓ РЅР°Р»Р°С€С‚СѓРІР°РЅРЅСЏС… С‚РµР»РµС„РѕРЅР° Р№ РѕР±РµСЂРё Р№РѕРіРѕ Сѓ СЃРїРёСЃРєСѓ.\n\n" +
-                        "вЂў РњРѕРІР°. РЇРєС‰Рѕ С‚РµСЃС‚РѕРІР° РµС‚РёРєРµС‚РєР° РїРѕСЂРѕР¶РЅСЏ Р°Р±Рѕ Р· СЃРёРјРІРѕР»Р°РјРё Р·Р°РјС–СЃС‚СЊ С†С–РЅРё вЂ” РѕР±РµСЂРё С–РЅС€Сѓ РјРѕРІСѓ (ZPL в†’ TSPL в†’ EPL в†’ ESC/POS) С– РїРѕРІС‚РѕСЂРё С‚РµСЃС‚. " +
-                        "Р—РІРёС‡Р°Р№РЅС– A4 РґСЂСѓРєСѓСЋС‚СЊСЃСЏ С‡РµСЂРµР· СЃРёСЃС‚РµРјРЅРёР№ РґСЂСѓРє Android вЂ” РїС–РґС…РѕРґРёС‚СЊ Р±СѓРґСЊ-СЏРєРёР№ РїСЂРёРЅС‚РµСЂ С–Р· СЃРµСЂРІС–СЃРѕРј РґСЂСѓРєСѓ (Mopria / РїР»Р°РіС–РЅ РІРёСЂРѕР±РЅРёРєР°).",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
 }
