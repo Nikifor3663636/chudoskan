@@ -19,11 +19,13 @@ service cloud.firestore {
         && me().shopId == shopId;
     }
 
-    // Телефон в анкете — только подтверждённый номер из токена.
+    // Телефон в анкете — номер, под которым вошли: логин «380XXXXXXXXX@tel.chudoostriv.app»
+    // (вход по номеру и паролю) или привязанный телефон из токена.
     function phoneOk() {
       return !('phone' in request.resource.data)
         || request.resource.data.phone == ''
-        || request.resource.data.phone == request.auth.token.phone_number;
+        || request.resource.data.phone == request.auth.token.get('phone_number', '')
+        || request.auth.token.get('email', '') == request.resource.data.phone.replace('[+]', '') + '@tel.chudoostriv.app';
     }
 
     match /users/{uid} {

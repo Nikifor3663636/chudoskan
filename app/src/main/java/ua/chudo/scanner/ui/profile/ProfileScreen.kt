@@ -69,7 +69,6 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
     var editName by rememberSaveable { mutableStateOf(false) }
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     var changePassword by rememberSaveable { mutableStateOf(false) }
-    var hasPassword by remember { mutableStateOf(app.auth.hasPassword()) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
 
     LaunchedEffect(employee.shopId) { info = runCatching { app.shopStock.info(employee.shopId) }.getOrNull() }
@@ -121,7 +120,7 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
         Spacer(Modifier.height(20.dp))
 
         Card {
-            ActionRow(Icons.Rounded.Lock, if (hasPassword) "Змінити пароль" else "Встановити пароль") { changePassword = true }
+            ActionRow(Icons.Rounded.Lock, "Змінити пароль") { changePassword = true }
             HorizontalDivider()
             ActionRow(Icons.Rounded.Print, "Принтери", onClick = onPrinters)
             HorizontalDivider()
@@ -135,15 +134,8 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
 
     if (changePassword) {
         PasswordDialog(
-            title = if (hasPassword) "Змінити пароль" else "Встановити пароль",
-            text = if (hasPassword) "Забув поточний — вийди й натисни «Забув пароль» на екрані входу." else null,
-            needCurrent = hasPassword,
             onDismiss = { changePassword = false },
-            onDone = {
-                changePassword = false
-                hasPassword = true
-                message = "Пароль збережено."
-            },
+            onDone = { changePassword = false; message = "Пароль змінено." },
         )
     }
 

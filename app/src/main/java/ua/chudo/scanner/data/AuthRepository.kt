@@ -1,15 +1,10 @@
 package ua.chudo.scanner.data
 
-import android.app.Activity
 import android.content.Context
 import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseException
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthOptions
-import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -19,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 
 /** Сотрудник: к какому магазину привязан. Магазин меняет только администратор в консоли Firebase. */
 data class Employee(
@@ -46,17 +40,13 @@ sealed interface AuthState {
     data class Failed(val message: String) : AuthState
 }
 
-/** Анкета, которую сохраняем после первого входа по телефону. */
+/** Анкета сотрудника при регистрации. */
 data class NewProfile(val name: String, val region: String, val shop: String)
 
-sealed interface PhoneEvent {
-    data class CodeSent(val verificationId: String, val token: PhoneAuthProvider.ForceResendingToken) : PhoneEvent
-    /** Код подставлен автоматически (или номер подтверждён без SMS). */
-    data class Verified(val credential: PhoneAuthCredential) : PhoneEvent
-    data class Failed(val error: Exception) : PhoneEvent
-}
-
 /**
+ * Вход по номеру телефона и паролю, без SMS (SMS в Firebase — только на платном тарифе).
+ * Номер не подтверждается кодом: доступ всё равно открывает администратор (`approved`).
+ *
  * Firestore:
  * - `users/{uid}` — анкета сотрудника ([Employee]);
  * - `shops/{shopId}` — когда и кем загружены остатки;
@@ -74,10 +64,6 @@ class AuthRepository(context: Context) {
 
     private var profileListener: ListenerRegistration? = null
 
-    /** Попросить задать пароль: вход был по SMS («Забув пароль») или пароля ещё нет. */
-    private val _askPassword = MutableStateFlow(false)
-    val askPassword: StateFlow<Boolean> = _askPassword.asStateFlow()
-
     init {
         if (configured) auth.addAuthStateListener { onUser(it.currentUser) }
     }
@@ -86,100 +72,51 @@ class AuthRepository(context: Context) {
         profileListener?.remove()
         profileListener = null
         if (user == null) {
-            _askPassword.value = false
             _state.value = AuthState.SignedOut
             return
         }
         _state.value = AuthState.Loading
-        if (!hasPassword()) _askPassword.value = true
         // Слушаем анкету: как только администратор поставит approved = true, вход откроется сам.
         profileListener = db.collection(USERS).document(user.uid).addSnapshotListener { snap, err ->
             if (auth.currentUser?.uid != user.uid) return@addSnapshotListener
             _state.value = when {
                 err != null -> AuthState.Failed(err.message ?: err.javaClass.simpleName)
-                snap == null || !snap.exists() -> AuthState.NoProfile(user.phoneNumber.orEmpty())
+                snap == null || !snap.exists() -> AuthState.NoProfile(phoneOf(user))
                 else -> snap.toEmployee(user).let { if (it.approved) AuthState.Ready(it) else AuthState.Pending(it) }
             }
         }
     }
 
-    /** Отправить SMS на номер +380XXXXXXXXX. [resend] — токен для повторной отправки. */
-    fun sendCode(
-        activity: Activity,
-        phone: String,
-        resend: PhoneAuthProvider.ForceResendingToken?,
-        onEvent: (PhoneEvent) -> Unit,
-    ) {
-        val builder = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(phone)
-            .setTimeout(60L, TimeUnit.SECONDS)
-            .setActivity(activity)
-            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                override fun onVerificationCompleted(credential: PhoneAuthCredential) = onEvent(PhoneEvent.Verified(credential))
-                override fun onVerificationFailed(e: FirebaseException) = onEvent(PhoneEvent.Failed(e))
-                override fun onCodeSent(id: String, token: PhoneAuthProvider.ForceResendingToken) =
-                    onEvent(PhoneEvent.CodeSent(id, token))
-            })
-        if (resend != null) builder.setForceResendingToken(resend)
-        PhoneAuthProvider.verifyPhoneNumber(builder.build())
-    }
-
-    fun credential(verificationId: String, code: String): PhoneAuthCredential =
-        PhoneAuthProvider.getCredential(verificationId, code.trim())
-
-    /**
-     * Вход по SMS: регистрация ([profile] + [password]) или «Забув пароль».
-     * После входа без пароля попросим задать новый.
-     */
-    suspend fun signInWithPhone(credential: PhoneAuthCredential, profile: NewProfile?, password: String?) {
-        val user = auth.signInWithCredential(credential).await().user ?: error("Firebase не повернув користувача")
-        if (profile != null && !db.collection(USERS).document(user.uid).get().await().exists()) {
-            saveProfile(user, profile.name, profile.region, profile.shop)
-        }
-        if (password != null) setPassword(password) else _askPassword.value = true
-    }
-
     /** Вход по номеру и паролю. [digits] — 9 цифр после +380. */
-    suspend fun signInWithPassword(digits: String, password: String) {
+    suspend fun signIn(digits: String, password: String) {
         auth.signInWithEmailAndPassword(loginFor("+380$digits"), password).await()
     }
 
-    fun hasPassword(): Boolean = auth.currentUser?.providerData?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true
-
-    /**
-     * Задать пароль. Сразу после входа по SMS старый пароль не нужен;
-     * иначе Firebase требует свежий вход — тогда сначала [reauthenticate].
-     */
-    suspend fun setPassword(password: String) {
-        val user = auth.currentUser ?: error("Не виконано вхід")
-        val phone = user.phoneNumber?.takeIf { it.isNotEmpty() } ?: error("До акаунта не прив'язано телефон")
-        if (hasPassword()) {
-            user.updatePassword(password).await()
-        } else {
-            user.linkWithCredential(EmailAuthProvider.getCredential(loginFor(phone), password)).await()
-        }
-        _askPassword.value = false
+    /** Регистрация: аккаунт «номер + пароль» и анкета (неподтверждённая). */
+    suspend fun register(digits: String, password: String, profile: NewProfile) {
+        val user = auth.createUserWithEmailAndPassword(loginFor("+380$digits"), password).await().user
+            ?: error("Firebase не повернув користувача")
+        saveProfile(user, profile.name, profile.region, profile.shop)
     }
 
-    /** Подтвердить текущий пароль перед сменой. */
-    suspend fun reauthenticate(currentPassword: String) {
+    /** Сменить пароль: Firebase требует подтвердить текущий. */
+    suspend fun changePassword(current: String, new: String) {
         val user = auth.currentUser ?: error("Не виконано вхід")
-        val login = user.email ?: loginFor(user.phoneNumber.orEmpty())
-        user.reauthenticate(EmailAuthProvider.getCredential(login, currentPassword)).await()
+        val login = user.email ?: loginFor(phoneOf(user))
+        user.reauthenticate(EmailAuthProvider.getCredential(login, current)).await()
+        user.updatePassword(new).await()
     }
-
-    fun skipPassword() { _askPassword.value = false }
 
     /** Дописать анкету, если аккаунт уже создан. */
     suspend fun completeProfile(name: String, region: String, shop: String) {
-        saveProfile(auth.currentUser ?: error("Не выполнен вход"), name, region, shop)
+        saveProfile(auth.currentUser ?: error("Не виконано вхід"), name, region, shop)
     }
 
     fun signOut() = auth.signOut()
 
     /** Имя сотрудник меняет сам; магазин и подтверждение — только администратор. */
     suspend fun updateName(name: String) {
-        val uid = auth.currentUser?.uid ?: error("Не выполнен вход")
+        val uid = auth.currentUser?.uid ?: error("Не виконано вхід")
         db.collection(USERS).document(uid).update("name", name.trim()).await()
     }
 
@@ -187,7 +124,7 @@ class AuthRepository(context: Context) {
         db.collection(USERS).document(user.uid).set(
             mapOf(
                 "name" to name.trim(),
-                "phone" to (user.phoneNumber ?: ""),
+                "phone" to phoneOf(user),
                 "region" to region,
                 "shop" to shop.trim(),
                 "shopId" to shopId(region, shop),
@@ -200,7 +137,7 @@ class AuthRepository(context: Context) {
     private fun DocumentSnapshot.toEmployee(user: FirebaseUser) = Employee(
         uid = user.uid,
         name = getString("name").orEmpty(),
-        phone = getString("phone")?.takeIf { it.isNotEmpty() } ?: user.phoneNumber.orEmpty(),
+        phone = getString("phone")?.takeIf { it.isNotEmpty() } ?: phoneOf(user),
         region = getString("region").orEmpty(),
         shop = getString("shop").orEmpty(),
         shopId = getString("shopId").orEmpty(),
@@ -209,12 +146,18 @@ class AuthRepository(context: Context) {
 
     companion object {
         const val USERS = "users"
+        private const val LOGIN_DOMAIN = "@tel.chudoostriv.app"
 
         /**
          * Firebase умеет пароль только в паре с email, поэтому логин — служебный адрес из номера
          * (+380961234567 → 380961234567@tel.chudoostriv.app). Пользователь его не видит; писем на него нет.
          */
-        fun loginFor(phone: String): String = phone.filter(Char::isDigit) + "@tel.chudoostriv.app"
+        fun loginFor(phone: String): String = phone.filter(Char::isDigit) + LOGIN_DOMAIN
+
+        /** Номер из служебного логина (или привязанный телефон у старых аккаунтов). */
+        fun phoneOf(user: FirebaseUser): String =
+            user.email?.takeIf { it.endsWith(LOGIN_DOMAIN) }?.let { "+" + it.removeSuffix(LOGIN_DOMAIN) }
+                ?: user.phoneNumber.orEmpty()
 
         /** Стабильный id магазина: город + хеш адреса (адрес бывает длинным и с «/»). */
         fun shopId(region: String, shop: String): String {
