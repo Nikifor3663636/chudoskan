@@ -1,0 +1,3 @@
+headers = chudo_core.h
+package = chudo.core
+staticLibraries = libchudo_core.a

@@ -10,3 +10,6 @@ captures/
 core/target/
 app/src/main/jniLibs/
 app/google-services.json
+iosApp/build/
+iosApp/*.xcodeproj/
+iosApp/iosApp/GoogleService-Info.plist

@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ChudoOstriv"
 include(":app")
+include(":shared")

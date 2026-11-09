@@ -1,0 +1,36 @@
+# Проект Xcode генерируется: `cd iosApp && xcodegen` (brew install xcodegen).
+name: iosApp
+options:
+  bundleIdPrefix: com.chudoostriv
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources: [iosApp]
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: ЧудоСкан
+        CFBundleShortVersionString: "2.5"
+        CFBundleVersion: "7"
+        NSCameraUsageDescription: Камера потрібна, щоб прочитати штрихкод з упаковки.
+        UILaunchScreen: {}
+        CADisableMinimumFrameDurationOnPhone: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chudoostriv.app
+        MARKETING_VERSION: "2.5"
+        CURRENT_PROJECT_VERSION: "7"
+        FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+        OTHER_LDFLAGS: [-framework, Shared]
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_BITCODE: NO
+    preBuildScripts:
+      - name: Kotlin framework (shared)
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/.."
+          bash ./gradlew :shared:embedAndSignAppleFrameworkForXcode

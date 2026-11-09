@@ -6,7 +6,7 @@ description = "Ядро сканера ЧудоОстров: запросы, п�
 publish = false
 
 [lib]
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib", "lib", "staticlib"]
 name = "chudo_core"
 
 [[bin]]

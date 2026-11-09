@@ -5,6 +5,7 @@ uniffi::setup_scaffolding!();
 
 pub mod barcode;
 pub mod error;
+pub mod ffi_c;
 pub mod graphql;
 pub mod guard;
 pub mod model;
