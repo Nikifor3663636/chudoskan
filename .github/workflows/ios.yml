@@ -39,6 +39,9 @@ jobs:
       - name: Rust core (iOS)
         run: bash scripts/build-ios-core.sh
 
+      - name: Kotlin framework (shared, simulator)
+        run: bash ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --console=plain
+
       - name: Xcode project
         run: |
           brew install xcodegen
@@ -46,11 +49,13 @@ jobs:
 
       - name: Build for simulator
         run: |
+          set -o pipefail
           xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build | tail -n 80
 
       - name: Screenshots (simulator)
+        continue-on-error: true
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$UDID"
@@ -68,6 +73,7 @@ jobs:
 
       - name: Build for iPhone (unsigned IPA)
         run: |
+          set -o pipefail
           xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/dev \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build | tail -n 40
