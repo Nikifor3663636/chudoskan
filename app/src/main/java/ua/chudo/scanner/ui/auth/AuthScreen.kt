@@ -404,9 +404,10 @@ private object PhoneMask : VisualTransformation {
 @Composable
 private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     val app = LocalContext.current.chudoApp
+    val currentRegion by app.prefs.region.collectAsStateWithLifecycle()
     var name by rememberSaveable { mutableStateOf("") }
     var digits by rememberSaveable { mutableStateOf("") }
-    var region by rememberSaveable { mutableStateOf(app.prefs.region.value.code) }
+    var region by rememberSaveable { mutableStateOf(currentRegion.code) }
     var shop by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var repeat by rememberSaveable { mutableStateOf("") }
@@ -414,7 +415,7 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     var showRegions by rememberSaveable { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
     val shops by vm.shops.collectAsStateWithLifecycle()
-    val regionObj = app.prefs.allRegions.firstOrNull { it.code == region } ?: app.prefs.region.value
+    val regionObj = app.prefs.allRegions.firstOrNull { it.code == region } ?: currentRegion
 
     LaunchedEffect(region) { vm.loadShops(region) }
 

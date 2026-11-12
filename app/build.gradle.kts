@@ -38,6 +38,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { compose = true }
+    lint {
+        // Обновления зависимостей — отдельной задачей, а не ошибкой сборки.
+        disable += setOf("NewerVersionAvailable", "GradleDependency", "AndroidGradlePluginVersion", "OldTargetApi")
+        warningsAsErrors = true
+    }
 }
 
 kotlin {
@@ -64,7 +69,7 @@ if (providers.gradleProperty("skipRust").orNull != "true") {
 dependencies {
     // Firebase тянет Guava только в рантайм, а на этапе компиляции оставляет пустую заглушку
     // listenablefuture:9999.0 — CameraX тогда не видит ListenableFuture. Та же версия, что у Firebase.
-    implementation("com.google.guava:guava:32.1.3-android")
+    implementation(libs.guava)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -79,7 +84,7 @@ dependencies {
     implementation(libs.compose.icons.extended)
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
 
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

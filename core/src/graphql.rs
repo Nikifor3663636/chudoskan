@@ -13,7 +13,8 @@ const SUMMARY_FIELDS: &str = "id external_id name url_key url_suffix stock_statu
     price_range{minimum_price{regular_price{value currency} final_price{value currency} discount{percent_off}}} \
     small_image{url}";
 
-const SEARCH_QUERY: &str = "query($q:String!,$n:Int!){products(search:$q,pageSize:$n){total_count items{__FIELDS__}}}";
+const SEARCH_QUERY: &str =
+    "query($q:String!,$n:Int!){products(search:$q,pageSize:$n){total_count items{__FIELDS__}}}";
 
 const DETAILS_QUERY: &str = "query($k:String!){products(filter:{url_key:{eq:$k}}){items{\
     id external_id name url_key url_suffix stock_status only_x_left_in_stock \
@@ -161,10 +162,7 @@ fn products(json: &str) -> Result<Vec<RawProduct>, CoreError> {
 }
 
 fn norm(s: &str) -> String {
-    s.chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
 
 /// Разбирает ответ поиска. Точное совпадение артикула (без учёта регистра,
@@ -175,8 +173,8 @@ pub fn parse_search(json: &str, query: &str) -> Result<Vec<ProductSummary>, Core
     let mut list: Vec<ProductSummary> = products(json)?
         .into_iter()
         .map(|p| {
-            let exact_match = !q.is_empty()
-                && p.external_id.as_deref().map(norm).as_deref() == Some(q.as_str());
+            let exact_match =
+                !q.is_empty() && p.external_id.as_deref().map(norm).as_deref() == Some(q.as_str());
             ProductSummary {
                 id: p.id,
                 article: p.external_id,
@@ -199,11 +197,8 @@ pub fn parse_search(json: &str, query: &str) -> Result<Vec<ProductSummary>, Core
 pub fn parse_details(json: &str) -> Result<ProductDetails, CoreError> {
     let p = products(json)?.into_iter().next().ok_or(CoreError::NotFound)?;
 
-    let mut media: Vec<RawMedia> = p
-        .media_gallery
-        .into_iter()
-        .filter(|m| m.disabled != Some(true) && m.url.is_some())
-        .collect();
+    let mut media: Vec<RawMedia> =
+        p.media_gallery.into_iter().filter(|m| m.disabled != Some(true) && m.url.is_some()).collect();
     media.sort_by_key(|m| m.position.unwrap_or(i64::MAX));
     let images = media.into_iter().filter_map(|m| real_image(m.url)).collect();
 
@@ -217,11 +212,7 @@ pub fn parse_details(json: &str) -> Result<ProductDetails, CoreError> {
         only_x_left: p.only_x_left_in_stock,
         price: p.price_range.and_then(RawPriceRange::into_price),
         images,
-        description: p
-            .description
-            .and_then(|d| d.html)
-            .map(|h| html_to_text(&h))
-            .unwrap_or_default(),
+        description: p.description.and_then(|d| d.html).map(|h| html_to_text(&h)).unwrap_or_default(),
         categories: p.categories.into_iter().filter_map(|c| c.name).collect(),
     })
 }
@@ -235,17 +226,16 @@ pub fn html_to_text(html: &str) -> String {
         .map(|e| {
             let t = e.text().collect::<Vec<_>>().join(" ");
             let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
-            if e.value().name() == "li" { format!("• {t}") } else { t }
+            if e.value().name() == "li" {
+                format!("• {t}")
+            } else {
+                t
+            }
         })
         .filter(|t| !t.is_empty())
         .collect();
     if blocks.is_empty() {
-        doc.root_element()
-            .text()
-            .collect::<String>()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        doc.root_element().text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
     } else {
         blocks.join("\n\n")
     }

@@ -63,9 +63,9 @@ kotlin {
             implementation(libs.ktor.client.darwin)
         }
         androidUnitTest.dependencies {
-            implementation("junit:junit:4.13.2")
+            implementation(libs.junit)
             // JNA с нативной частью для ПК: тест вызывает Rust-ядро (core/target/debug).
-            implementation("net.java.dev.jna:jna:5.17.0")
+            implementation(libs.jna)
         }
     }
 }
@@ -94,11 +94,11 @@ val genFirebaseConfig by tasks.registering {
     val out = layout.buildDirectory.file("generated/firebaseConfig/ua/chudo/shared/auth/FirebaseConfig.kt")
     inputs.files(src).optional()
     outputs.file(out)
+    @Suppress("UNCHECKED_CAST")
     doLast {
         var key = ""
         var project = ""
         if (src.exists()) {
-            @Suppress("UNCHECKED_CAST")
             val json = JsonSlurper().parse(src) as Map<String, Any?>
             project = ((json["project_info"] as Map<String, Any?>)["project_id"] as String?).orEmpty()
             val client = (json["client"] as List<Map<String, Any?>>).first()

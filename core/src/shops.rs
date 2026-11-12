@@ -36,10 +36,8 @@ pub fn parse_shops_html(html: &str) -> Vec<ShopAvailability> {
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ");
-            let available = el
-                .select(&icon)
-                .next()
-                .is_some_and(|i| i.value().classes().any(|c| c == "available"));
+            let available =
+                el.select(&icon).next().is_some_and(|i| i.value().classes().any(|c| c == "available"));
             (!address.is_empty()).then_some(ShopAvailability { address, available })
         })
         .collect()

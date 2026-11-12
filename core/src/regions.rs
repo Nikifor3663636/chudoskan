@@ -39,10 +39,7 @@ pub const DEFAULT_REGION: &str = "odesa";
 
 #[uniffi::export]
 pub fn regions() -> Vec<Region> {
-    REGIONS
-        .iter()
-        .map(|&(code, name)| Region { code: code.into(), name: name.into() })
-        .collect()
+    REGIONS.iter().map(|&(code, name)| Region { code: code.into(), name: name.into() }).collect()
 }
 
 #[uniffi::export]

@@ -38,7 +38,9 @@ class WifiDirectLink(context: Context) {
      * Адрес — [host], если задан, иначе шлюз сети принтера (у Brother это 192.168.118.1).
      */
     suspend fun <T> use(ssid: String, pass: String, host: String, port: Int, block: suspend (Network, String) -> T): T {
-        check(supported) { "Підключення до Wi-Fi принтера потребує Android 10 або новіше" }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            throw IllegalStateException("Підключення до Wi-Fi принтера потребує Android 10 або новіше")
+        }
         val spec = WifiNetworkSpecifier.Builder().setSsid(ssid).apply {
             if (pass.isNotEmpty()) setWpa2Passphrase(pass)
         }.build()

@@ -48,11 +48,9 @@ mod tests {
 
     #[test]
     fn urls() {
-        assert_eq!(
-            product_url(Lang::Ru, "abc", ".html"),
-            "https://chudo-ostriv.com.ua/ru/abc.html"
-        );
-        assert!(shops_url(Lang::Ua, 36501, "odesa").ends_with("/ua/multiwarehouse/shops/index/?id=36501&region=odesa"));
+        assert_eq!(product_url(Lang::Ru, "abc", ".html"), "https://chudo-ostriv.com.ua/ru/abc.html");
+        assert!(shops_url(Lang::Ua, 36501, "odesa")
+            .ends_with("/ua/multiwarehouse/shops/index/?id=36501&region=odesa"));
         assert!(site_search_url(Lang::Ua, "м 1").ends_with("query=%D0%BC%201"));
     }
 }

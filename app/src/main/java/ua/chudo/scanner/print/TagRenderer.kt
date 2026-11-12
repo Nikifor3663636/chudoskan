@@ -8,6 +8,8 @@ import android.graphics.Typeface
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextUtils
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withTranslation
 import uniffi.chudo_core.ean13Bars
 import uniffi.chudo_core.ean13Full
 import kotlin.math.max
@@ -39,7 +41,7 @@ object TagRenderer {
     fun render(tag: PriceTag, t: LabelTemplate): Bitmap {
         val w = px(t.widthMm.toFloat())
         val h = px(t.heightMm.toFloat())
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(w, h)
         val c = Canvas(bmp)
         c.drawColor(Color.WHITE)
         val small = t.heightMm <= 20
@@ -61,7 +63,7 @@ object TagRenderer {
         if (name.isNotEmpty()) {
             val layout = StaticLayout.Builder.obtain(name, 0, name.length, namePaint, inner.toInt())
                 .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setIncludePad(false).build()
-            c.save(); c.translate(pad, pad); layout.draw(c); c.restore()
+            c.withTranslation(pad, pad) { layout.draw(this) }
             top += layout.height
         }
 

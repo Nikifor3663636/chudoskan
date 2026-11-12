@@ -7,8 +7,7 @@ use chudo_core::upc::{upc_candidates, upc_title};
 use chudo_core::StockStatus;
 
 fn fixture(name: &str) -> String {
-    std::fs::read_to_string(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR")))
-        .expect("fixture")
+    std::fs::read_to_string(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).expect("fixture")
 }
 
 #[test]

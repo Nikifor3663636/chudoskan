@@ -135,7 +135,7 @@ object StockFileParser {
         } catch (_: CharacterCodingException) {
             String(bytes, Charset.forName("windows-1251"))
         }
-        return text.removePrefix("﻿")
+        return text.removePrefix("FEFF")
     }
 
     private fun readCsv(text: String): List<List<String>> {

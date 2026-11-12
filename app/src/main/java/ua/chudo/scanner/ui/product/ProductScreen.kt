@@ -1,6 +1,6 @@
 package ua.chudo.scanner.ui.product
 
-import uniffi.chudo_core.Lang
+import android.content.ClipData
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +47,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -54,12 +55,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -77,6 +79,7 @@ import ua.chudo.scanner.ui.common.openUrl
 import ua.chudo.scanner.ui.common.shareText
 import ua.chudo.scanner.ui.theme.InStockGreen
 import ua.chudo.scanner.ui.theme.OutOfStockGrey
+import uniffi.chudo_core.Lang
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ShopAvailability
 import uniffi.chudo_core.productUrl
@@ -196,7 +199,8 @@ private fun Gallery(images: List<String>) {
 
 @Composable
 private fun Header(p: ProductDetails) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         p.categories.lastOrNull()?.let {
             Text(it.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -205,7 +209,7 @@ private fun Header(p: ProductDetails) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             p.article?.let { art ->
                 AssistChip(
-                    onClick = { clipboard.setText(AnnotatedString(art)) },
+                    onClick = { scope.launch { clipboard.setClipEntry(ClipData.newPlainText("Артикул", art).toClipEntry()) } },
                     label = { Text("Арт. $art") },
                     trailingIcon = { Icon(Icons.Rounded.ContentCopy, "Копіювати", Modifier.size(16.dp)) },
                 )

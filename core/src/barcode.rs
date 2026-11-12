@@ -5,19 +5,13 @@ fn gtin_valid(digits: &[u8]) -> bool {
     let Some((&check, body)) = digits.split_last() else {
         return false;
     };
-    let sum: u32 = body
-        .iter()
-        .rev()
-        .enumerate()
-        .map(|(i, &d)| u32::from(d) * if i % 2 == 0 { 3 } else { 1 })
-        .sum();
+    let sum: u32 =
+        body.iter().rev().enumerate().map(|(i, &d)| u32::from(d) * if i % 2 == 0 { 3 } else { 1 }).sum();
     (10 - sum % 10) % 10 == u32::from(check)
 }
 
 fn to_digits(s: &str) -> Option<Vec<u8>> {
-    s.chars()
-        .map(|c| c.to_digit(10).map(|d| d as u8))
-        .collect()
+    s.chars().map(|c| c.to_digit(10).map(|d| d as u8)).collect()
 }
 
 /// Определяет, что ввёл/отсканировал пользователь.
@@ -30,9 +24,7 @@ pub fn classify_query(input: &str) -> ClassifiedQuery {
         match d.len() {
             13 if gtin_valid(&d) => return ean13(compact),
             12 if gtin_valid(&d) => return ean13(format!("0{compact}")),
-            8 if gtin_valid(&d) => {
-                return ClassifiedQuery { kind: QueryKind::Ean8, normalized: compact }
-            }
+            8 if gtin_valid(&d) => return ClassifiedQuery { kind: QueryKind::Ean8, normalized: compact },
             _ => {}
         }
     }
@@ -46,11 +38,7 @@ pub fn classify_query(input: &str) -> ClassifiedQuery {
         && trimmed.chars().count() <= 20
         && trimmed.chars().filter(|c| c.is_ascii_digit()).count() >= 3;
 
-    let kind = if looks_like_article || spaced_article {
-        QueryKind::Article
-    } else {
-        QueryKind::Text
-    };
+    let kind = if looks_like_article || spaced_article { QueryKind::Article } else { QueryKind::Text };
     ClassifiedQuery { kind, normalized: trimmed.to_string() }
 }
 
@@ -75,17 +63,16 @@ pub enum BarcodeError {
 
 /// Коды цифр набора L; R — инверсия L, G — R задом наперёд.
 const EAN_L: [u8; 10] = [
-    0b0001101, 0b0011001, 0b0010011, 0b0111101, 0b0100011,
-    0b0110001, 0b0101111, 0b0111011, 0b0110111, 0b0001011,
+    0b0001101, 0b0011001, 0b0010011, 0b0111101, 0b0100011, 0b0110001, 0b0101111, 0b0111011, 0b0110111,
+    0b0001011,
 ];
 /// Чётность левой половины по первой цифре: бит 1 — набор G (старший бит — первая цифра половины).
-const EAN_PARITY: [u8; 10] = [
-    0b000000, 0b001011, 0b001101, 0b001110, 0b010011,
-    0b011001, 0b011100, 0b010101, 0b010110, 0b011010,
-];
+const EAN_PARITY: [u8; 10] =
+    [0b000000, 0b001011, 0b001101, 0b001110, 0b010011, 0b011001, 0b011100, 0b010101, 0b010110, 0b011010];
 
 fn ean_check(d: &[u8]) -> u8 {
-    let sum: u32 = d.iter().take(12).enumerate().map(|(i, &x)| x as u32 * if i % 2 == 0 { 1 } else { 3 }).sum();
+    let sum: u32 =
+        d.iter().take(12).enumerate().map(|(i, &x)| x as u32 * if i % 2 == 0 { 1 } else { 3 }).sum();
     ((10 - sum % 10) % 10) as u8
 }
 

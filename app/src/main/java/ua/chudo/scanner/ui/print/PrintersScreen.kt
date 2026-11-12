@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -508,7 +509,7 @@ private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val bt = vm.bluetooth
     var granted by remember { mutableStateOf(bt.permissionGranted()) }
-    var refresh by remember { mutableStateOf(0) }
+    var refresh by remember { mutableIntStateOf(0) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     LaunchedEffect(Unit) {
         if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) launcher.launch(Manifest.permission.BLUETOOTH_CONNECT)
@@ -532,7 +533,9 @@ private fun BluetoothDialog(vm: PrintersViewModel, onDismiss: () -> Unit) {
                     !granted -> item {
                         Column {
                             Text("Потрібен дозвіл на Bluetooth.")
-                            TextButton(onClick = { launcher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) { Text("Дозволити") }
+                            TextButton(onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) launcher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            }) { Text("Дозволити") }
                         }
                     }
                     !bt.enabled -> item {

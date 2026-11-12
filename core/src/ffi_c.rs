@@ -76,7 +76,13 @@ pub fn dispatch(method: &str, args_json: &str) -> Value {
 /// `method` и `args_json` — валидные C-строки UTF-8 (или NULL). Результат освободить через [chudo_free].
 #[no_mangle]
 pub unsafe extern "C" fn chudo_call(method: *const c_char, args_json: *const c_char) -> *mut c_char {
-    let read = |p: *const c_char| if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() };
+    let read = |p: *const c_char| {
+        if p.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(p).to_string_lossy().into_owned()
+        }
+    };
     let out = std::panic::catch_unwind(|| dispatch(&read(method), &read(args_json)).to_string())
         .unwrap_or_else(|_| err("panic in core").to_string());
     CString::new(out).unwrap_or_default().into_raw()

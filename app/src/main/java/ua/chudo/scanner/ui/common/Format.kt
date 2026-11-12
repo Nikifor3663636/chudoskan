@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.core.net.toUri
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -16,13 +17,13 @@ private val priceFormat = NumberFormat.getIntegerInstance(Locale.forLanguageTag(
 fun formatPrice(value: Double): String = "${priceFormat.format(value)} грн"
 
 fun Context.openUrl(url: String) {
-    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
         .onFailure { Toast.makeText(this, "Немає застосунку, щоб відкрити посилання", Toast.LENGTH_SHORT).show() }
 }
 
 fun Context.openMap(address: String) {
     val q = Uri.encode("Чудо Острів, $address")
-    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$q"))) }
+    runCatching { startActivity(Intent(Intent.ACTION_VIEW, "geo:0,0?q=$q".toUri())) }
         .onFailure { openUrl("https://www.google.com/maps/search/?api=1&query=$q") }
 }
 
