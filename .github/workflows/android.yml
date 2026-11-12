@@ -1,0 +1,71 @@
+name: Android
+
+# Rust-ядро (формат, clippy, тесты) → Android (lint, unit-тесты, release APK).
+on:
+  push:
+    branches: [main]
+    paths-ignore: [docs/**, "*.md", iosApp/**, .github/workflows/ios.yml]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            core/target
+          key: core-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  android:
+    needs: core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.cargo/registry
+            core/target
+          key: android-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'core/Cargo.lock') }}
+
+      - name: Rust для Android
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --locked
+          # Для CoreContractTest: Kotlin-модели против настоящего ядра на ПК (core/target/debug).
+          cargo build --manifest-path core/Cargo.toml
+
+      # Ключ Firebase (необязательно): без него APK соберётся, но вход будет выключен.
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then echo "$GOOGLE_SERVICES_JSON" > app/google-services.json; fi
+
+      - name: Lint, тесты, APK
+        run: ./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest :app:assembleRelease --console=plain
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ChudoSkan-Android
+          path: app/build/outputs/apk/release/*.apk
