@@ -1,156 +1,172 @@
-# ЧудоСкан 2.0 — сканер наличия для «Чудо Острів»
+<p align="center">
+  <img src="docs/logo.png" alt="Чудо Острів" width="360">
+</p>
 
-![ЧудоСкан](docs/screenshots/showcase.png)
+<h1 align="center">ЧудоСкан</h1>
 
-Описание проекта, скриншоты и ссылки на приложения — в [PROJECT.md](PROJECT.md).
+<p align="center">
+  <b>Наличие игрушек в кармане.</b> Штрихкод, артикул или название — и за секунду видно цену,
+  наличие в магазинах города и остаток в своём магазине.
+</p>
 
-Версия 2.0 — обновление старого APK `com.chudoostriv.app` 1.0: тот же пакет и `versionCode 2`,
-поэтому ставится поверх старой версии.
+<p align="center">
+  <a href="https://github.com/Nikifor3663636/chudoskan/actions/workflows/android.yml"><img src="https://github.com/Nikifor3663636/chudoskan/actions/workflows/android.yml/badge.svg" alt="Android"></a>
+  <a href="https://github.com/Nikifor3663636/chudoskan/actions/workflows/ios.yml"><img src="https://github.com/Nikifor3663636/chudoskan/actions/workflows/ios.yml/badge.svg" alt="iOS"></a>
+  <a href="https://github.com/Nikifor3663636/chudoskan/releases/latest"><img src="https://img.shields.io/github/v/release/Nikifor3663636/chudoskan?label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F&color=FF7500" alt="Версия"></a>
+  <img src="https://img.shields.io/badge/Rust-core-B7410E?logo=rust" alt="Rust">
+  <img src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin">
+</p>
 
-Android-приложение: сканируешь штрихкод или вводишь артикул → карточка товара с сайта
-chudo-ostriv.com.ua, кнопка «Відкрити на сайті» и наличие **в реальных магазинах** выбранного города.
+<p align="center">
+  <a href="https://nikifor3663636.github.io/chudoskan/"><b>Установить</b></a> ·
+  <a href="#возможности"><b>Возможности</b></a> ·
+  <a href="ARCHITECTURE.md"><b>Архитектура</b></a> ·
+  <a href="#сборка"><b>Сборка</b></a>
+</p>
 
-- **Rust** (`core/`) — разбор ответов сайта, логика штрихкодов, сборка запросов. Без сети, покрыт тестами.
-- **Kotlin** (`app/`) — Jetpack Compose UI, CameraX + ML Kit, OkHttp, корутины.
-- Связка — **UniFFI** (Kotlin-обёртка сгенерирована: `app/src/main/java/uniffi/chudo_core/`).
+<p align="center">
+  <a href="docs/media/chudoskan-promo.mp4">
+    <img src="docs/media/chudoskan-promo.gif" alt="ЧудоСкан: презентация за 30 секунд" width="800">
+  </a>
+  <br>
+  <sub>Презентация за 30 секунд · <a href="docs/media/chudoskan-promo.mp4">видео в HD (MP4)</a></sub>
+</p>
 
-## Что изменилось по сравнению со старым APK (1.0)
+---
 
-| | 1.0 | 2.0 |
-|---|---|---|
-| Камера | только фото → ChatGPT | живой сканер штрихкодов (ML Kit); фото-режим через OpenAI убран |
-| Поиск | HTML `/ua/catalogsearch/result/` + Jsoup-селекторы | GraphQL сайта, точное совпадение артикула |
-| Наличие | угаданные селекторы `.store-item` — не совпадали с сайтом | реальный эндпоинт `multiwarehouse/shops`, 29 городов |
-| Штрихкод без артикула | — | UPCitemdb → артикул, «запам'ятати» связку |
-| Kidsвіт | поиск по `/catalogsearch` | убран: сайт переехал на Prom.ua, `/catalogsearch` отдаёт 404, а поиск по «lego», «лялька», «Hot Wheels» — 0 товаров (09.11.2026) |
+## Зачем
 
-### Чтобы встало поверх старой версии
+Покупатель спрашивает «а такой есть?» — ответ нужен за секунды. Раньше продавец искал товар на
+сайте вручную, звонил в другие магазины и листал таблицы 1С. ЧудоСкан собирает всё на одном экране.
 
-Android принимает обновление, только если подпись совпадает. Старый APK подписан debug-ключом
-(`CN=Android Debug`). Собирай 2.0 **на том же компьютере**, где собирал 1.0 (`%USERPROFILE%\.android\debug.keystore`).
-На другом компьютере будет ошибка «приложение не установлено» — тогда удали старую версию.
+## Возможности
 
-## Что выяснил анализ сайта (09.11.2026)
-
-| Что | Как устроено |
+| | |
 |---|---|
-| Движок | Magento 2, тема Brander, за Cloudflare |
-| Поиск / карточка | Открытый **GraphQL** `POST /graphql`, заголовок `Store: ua\|ru` |
-| Артикул с сайта | поле `external_id`. `sku` — это GUID из 1С, фильтр по `sku` отключён |
-| Наличие в магазинах | `GET /{ua\|ru}/multiwarehouse/shops/index/?id={product_id}&region={код}` → `{"html": …}`, класс `available` / `not-available` |
-| Города | 29 кодов (`odesa`, `kyiv`, …) — `core/src/regions.rs` |
-| Штрихкоды | **сайт их не индексирует**: EAN LEGO 10698 → 0 результатов, артикул «10698» → 1 |
+| 📷 **Сканер** | EAN-13, EAN-8, UPC-A с упаковки; код принимается после двух одинаковых кадров |
+| 🔎 **Поиск** | Артикул, штрихкод или название; точное совпадение артикула подсвечивается |
+| 🏬 **Наличие** | По каждому магазину выбранного города, 29 городов |
+| 🧩 **Неизвестный штрихкод** | Поиск в открытой базе UPCitemdb → артикул → товар; связка запоминается |
+| 📦 **Остатки** | Количество штук в своём магазине из выгрузки 1С (Excel или CSV) |
+| 🏷 **Ценники** | Липкие этикетки 58×40, 40×30, 30×20 и лист A4 на 24 ценника; EAN-13 на ценнике |
+| 🖨 **Принтеры** | Сеть магазина, Wi-Fi принтера, Bluetooth; ZPL, TSPL, EPL, ESC/POS |
+| 🔐 **Доступ** | Вход по телефону и паролю; новый сотрудник видит данные после подтверждения администратором |
+| 🌙 **Тема** | Светлая и тёмная, следует настройке телефона |
 
-Отсюда цепочка поиска в `ChudoRepository.lookup`:
+## Скриншоты
 
-1. штрихкод, который ты уже привязал («Так, запам'ятати») — открывается мгновенно;
-2. поиск по сайту как есть (работает для артикула, названия и брендов, у которых EAN = артикул, например Artos Games);
-3. штрихкод → открытая база **UPCitemdb** → вероятные артикулы из названий (`10698`) → поиск каждого;
-4. название из UPCitemdb → текстовый поиск.
+| Главный экран | Карточка товара | Наличие в магазинах | Остатки |
+|:-:|:-:|:-:|:-:|
+| <img src="docs/screenshots/01-home.png" width="190" alt="Главный экран"> | <img src="docs/screenshots/02-product.png" width="190" alt="Карточка товара"> | <img src="docs/screenshots/03-shops.png" width="190" alt="Наличие в магазинах"> | <img src="docs/screenshots/04-stock.png" width="190" alt="Остатки магазина"> |
 
-Если Cloudflare отвечает страницей проверки, запрос автоматически повторяется из невидимого WebView (`WebViewFetcher`).
+| Печать ценников | Принтеры | Инструкция | Выбор города |
+|:-:|:-:|:-:|:-:|
+| <img src="docs/screenshots/05-label.png" width="190" alt="Печать ценников"> | <img src="docs/screenshots/06-printers.png" width="190" alt="Принтеры"> | <img src="docs/screenshots/07-guide.png" width="190" alt="Как подключить принтер"> | <img src="docs/screenshots/08-city.png" width="190" alt="Выбор города"> |
 
-## Вход сотрудников и остатки магазина (Firebase)
+## Установка
 
-Приложение открывается только после входа **по номеру телефона и паролю**. Сотрудник регистрируется
-(имя, телефон, пароль, город, свой магазин) — без SMS (SMS в Firebase только на платном тарифе Blaze); администратор подтверждает его, и во вкладке «Остатки» сотрудник видит количество штук **только в своём магазине**.
-Количество берётся из выгрузки 1С (Excel `.xlsx` или CSV), которую сотрудник загружает кнопкой «Загрузить выгрузку 1С».
-Файл заменяет остатки магазина целиком; товар ищется по артикулу с сайта, затем по штрихкоду.
+<img src="docs/qr-install.png" width="150" align="right" alt="QR-код страницы установки">
 
-Сменить пароль — Профіль → «Змінити пароль» (нужен текущий). Забыл пароль — администратор задаёт новый: Admin SDK / Identity Toolkit `accounts:update` с `password` для uid сотрудника (в консоли Firebase задать пароль нельзя — там только письмо, а почта служебная). Простой вариант без скриптов: удалить пользователя в Authentication и его документ `users/{uid}` — сотрудник зарегистрируется заново, и его снова подтверждают.
-Firebase хранит пароль только в паре с email, поэтому логин — служебный адрес из номера
-(`+380961234567` → `380961234567@tel.chudoostriv.app`, см. `AuthRepository.loginFor`); пользователь его не видит, писем на него нет.
+Откройте **[nikifor3663636.github.io/chudoskan](https://nikifor3663636.github.io/chudoskan/)** на
+телефоне или наведите камеру на QR-код — страница сама покажет нужную кнопку.
 
-Firestore: `users/{uid}` — анкета (`shop`, `shopId`, `approved`), `shops/{shopId}/stock/{артикул}` — остатки.
-Доступ ограничивают правила [`firestore.rules`](firestore.rules): читать и писать остатки может только подтверждённый
-сотрудник этого магазина.
+- **Android 8.0+** — APK из [последнего релиза](https://github.com/Nikifor3663636/chudoskan/releases/latest).
+  Разрешите установку из браузера; новая версия ставится поверх старой.
+- **iPhone (iOS 15+)** — через TestFlight; ссылка появится на странице установки.
 
-Подключение (один раз):
+После установки: регистрация (имя, телефон, пароль, свой магазин) → администратор подтверждает
+заявку → вход по номеру телефона и паролю.
 
-1. [console.firebase.google.com](https://console.firebase.google.com) → **Add project**.
-2. **Add app → Android**, пакет `com.chudoostriv.app` → скачать `google-services.json` в папку `app/` (в git не попадает).
-3. **Authentication → Sign-in method** → включить **Email/Password** (вход по номеру и паролю).
-4. **Firestore Database → Create database** (регион `europe-west`) → вкладка **Rules** → вставить `firestore.rules` → **Publish**.
-5. Собрать APK заново.
+## Как устроено
 
-Подтвердить сотрудника: **Firestore → users → документ сотрудника → `approved` = `true`**.
-Если сотрудник перешёл в другой магазин — удалить его документ в `users`: при следующем входе приложение
-попросит выбрать магазин заново, и анкету нужно будет подтвердить ещё раз.
-
-## Печать ценников
-
-Профиль → «Принтери». Любой принтер, три способа подключения (`print/`):
-
-| Подключение | Как | Код |
-|---|---|---|
-| Сеть магазина | скан /24 на :9100 + mDNS; модель по SNMP (`hrDeviceDescr`/`sysDescr`), Godex по `~HI`; при смене IP принтер находится заново по отпечатку | `PrinterDiscovery`, `Snmp` |
-| Wi-Fi принтера (без роутера) | Brother Wireless Direct `DIRECT-…`, Wi-Fi Direct, AP-режим: `WifiNetworkSpecifier` на время печати (Android 10+), адрес — шлюз сети | `WifiDirectLink` |
-| Bluetooth | спаренный принтер, SPP (RFCOMM) | `BluetoothLink` |
-
-Липкие этикетки — картинка ценника в языке принтера: ZPL (Zebra, Godex), TSPL (TSC, Xprinter и др.), EPL, ESC/POS
-(`LabelEncoder`, байты проверены в `app/src/test`). Язык угадывается по модели, меняется в карточке принтера; «Тест» печатает пробную этикетку.
-A4 — системный друк Android (любой принтер с сервисом печати) или PDF напрямую.
-SSID и пароль Wi-Fi у Godex/Brother задаются с самого принтера или программой производителя: открытой команды для этого у них нет.
-
-## Сборка APK (Windows)
-
-Нужно: Android Studio (SDK + **NDK** через SDK Manager → SDK Tools), Rust (`rustup`).
-
-```powershell
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-cargo install cargo-ndk
+```mermaid
+flowchart LR
+    A[Android<br/>Jetpack Compose] -- UniFFI --> C[[Rust-ядро]]
+    I[iPhone<br/>Compose Multiplatform] -- C ABI --> C
+    A & I -- HTTPS --> S[(chudo-ostriv.com.ua)]
+    A & I --> F[(Firebase<br/>Auth · Firestore)]
 ```
 
-Дальше открыть папку в Android Studio → **Build → Generate App Bundles or APKs → Build APK(s)**.
-Gradle сам вызовет `cargo ndk` (задача `:app:buildRust`) и положит `.so` в `app/src/main/jniLibs/`.
+- **Rust-ядро** (`core/`) — запросы к сайту, разбор ответов, штрихкоды. Без сети и файлов, поэтому
+  полностью покрыто тестами, в том числе на реальных ответах сайта.
+- **Android** (`app/`) — Kotlin, Jetpack Compose, CameraX + ML Kit, OkHttp, Firebase.
+- **iPhone** (`shared/` + `iosApp/`) — Kotlin Multiplatform и Compose Multiplatform, SwiftUI-оболочка.
+- **Данные** — открытый GraphQL сайта и эндпоинт наличия; остатки и сотрудники — Firestore с
+  правилами доступа по магазину.
 
-Из консоли:
+Подробно, с диаграммами и принятыми решениями — **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
-```powershell
-.\gradlew.bat assembleDebug        # app\build\outputs\apk\debug\app-debug.apk
-.\gradlew.bat assembleRelease      # подписан debug-ключом — для личного использования
-```
+## Сборка
 
-Если `.so` уже собраны и Rust не менялся: `skipRust=true` в `gradle.properties`.
+<details>
+<summary><b>Android (Windows, macOS, Linux)</b></summary>
 
-> Версии: AGP 8.13 + Kotlin 2.2 — проверенная связка. Android Studio предложит перейти на AGP 9.x
-> (Upgrade Assistant), это можно сделать позже.
-
-## Rust-ядро
+Нужно: JDK 21, Android SDK + NDK, Rust.
 
 ```bash
-cd core
-cargo test            # 26 тестов, в т.ч. на реальных ответах сайта (tests/fixtures)
-cargo clippy --all-targets -- -D warnings
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo install cargo-ndk
+./gradlew :app:assembleRelease   # app/build/outputs/apk/release/
 ```
 
-После изменения публичного API ядра перегенерировать Kotlin-обёртку:
+Gradle сам собирает ядро (`cargo ndk`) и кладёт `.so` в `app/src/main/jniLibs/`.
+Если ядро не менялось — `-PskipRust=true`.
 
-```powershell
-.\scripts\gen-bindings.ps1
+</details>
+
+<details>
+<summary><b>iOS (macOS)</b></summary>
+
+```bash
+bash scripts/build-ios-core.sh                                   # libchudo_core.a для iPhone и симулятора
+./gradlew :shared:linkDebugFrameworkIosSimulatorArm64            # Kotlin-фреймворк
+brew install xcodegen && (cd iosApp && xcodegen)                 # проект Xcode
+open iosApp/iosApp.xcodeproj
 ```
+
+В CI то же самое делает [`ios.yml`](.github/workflows/ios.yml); при наличии секретов App Store Connect
+сборка уходит в TestFlight.
+
+</details>
+
+<details>
+<summary><b>Firebase</b></summary>
+
+1. Проект в [консоли Firebase](https://console.firebase.google.com), Android-приложение `com.chudoostriv.app`.
+2. `google-services.json` → в `app/` (в git не попадает; для CI — секрет `GOOGLE_SERVICES_JSON`).
+3. Authentication → **Email/Password**.
+4. Firestore → правила из [`firestore.rules`](firestore.rules).
+
+Подтвердить сотрудника: Firestore → `users/{uid}` → `approved = true`.
+
+</details>
+
+## Проверки
+
+```bash
+cd core && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest
+```
+
+Те же проверки запускаются в GitHub Actions на каждый push.
 
 ## Структура
 
 ```
-core/src/
-  barcode.rs   EAN-13/EAN-8/UPC-A: контрольная цифра, артикул или текст
-  graphql.rs   тела запросов (через variables) и разбор ответов, точное совпадение артикула
-  shops.rs     разбор наличия по магазинам
-  upc.rs       UPCitemdb → кандидаты-артикулы
-  guard.rs     распознавание блокировки Cloudflare
-  urls.rs / regions.rs
-app/src/main/java/ua/chudo/scanner/
-  data/        SiteClient (OkHttp + WebView-фолбэк), ChudoRepository, AppPrefs
-  ui/home      поиск, сканирование, город, недавние
-  ui/scan      CameraX + ML Kit, сканер штрихкодов, ліхтарик
-  ui/results   этапы поиска, список, «не знайшли»
-  ui/product   галерея, ціна, наявність у магазинах, «запам'ятати штрихкод»
-docs/               логотип и скриншоты
+core/          Rust-ядро: barcode, graphql, shops, upc, guard, regions, urls, ffi_c
+app/           Android: data/ · print/ · ui/{home,scan,results,product,stock,print,auth,profile}
+shared/        Kotlin Multiplatform: общие модели, Firebase REST, экраны Compose для iPhone
+iosApp/        SwiftUI-оболочка и project.yml для XcodeGen
+docs/          страница установки, видео, скриншоты, логотип
+scripts/       сборка ядра для iOS, генерация привязок UniFFI
 ```
 
 ## Ограничения
 
-- Наличие на сайте — да/нет по магазину, без количества.
-- UPCitemdb (пробный тариф) — около 100 запросов в сутки. Привязанные штрихкоды в лимит не входят.
-- Приложение читает публичные данные сайта; если разметка поменяется, тесты в `core/tests` покажут, что сломалось.
+- Сайт отдаёт наличие «есть / нет» по магазину; количество — только из выгрузки 1С.
+- UPCitemdb (бесплатный тариф) — около 100 запросов в сутки; привязанные штрихкоды лимит не тратят.
+- На iPhone пока нет остатков и печати ценников.
+
+---
+
+<sub>Данные о товарах — с сайта [chudo-ostriv.com.ua](https://chudo-ostriv.com.ua). Логотип «Чудо Острів» — товарный знак сети.</sub>
