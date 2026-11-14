@@ -63,7 +63,8 @@ class BrandMatcher(synonyms: Map<String, String> = emptyMap()) {
 
         /** Нижний регистр, без пробелов/дефисов/апострофов/точек, кириллица-двойник → латиница. */
         fun norm(s: String): String = buildString {
-            for (c in s.lowercase()) if (c !in DROP) append(LOOKALIKE[c] ?: c)
+            // NFKC: лигатуры из CorelDRAW («Treﬂ», «Inﬁniti») → обычные буквы.
+            for (c in java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC).lowercase()) if (c !in DROP) append(LOOKALIKE[c] ?: c)
         }
 
         /** «ТМ LEGO, Конструктор…» → «LEGO». */

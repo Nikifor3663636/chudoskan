@@ -15,6 +15,8 @@ class LayoutMatchTest {
         assertEquals("lol", BrandMatcher.norm("L.O.L"))
         assertEquals("ok", BrandMatcher.norm("Ок")) // кириллица-двойник → латиница
         assertEquals("pawpatrol", BrandMatcher.norm("Paw ’Patrol"))
+        assertEquals("trefl", BrandMatcher.norm("Treﬂ")) // лигатура с плана
+        assertEquals("clementoni", BrandMatcher.norm("СLEMENTONI")) // первая «С» кириллическая
     }
 
     @Test fun brands() {
