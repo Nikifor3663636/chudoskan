@@ -45,7 +45,7 @@ object A4Sheet {
     }
 
     /** Печать через системный PrintManager (сетевой Brother, Mopria/плагин Brother). */
-    fun systemPrint(activity: Activity, job: String, pdf: ByteArray, pageCount: Int) {
+    fun systemPrint(activity: Activity, job: String, pdf: ByteArray, pageCount: Int, landscape: Boolean = false) {
         val pm = activity.getSystemService(Context.PRINT_SERVICE) as PrintManager
         val adapter = object : PrintDocumentAdapter() {
             override fun onLayout(
@@ -77,6 +77,7 @@ object A4Sheet {
                 }
             }
         }
-        pm.print(job, adapter, PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build())
+        val a4 = PrintAttributes.MediaSize.ISO_A4.let { if (landscape) it.asLandscape() else it }
+        pm.print(job, adapter, PrintAttributes.Builder().setMediaSize(a4).build())
     }
 }

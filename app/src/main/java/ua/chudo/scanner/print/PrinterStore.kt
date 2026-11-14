@@ -18,7 +18,7 @@ class PrinterStore(context: Context) {
     private val ds = context.applicationContext.printerData
 
     val printers: Flow<List<SavedPrinter>> = ds.data.map { decode(it[LIST]) }
-    val lastTemplate: Flow<LabelTemplate?> = ds.data.map { p -> LabelTemplate.entries.firstOrNull { it.name == p[TEMPLATE] } }
+    val lastTemplate: Flow<Template?> = ds.data.map { p -> Template.entries.firstOrNull { it.name == p[TEMPLATE] } }
     val direct: Flow<Boolean> = ds.data.map { it[DIRECT] == true }
     fun lastPrinter(role: LabelKind): Flow<String?> = ds.data.map { it[lastKey(role)] }
 
@@ -29,7 +29,7 @@ class PrinterStore(context: Context) {
 
     suspend fun remove(id: String) = ds.edit { prefs -> prefs[LIST] = encode(decode(prefs[LIST]).filterNot { it.id == id }) }
 
-    suspend fun setLastTemplate(t: LabelTemplate) = ds.edit { it[TEMPLATE] = t.name }
+    suspend fun setLastTemplate(t: Template) = ds.edit { it[TEMPLATE] = t.name }
     suspend fun setLastPrinter(role: LabelKind, id: String) = ds.edit { it[lastKey(role)] = id }
     suspend fun setDirect(v: Boolean) = ds.edit { it[DIRECT] = v }
 

@@ -97,7 +97,7 @@ object TagRenderer {
         return bmp
     }
 
-    private fun drawEan(c: Canvas, full: String, mods: List<Boolean>, pad: Float, inner: Float, top: Float, barsH: Float, digits: TextPaint) {
+    internal fun drawEan(c: Canvas, full: String, mods: List<Boolean>, pad: Float, inner: Float, top: Float, barsH: Float, digits: TextPaint) {
         val lead = digits.measureText("0") * 1.3f
         val module = max(1, ((inner - lead) / mods.size).toInt())
         val barsW = module * mods.size

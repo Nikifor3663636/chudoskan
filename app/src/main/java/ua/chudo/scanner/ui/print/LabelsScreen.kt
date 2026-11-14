@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,13 +89,16 @@ import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.print.LabelKind
-import ua.chudo.scanner.print.LabelTemplate
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.PrintService
 import ua.chudo.scanner.print.PrinterNotFoundException
 import ua.chudo.scanner.print.QueueItem
 import ua.chudo.scanner.print.TagRenderer
+import ua.chudo.scanner.print.Template
+import ua.chudo.scanner.print.TemplateRenderer
+import ua.chudo.scanner.print.expand
 import ua.chudo.scanner.print.formatPrice
+import ua.chudo.scanner.print.toItem
 import ua.chudo.scanner.ui.common.toUiError
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
@@ -125,8 +130,10 @@ class LabelsViewModel(
     val copies = _copies.asStateFlow()
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue = _queue.asStateFlow()
-    private val _template = MutableStateFlow(LabelTemplate.STICKY_58x40)
+    private val _template = MutableStateFlow(Template.TAG_68x38)
     val template = _template.asStateFlow()
+    private val _promo = MutableStateFlow(false)
+    val promo = _promo.asStateFlow()
     private val _printerId = MutableStateFlow<Map<LabelKind, String>>(emptyMap())
     val printerId = _printerId.asStateFlow()
     val direct = svc.store.direct.stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -143,8 +150,16 @@ class LabelsViewModel(
             _printerId.value = LabelKind.entries.mapNotNull { k -> svc.store.lastPrinter(k).first()?.let { k to it } }.toMap()
         }
         viewModelScope.launch {
-            combine(_current, _queue, _template) { c, q, t -> (c ?: q.lastOrNull()?.tag) to t }.collectLatest { (tag, t) ->
-                _preview.value = tag?.let { withContext(Dispatchers.Default) { TagRenderer.mono(it, t).toBitmap().asImageBitmap() } }
+            combine(_current, _queue, _template, _promo) { _, _, t, p -> t to p }.collectLatest { (t, p) ->
+                val items = jobItems()
+                _preview.value = if (items.isEmpty()) null else withContext(Dispatchers.Default) {
+                    if (t == Template.LABEL_40x25) {
+                        TagRenderer.toMono(TemplateRenderer.label(items.first().tag.toItem())).toBitmap()
+                    } else {
+                        val cells = expand(items.map { it.tag.toItem() to it.copies })
+                        TemplateRenderer.pageBitmap(TemplateRenderer.pages(cells, t).first(), t, p, PREVIEW_SCALE)
+                    }.asImageBitmap()
+                }
             }
         }
     }
@@ -218,10 +233,15 @@ class LabelsViewModel(
 
     fun setKind(kind: LabelKind) {
         if (_template.value.kind == kind) return
-        setTemplate(LabelTemplate.of(kind).first())
+        setTemplate(Template.entries.first { it.kind == kind })
     }
 
-    fun setTemplate(t: LabelTemplate) {
+    fun setPromo(v: Boolean) { _promo.value = v }
+
+    /** «Акційний» имеет смысл, только если хоть у одного товара старая цена больше новой. */
+    fun promoAvailable() = jobItems().any { it.tag.toItem().canPromo }
+
+    fun setTemplate(t: Template) {
         _template.value = t
         viewModelScope.launch { svc.store.setLastTemplate(t) }
     }
@@ -245,16 +265,17 @@ class LabelsViewModel(
         _status.value = PrintStatus.Printing
         viewModelScope.launch {
             _status.value = try {
+                val promo = _promo.value && kind == LabelKind.PLAIN && promoAvailable()
                 when {
                     kind == LabelKind.STICKY -> {
                         printer ?: return@launch fail("Додай принтер для липких: Профіль → Принтери.")
-                        svc.printSticky(printer, items, t)
+                        svc.printLabels(printer, items)
                     }
                     direct.value -> {
                         printer ?: return@launch fail("Для прямої печаті додай принтер A4: Профіль → Принтери.")
-                        svc.printPlainDirect(printer, items)
+                        svc.printSheetDirect(printer, items, t, promo)
                     }
-                    else -> svc.printPlainSystem(activity ?: return@launch fail("No activity"), items)
+                    else -> svc.printSheetSystem(activity ?: return@launch fail("No activity"), items, t, promo)
                 }
                 val n = items.sumOf { it.copies }
                 _queue.value = emptyList()
@@ -291,8 +312,20 @@ fun LabelsScreen(
     val template by vm.template.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
+    val promo by vm.promo.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
+    var askPaper by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    if (askPaper) {
+        AlertDialog(
+            onDismissRequest = { askPaper = false },
+            title = { Text("Акційні цінники") },
+            text = { Text("Вставте жовтий папір у принтер.") },
+            confirmButton = { TextButton(onClick = { askPaper = false; vm.print(activity) }) { Text("Друкувати") } },
+            dismissButton = { TextButton(onClick = { askPaper = false }) { Text("Скасувати") } },
+        )
+    }
 
     LaunchedEffect(scanned) {
         scanned?.let { query = it; vm.search(it); onScannedConsumed() }
@@ -366,13 +399,13 @@ fun LabelsScreen(
 
         if (current != null || queue.isNotEmpty()) {
             item { HorizontalDivider() }
-            item { KindAndTemplate(template, vm) }
+            item { KindAndTemplate(template, promo, vm) }
             preview?.let { img ->
                 item {
                     Image(
                         img, "Попередній перегляд",
-                        Modifier.fillMaxWidth().heightIn(max = 220.dp)
-                            .aspectRatio(template.widthMm.toFloat() / template.heightMm)
+                        Modifier.fillMaxWidth().heightIn(max = if (template.kind == LabelKind.STICKY) 220.dp else 420.dp)
+                            .aspectRatio(img.width.toFloat() / img.height)
                             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline)),
                         filterQuality = FilterQuality.None,
                     )
@@ -382,7 +415,10 @@ fun LabelsScreen(
             item {
                 val total = queue.sumOf { it.copies } + (if (current != null) copies else 0)
                 Button(
-                    onClick = { vm.print(activity) }, enabled = status != PrintStatus.Printing,
+                    onClick = {
+                        if (promo && template.kind == LabelKind.PLAIN && vm.promoAvailable()) askPaper = true else vm.print(activity)
+                    },
+                    enabled = status != PrintStatus.Printing,
                     modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
                 ) {
                     if (status == PrintStatus.Printing) CircularProgressIndicator(Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp, color = Color.White)
@@ -419,6 +455,10 @@ private fun TagEditor(tag: PriceTag, copies: Int, vm: LabelsViewModel) {
                     label = { Text("Штрихкод") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(tag.brand, { v -> vm.edit { it.copy(brand = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Бренд") })
+                OutlinedTextField(tag.code, { v -> vm.edit { it.copy(code = v.trim()) } }, Modifier.weight(1f), singleLine = true, label = { Text("Код 1С") })
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Кількість", Modifier.weight(1f))
                 IconButton(onClick = { vm.setCopies(copies - 1) }, enabled = copies > 1) { Icon(Icons.Rounded.Remove, "−") }
@@ -440,16 +480,34 @@ private fun PriceField(value: String, label: String, modifier: Modifier, onChang
 }
 
 @Composable
-private fun KindAndTemplate(template: LabelTemplate, vm: LabelsViewModel) {
+private fun KindAndTemplate(template: Template, promo: Boolean, vm: LabelsViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LabelKind.entries.forEach { k -> FilterChip(selected = template.kind == k, onClick = { vm.setKind(k) }, label = { Text(roleTitle(k)) }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LabelTemplate.of(template.kind).forEach { t -> FilterChip(selected = template == t, onClick = { vm.setTemplate(t) }, label = { Text(t.title) }) }
+            Template.entries.filter { it.kind == template.kind }.forEach { t ->
+                FilterChip(selected = template == t, onClick = { vm.setTemplate(t) }, label = { Text(t.title) })
+            }
+        }
+        if (template.kind == LabelKind.PLAIN) {
+            val available = vm.promoAvailable()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Акційний")
+                    Text(
+                        if (available) "Стара ціна перекреслена над новою" else "Потрібна стара ціна, більша за нову",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = promo && available, onCheckedChange = vm::setPromo, enabled = available)
+            }
         }
     }
 }
+
+/** Предпросмотр листа A4 — четверть от 300 dpi. */
+private const val PREVIEW_SCALE = 0.25f
 
 @Composable
 private fun PrinterPicker(kind: LabelKind, vm: LabelsViewModel, onPrinters: () -> Unit) {

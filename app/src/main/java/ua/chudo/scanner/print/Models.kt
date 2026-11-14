@@ -7,6 +7,9 @@ data class PriceTag(
     val oldPrice: String,
     val article: String,
     val barcode: String,
+    val brand: String = "",
+    /** Код 1С (BOC307585). */
+    val code: String = "",
 )
 
 /** «Липкі» — термоэтикетки, «Звичайні» — лист A4. */
@@ -16,6 +19,7 @@ enum class LabelTemplate(val kind: LabelKind, val widthMm: Int, val heightMm: In
     STICKY_58x40(LabelKind.STICKY, 58, 40, "58×40"),
     STICKY_40x30(LabelKind.STICKY, 40, 30, "40×30"),
     STICKY_30x20(LabelKind.STICKY, 30, 20, "30×20"),
+    STICKY_40x25(LabelKind.STICKY, 40, 25, "40×25"),
     A4_70x37(LabelKind.PLAIN, 70, 37, "A4 3×8 (70×37)"),
     ;
 

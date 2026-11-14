@@ -66,23 +66,28 @@ class PrintService(context: Context) {
         deliver(p, bytes)
     }
 
-    /** PDF A4 и число страниц. */
-    suspend fun plainPdf(items: List<QueueItem>): Pair<ByteArray, Int> = withContext(Dispatchers.Default) {
-        val bitmaps = items.flatMap { q ->
-            val b = TagRenderer.mono(q.tag, LabelTemplate.A4_70x37).toBitmap()
-            List(q.copies) { b }
+    /** Етикетки 40×25: 320×200 точек, 1 бит. */
+    suspend fun printLabels(p: SavedPrinter, items: List<QueueItem>) {
+        val lang = p.lang.takeIf { it != PrintLang.PDF } ?: PrintLang.ZPL
+        val bytes = withContext(Dispatchers.Default) {
+            val imgs = items.map { TagRenderer.toMono(TemplateRenderer.label(it.tag.toItem())) to it.copies }
+            LabelEncoder.encode(lang, imgs, LabelTemplate.STICKY_40x25)
         }
-        A4Sheet.pdf(bitmaps) to A4Sheet.pages(bitmaps.size)
+        deliver(p, bytes)
     }
 
-    suspend fun printPlainSystem(activity: Activity, items: List<QueueItem>) {
-        val (pdf, pages) = plainPdf(items)
-        A4Sheet.systemPrint(activity, "Цінники", pdf, pages)
+    /** PDF A4 по шаблону (items × qty подряд) и число страниц. */
+    suspend fun sheetPdf(items: List<QueueItem>, t: Template, promo: Boolean): Pair<ByteArray, Int> =
+        withContext(Dispatchers.Default) { TemplateRenderer.pdf(expand(items.map { it.tag.toItem() to it.copies }), t, promo) }
+
+    suspend fun printSheetSystem(activity: Activity, items: List<QueueItem>, t: Template, promo: Boolean) {
+        val (pdf, pages) = sheetPdf(items, t, promo)
+        A4Sheet.systemPrint(activity, "Цінники", pdf, pages, t.landscape)
     }
 
     /** «Пряма печать» A4: PDF сырыми байтами (Brother, HP и большинство офисных лазерных). */
-    suspend fun printPlainDirect(p: SavedPrinter, items: List<QueueItem>) {
-        deliver(p, plainPdf(items).first)
+    suspend fun printSheetDirect(p: SavedPrinter, items: List<QueueItem>, t: Template, promo: Boolean) {
+        deliver(p, sheetPdf(items, t, promo).first)
     }
 
     /**

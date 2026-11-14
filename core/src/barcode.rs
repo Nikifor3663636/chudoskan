@@ -157,6 +157,22 @@ mod tests {
     }
 
     #[test]
+    fn ean13_test_code() {
+        // Тестовый код ценников: внутренний диапазон 200, контрольная 8.
+        assert_eq!(ean13_full("200000000000").unwrap(), "2000000000008");
+        let b = ean13_bars("2000000000008").unwrap();
+        assert_eq!(b.len(), 95);
+        // 2 → чётность LLGGLG; левая половина 000000, правая 000008.
+        let left = "0001101 0001101 0100111 0100111 0001101 0100111";
+        let right = "1110010 1110010 1110010 1110010 1110010 1001000";
+        let want = format!("101{}01010{}101", left.replace(' ', ""), right.replace(' ', ""));
+        assert_eq!(b, bits(&want));
+        assert_eq!(ean13_bars("2000000000009"), Err(BarcodeError::BadChecksum));
+        assert_eq!(ean13_bars("20000000000081"), Err(BarcodeError::BadLength));
+        assert_eq!(ean13_bars(""), Err(BarcodeError::BadLength));
+    }
+
+    #[test]
     fn valid_ean13() {
         let q = classify_query("5702015357197");
         assert_eq!(q.kind, QueryKind::Ean13);
