@@ -40,6 +40,19 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
         return if (d.exists()) d.toItem() else null
     }
 
+    /**
+     * Товары бренда с плана магазина: название начинается с «ТМ {brand}» (как есть и заглавными).
+     * Firestore не умеет «содержит», поэтому только префикс — по запросу на вариант.
+     */
+    suspend fun byBrand(shopId: String, brand: String, limit: Long = 100): List<StockItem> {
+        val b = brand.trim().ifEmpty { return emptyList() }
+        return listOf(b, b.uppercase()).distinct().flatMap { v ->
+            val p = "ТМ $v"
+            stock(shopId).whereGreaterThanOrEqualTo("name", p).whereLessThan("name", p + "").limit(limit).get().await()
+                .documents.map { it.toItem() }
+        }.distinctBy { it.barcode to it.article }.sortedBy { it.name }
+    }
+
     /** Ищем по штрихкодам (id документа), потом по артикулу с сайта. `null` — товара нет в выгрузке. */
     suspend fun find(shopId: String, article: String?, barcodes: List<String>): StockItem? {
         for (bc in barcodes.map { it.filter(Char::isDigit) }.filter { it.isNotEmpty() }.distinct()) {

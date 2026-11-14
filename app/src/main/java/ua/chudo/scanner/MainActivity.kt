@@ -66,6 +66,8 @@ private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
 private const val LABEL_MODE = "label"
 private const val LABEL_CODE = "label_code"
+private const val LAYOUT_MODE = "layout"
+private const val LAYOUT_CODE = "layout_code"
 
 private object Routes {
     const val HOME = "home"
@@ -78,6 +80,7 @@ private object Routes {
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_LABEL = "scan?mode=$LABEL_MODE"
+    const val SCAN_LAYOUT = "scan?mode=$LAYOUT_MODE"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
 
@@ -195,7 +198,15 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
             )
         }
-        composable(Routes.LAYOUT) { StoreLayoutScreen() }
+        composable(Routes.LAYOUT) { entry ->
+            val scanned by entry.savedStateHandle.getStateFlow<String?>(LAYOUT_CODE, null).collectAsStateWithLifecycle()
+            StoreLayoutScreen(
+                employee,
+                onScan = { nav.navigate(Routes.SCAN_LAYOUT) },
+                scanned = scanned,
+                onScannedConsumed = { entry.savedStateHandle[LAYOUT_CODE] = null },
+            )
+        }
         composable(Routes.HOME) {
             HomeScreen(
                 onScan = { nav.navigate(Routes.scan()) },
@@ -214,6 +225,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             val returnKey = when (arg) {
                 STOCK_MODE -> STOCK_CODE
                 LABEL_MODE -> LABEL_CODE
+                LAYOUT_MODE -> LAYOUT_CODE
                 else -> null
             }
             ScannerScreen(

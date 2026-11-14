@@ -50,6 +50,17 @@ service cloud.firestore {
       match /stock/{item} {
         allow read, write: if worksAt(shopId);
       }
+
+      // Уточнения «де лежить товар» на плане магазина.
+      match /layoutPins/{pin} {
+        allow read, delete: if worksAt(shopId);
+        allow create: if worksAt(shopId)
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.key is string
+          && request.resource.data.x is number && request.resource.data.y is number
+          && request.resource.data.x >= 0 && request.resource.data.x <= 1
+          && request.resource.data.y >= 0 && request.resource.data.y <= 1;
+      }
     }
   }
 }
