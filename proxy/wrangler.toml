@@ -1,0 +1,9 @@
+# Посредник веб-версии ЧудоСкан: браузер не может ходить на сайт сети напрямую (нет CORS).
+# Пропускает только нужные пути двух сайтов и только для страницы ЧудоСкан.
+name = "chudoskan-proxy"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://nikifor3663636.github.io,http://localhost:8080"

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>ЧудоСкан</title>
+  <meta name="description" content="ЧудоСкан у браузері: наявність іграшок, залишки магазину, план «де лежить товар»">
+  <meta name="theme-color" content="#FF7500">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ЧудоСкан">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+    html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; overscroll-behavior: none; }
+    @media (prefers-color-scheme: dark) { html, body { background: #121212; color: #eee; } }
+    #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font: 16px/1.5 system-ui, -apple-system, sans-serif; gap: 16px; padding: 24px; text-align: center; }
+    #loading img { width: 96px; height: 96px; border-radius: 22px; }
+  </style>
+  <script>
+    // Посредник для сайта сети (proxy/): браузер не ходит туда напрямую из-за CORS.
+    globalThis.CHUDO_PROXY = "https://chudoskan-proxy.chudoskan.workers.dev";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"
+          integrity="sha384-BzBxP10ZE72aitqj5UMmUsbKFliP/DZqA8Wq+BNNhlIJDGoEd1tpkMYXOg9+n6sB"
+          crossorigin="anonymous" defer></script>
+  <script src="scanner.js" defer></script>
+  <script src="core-loader.js"></script>
+</head>
+<body>
+  <div id="loading">
+    <img src="apple-touch-icon.png" alt="">
+    <div id="loading-text">Завантаження ЧудоСкан…</div>
+  </div>
+  <script>
+    // Kotlin/Wasm потребує WebAssembly GC: Safari 18.2+ (iOS 18.2+), Chrome 119+.
+    const gcOk = (() => { try { return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,95,1,120,0])); } catch { return false; } })();
+    if (!gcOk) {
+      document.getElementById("loading-text").innerHTML =
+        "Цей браузер застарий для ЧудоСкан.<br>Оновіть iOS до 18.2 або новішої (Параметри → Загальні → Оновлення ПЗ).";
+    } else {
+      const s = document.createElement("script");
+      s.src = "chudoscan.js";
+      document.body.appendChild(s);
+    }
+  </script>
+</body>
+</html>

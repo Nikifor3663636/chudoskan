@@ -1,0 +1,12 @@
+{
+  "name": "ЧудоСкан",
+  "short_name": "ЧудоСкан",
+  "description": "Наявність іграшок «Чудо Острів», залишки магазину, план «де лежить товар»",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FF7500",
+  "lang": "uk",
+  "icons": [{ "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }]
+}

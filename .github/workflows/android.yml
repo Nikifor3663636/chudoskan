@@ -4,7 +4,7 @@ name: Android
 on:
   push:
     branches: [main]
-    paths-ignore: [docs/**, "*.md", iosApp/**, .github/workflows/ios.yml]
+    paths-ignore: [docs/**, "*.md", iosApp/**, proxy/**, .github/workflows/ios.yml, .github/workflows/pages.yml]
   pull_request:
   workflow_dispatch:
 

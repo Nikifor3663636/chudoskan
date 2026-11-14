@@ -36,6 +36,16 @@ kotlin {
         }
     }
 
+    // Веб-версия для браузера (в т.ч. iPhone без App Store): тот же UI, ядро — core.wasm.
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName.set("chudoscan")
+        browser {
+            commonWebpackConfig { outputFileName = "chudoscan.js" }
+        }
+        binaries.executable()
+    }
+
     sourceSets {
         commonMain {
             kotlin.srcDir(layout.buildDirectory.dir("generated/firebaseConfig"))
@@ -61,6 +71,12 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+        }
+        wasmJsMain {
+            resources.srcDir(layout.buildDirectory.dir("generated/coreWasm"))
+            dependencies {
+                implementation(libs.ktor.client.js)
+            }
         }
         androidUnitTest.dependencies {
             implementation(libs.junit)
@@ -118,3 +134,18 @@ val genFirebaseConfig by tasks.registering {
     }
 }
 tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.configureEach { dependsOn(genFirebaseConfig) }
+
+// Rust-ядро для браузера: core/ → wasm32 → ресурсы веб-версии (chudo_core.wasm рядом с index.html).
+val buildCoreWasm by tasks.registering(Exec::class) {
+    group = "rust"
+    description = "Собирает chudo-core в WebAssembly"
+    workingDir = rootProject.file("core")
+    commandLine("cargo", "build", "--lib", "--release", "--target", "wasm32-unknown-unknown")
+    onlyIf { providers.gradleProperty("skipRust").orNull != "true" }
+}
+val copyCoreWasm by tasks.registering(Copy::class) {
+    dependsOn(buildCoreWasm)
+    from(rootProject.file("core/target/wasm32-unknown-unknown/release/chudo_core.wasm"))
+    into(layout.buildDirectory.dir("generated/coreWasm"))
+}
+tasks.matching { it.name == "wasmJsProcessResources" }.configureEach { dependsOn(copyCoreWasm) }

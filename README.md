@@ -108,7 +108,8 @@
 | Платформа | Как поставить | Статус |
 |---|---|---|
 | 🤖 **Android 8.0+** | APK из [последнего релиза](https://github.com/Nikifor3663636/chudoskan/releases/latest), новая версия ставится поверх старой | ✅ Доступно |
-| 🍏 **iPhone, iOS 15+** | Через TestFlight от Apple — ссылка появится на странице установки | 🛠 Собирается в CI, ждёт публикации в TestFlight |
+| 🌐 **iPhone — в браузере** | [Открыть в Safari](https://nikifor3663636.github.io/chudoskan/app/) → «Поделиться» → «На экран „Домой“». iOS 18.2+ | ✅ Доступно |
+| 🍏 **iPhone — приложение** | Через TestFlight от Apple — ссылка появится на странице установки | 🛠 Собирается в CI, ждёт публикации в TestFlight |
 
 **Первый вход — 3 шага:**
 
@@ -147,6 +148,7 @@ flowchart LR
 | 🦀 **Ядро** `core/` | Rust: запросы к сайту, разбор ответов, штрихкоды EAN/UPC. Без сети и файлов — полностью покрыто тестами на реальных ответах сайта |
 | 🤖 **Android** `app/` | Kotlin, Jetpack Compose, CameraX + ML Kit, OkHttp, DataStore, Firebase; R8 в релизе |
 | 🍏 **iPhone** `shared/` + `iosApp/` | Kotlin Multiplatform, Compose Multiplatform, Ktor, AVFoundation, Firebase через REST |
+| 🌐 **Веб** `shared/` (wasmJs) + `proxy/` | Тот же интерфейс в Kotlin/Wasm, ядро Rust → WebAssembly; посредник Cloudflare Workers для сайта сети (белый список путей) |
 | 🔥 **Данные** | GraphQL сайта, Firestore с правилами доступа по магазину |
 | 🧪 **Качество** | GitHub Actions: `clippy -D warnings`, Android lint без предупреждений, unit-тесты, сборка iOS на macOS; Dependabot |
 
@@ -191,6 +193,21 @@ open iosApp/iosApp.xcodeproj
 
 В CI то же делает [`ios.yml`](.github/workflows/ios.yml). С секретами App Store Connect
 (`APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`) сборка сама уходит в TestFlight.
+
+</details>
+
+<details>
+<summary><b>🌐 Веб-версия и посредник</b></summary>
+
+```bash
+rustup target add wasm32-unknown-unknown
+./gradlew :shared:wasmJsBrowserDistribution     # → shared/build/dist/wasmJs/productionExecutable/
+```
+
+На GitHub Pages её собирает и выкладывает [`pages.yml`](.github/workflows/pages.yml) (страница установки + `/app/`).
+
+Сайт сети не отдаёт CORS, поэтому браузер ходит к нему через [`proxy/`](proxy/src/index.js) — Cloudflare Worker
+с белым списком путей и origin'ов (это не открытый прокси). Обновить: `cd proxy && npx wrangler deploy`.
 
 </details>
 
@@ -240,6 +257,7 @@ core/          🦀 Rust-ядро: barcode, graphql, shops, upc, guard, regions,
 app/           🤖 Android: data/ · print/ · ui/{home,scan,results,product,stock,layout,print,auth,profile}
 shared/        🍏 Kotlin Multiplatform: модели, Firebase REST, экраны для iPhone, план магазина
 iosApp/        SwiftUI-оболочка и project.yml для XcodeGen
+proxy/         🌐 посредник Cloudflare Workers для веб-версии (сайт сети не отдаёт CORS)
 docs/          страница установки, видео, скриншоты, логотип
 scripts/       сборка ядра для iOS, генерация привязок UniFFI
 ```
@@ -252,6 +270,7 @@ scripts/       сборка ядра для iOS, генерация привяз
 - [x] Остатки магазина из 1С
 - [x] Печать ценников в форматах 1С на любой принтер
 - [x] План магазина «где лежит товар» — Android и iPhone
+- [x] Веб-версия — работает на iPhone в Safari
 - [ ] iPhone в TestFlight
 - [ ] Остатки и ценники на iPhone
 - [ ] Печать на Godex через ПК магазина (агент + очередь заданий)
@@ -261,7 +280,8 @@ scripts/       сборка ядра для iOS, генерация привяз
 
 - Сайт отдаёт наличие «есть / нет» по магазину; количество штук — только из выгрузки 1С.
 - UPCitemdb (бесплатный тариф) — около 100 запросов в сутки; уже привязанные штрихкоды лимит не тратят.
-- На iPhone пока нет остатков и печати ценников; метки на плане ставятся с Android, на iPhone — видны.
+- На iPhone и в браузере пока нет остатков и печати ценников; метки на плане ставятся с Android, на iPhone — видны.
+- В браузере штрихкод распознаётся по фото (живого сканера в Safari нет); веб-версии нужна iOS 18.2+ или свежий Chrome.
 - План магазина пока есть для ЧО 22 Одеса (Gagarin Plaza).
 
 ---

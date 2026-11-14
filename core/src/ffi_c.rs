@@ -1,4 +1,4 @@
-//! C-интерфейс ядра для iOS (Kotlin/Native через cinterop).
+//! C-интерфейс ядра для iOS (Kotlin/Native через cinterop) и браузера (WebAssembly).
 //!
 //! Одна функция: `chudo_call("метод", "{аргументы JSON}")` → `{"ok": результат}` или `{"err": "текст"}`.
 //! Строку-результат освобождает `chudo_free`. Android пользуется UniFFI-обёрткой, а не этим файлом.
@@ -95,6 +95,14 @@ pub unsafe extern "C" fn chudo_free(p: *mut c_char) {
     if !p.is_null() {
         drop(CString::from_raw(p));
     }
+}
+
+/// Буфер в памяти WebAssembly под C-строку (браузер пишет туда метод и аргументы, с нулём в конце).
+/// Освобождается тем же [chudo_free] после [chudo_call].
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub extern "C" fn chudo_alloc(len: usize) -> *mut c_char {
+    CString::new(vec![b' '; len]).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
 }
 
 #[cfg(test)]
