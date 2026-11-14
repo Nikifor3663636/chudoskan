@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ЧудоСкан: сотрудник видит и загружает остатки только своего магазина.
-// Вставить в консоли Firebase → Firestore Database → Rules → Publish.
+// Публикация: firebase deploy --only firestore:rules
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -37,7 +37,8 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']);
       // Менять магазин и подтверждение может только администратор (в консоли правила не действуют).
       // Сам сотрудник может: до подтверждения — переписать анкету, после — только имя и привязанный телефон.
-      allow update: if signedIn() && request.auth.uid == uid && phoneOk() && (
+      allow update: if signedIn() && request.auth.uid == uid && phoneOk()
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']) && (
         (resource.data.approved == false && request.resource.data.approved == false)
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone'])
       );
@@ -45,18 +46,32 @@ service cloud.firestore {
     }
 
     match /shops/{shopId} {
-      allow read, write: if worksAt(shopId);
+      allow read: if worksAt(shopId);
+      // Сводка последней выгрузки остатков; удалить магазин из приложения нельзя.
+      allow create, update: if worksAt(shopId)
+        && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
+        && request.resource.data.rows is int
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
 
+      // Строка остатков: только известные поля, количество — число.
       match /stock/{item} {
-        allow read, write: if worksAt(shopId);
+        allow read, delete: if worksAt(shopId);
+        allow create, update: if worksAt(shopId)
+          && request.resource.data.keys().hasOnly(['article', 'barcode', 'name', 'qty'])
+          && request.resource.data.qty is number
+          && item.size() <= 200;
       }
 
-      // Уточнения «де лежить товар» на плане магазина.
+      // Уточнения «де лежить товар» на плане магазина. Менять нельзя — только удалить и поставить заново.
       match /layoutPins/{pin} {
         allow read, delete: if worksAt(shopId);
         allow create: if worksAt(shopId)
+          && request.resource.data.keys().hasOnly(['key', 'x', 'y', 'label', 'by', 'at'])
           && request.resource.data.by == request.auth.uid
-          && request.resource.data.key is string
+          && request.resource.data.at == request.time
+          && request.resource.data.key is string && request.resource.data.key.size() <= 200
+          && (!('label' in request.resource.data) || (request.resource.data.label is string && request.resource.data.label.size() <= 200))
           && request.resource.data.x is number && request.resource.data.y is number
           && request.resource.data.x >= 0 && request.resource.data.x <= 1
           && request.resource.data.y >= 0 && request.resource.data.y <= 1;

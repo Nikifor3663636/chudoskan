@@ -1,0 +1,11 @@
+name: Пропозиція
+description: Ідея, що покращить роботу в магазині
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: Яку задачу вирішує, description: "Що зараз незручно або довго" }
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes: { label: Як це має працювати }

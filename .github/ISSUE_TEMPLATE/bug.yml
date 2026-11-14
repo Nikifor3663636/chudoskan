@@ -1,0 +1,19 @@
+name: Помилка
+description: Щось працює не так
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: Що сталося, description: "Що робили і що побачили замість очікуваного" }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes: { label: Як повторити, placeholder: "1. Відкрити …\n2. Натиснути …" }
+  - type: input
+    id: version
+    attributes: { label: Версія застосунку, placeholder: "2.7 (Профіль → внизу)" }
+    validations: { required: true }
+  - type: dropdown
+    id: platform
+    attributes: { label: Пристрій, options: [Android, iPhone] }
+    validations: { required: true }

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Вразливість
+    url: https://github.com/Nikifor3663636/chudoskan/security/advisories/new
+    about: Повідомте приватно, не в публічному issue
