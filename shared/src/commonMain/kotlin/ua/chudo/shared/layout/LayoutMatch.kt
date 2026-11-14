@@ -1,4 +1,5 @@
-package ua.chudo.scanner.ui.layout
+// Общий код плана магазина: компилируется и в shared (iOS), и в app (Android, см. app/build.gradle.kts).
+package ua.chudo.shared.layout
 
 import kotlin.math.abs
 import kotlin.math.max
@@ -63,9 +64,17 @@ class BrandMatcher(synonyms: Map<String, String> = emptyMap()) {
 
         /** Нижний регистр, без пробелов/дефисов/апострофов/точек, кириллица-двойник → латиница. */
         fun norm(s: String): String = buildString {
-            // NFKC: лигатуры из CorelDRAW («Treﬂ», «Inﬁniti») → обычные буквы.
-            for (c in java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC).lowercase()) if (c !in DROP) append(LOOKALIKE[c] ?: c)
+            for (c in s.lowercase()) {
+                when {
+                    c in DROP -> {}
+                    // Лигатуры из CorelDRAW («Treﬂ», «Inﬁniti») → обычные буквы.
+                    c in LIGATURES -> append(LIGATURES.getValue(c))
+                    else -> append(LOOKALIKE[c] ?: c)
+                }
+            }
         }
+
+        private val LIGATURES = mapOf('ﬀ' to "ff", 'ﬁ' to "fi", 'ﬂ' to "fl", 'ﬃ' to "ffi", 'ﬄ' to "ffl", 'ﬅ' to "st", 'ﬆ' to "st")
 
         /** «ТМ LEGO, Конструктор…» → «LEGO». */
         fun brandOf(name: String?): String? =

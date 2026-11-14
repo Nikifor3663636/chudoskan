@@ -20,14 +20,21 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "2.6"
+        versionCode = 9
+        versionName = "2.7"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+
+    // План магазина: логика и файлы общие с iOS (модуль shared) — один код и одна карта на обе платформы.
+    sourceSets["main"].apply {
+        java.srcDir("../shared/src/commonMain/kotlin/ua/chudo/shared/layout")
+        assets.srcDir("../shared/src/commonMain/composeResources/files")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Для личного APK подписываем debug-ключом; для Play — свой keystore.
             signingConfig = signingConfigs.getByName("debug")

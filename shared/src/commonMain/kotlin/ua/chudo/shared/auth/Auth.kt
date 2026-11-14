@@ -26,6 +26,7 @@ import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -141,6 +142,17 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
     }
 
     /** Анкета сотрудника; пока заявка ждёт подтверждения — проверяем раз в 15 с. */
+    /**
+     * Документы коллекции Firestore (REST) от имени сотрудника; доступ решают firestore.rules.
+     * [path] — например `shops/{shopId}/layoutPins`. Возвращает поля каждого документа.
+     */
+    suspend fun listDocuments(path: String, pageSize: Int = 300): List<JsonObject> {
+        val r = http.get("$firestore/$path?pageSize=$pageSize") { header("Authorization", "Bearer ${token()}") }
+        check(r)
+        val docs = Json.parseToJsonElement(r.bodyAsText()).jsonObject["documents"]?.jsonArray ?: return emptyList()
+        return docs.mapNotNull { it.jsonObject["fields"]?.jsonObject }
+    }
+
     private suspend fun loadProfile() {
         _state.value = try {
             val uid = kv.get(K_UID) ?: return signOut()

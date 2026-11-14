@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Search
@@ -204,6 +205,7 @@ fun HomeScreen(nav: Navigator) {
                     Image(painterResource(Res.drawable.logo_wordmark), "Чудо Острів", Modifier.height(44.dp))
                     Text("Наявність іграшок у магазинах", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                IconButton(onClick = { nav.go(Screen.Layout) }) { Icon(Icons.Rounded.Map, "Планування") }
                 IconButton(onClick = { openUrl("https://chudo-ostriv.com.ua/ua/") }) { Icon(Icons.Rounded.Store, "Сайт") }
                 IconButton(onClick = { nav.go(Screen.Profile) }) { Icon(Icons.Rounded.Person, "Профіль") }
             }
@@ -272,13 +274,18 @@ private fun HistoryRow(h: HistoryItem, onClick: () -> Unit) {
 // ---------- Сканер ----------
 
 @Composable
-fun ScanScreen(nav: Navigator) {
+fun ScanScreen(nav: Navigator, onCode: ((String) -> Unit)? = null) {
     var error by remember { mutableStateOf<String?>(null) }
     var done by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         BarcodeScannerView(
             Modifier.fillMaxSize(),
-            onCode = { code -> if (!done) { done = true; nav.replace(Screen.Results(code)) } },
+            onCode = { code ->
+                if (!done) {
+                    done = true
+                    if (onCode != null) onCode(code) else nav.replace(Screen.Results(code))
+                }
+            },
             onUnavailable = { error = it },
         )
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {

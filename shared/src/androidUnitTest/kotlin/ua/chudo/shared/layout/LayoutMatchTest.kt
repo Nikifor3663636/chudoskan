@@ -1,4 +1,4 @@
-package ua.chudo.scanner.ui.layout
+package ua.chudo.shared.layout
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

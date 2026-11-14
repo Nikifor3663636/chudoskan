@@ -48,7 +48,8 @@
 | 🏬 **Наличие** | По каждому магазину выбранного города, 29 городов |
 | 🧩 **Неизвестный штрихкод** | Поиск в открытой базе UPCitemdb → артикул → товар; связка запоминается |
 | 📦 **Остатки** | Количество штук в своём магазине из выгрузки 1С (Excel или CSV) |
-| 🏷 **Ценники** | Липкие этикетки 58×40, 40×30, 30×20 и лист A4 на 24 ценника; EAN-13 на ценнике |
+| 🗺 **Планирование** | План магазина: где лежит товар — по бренду, названию или штрихкоду; уточнения сотрудников (Android и iPhone) |
+| 🏷 **Ценники** | Как в 1С: этикетка 40×25, ценник 68×38 и крупногабарит на A4, акционные; EAN-13 на ценнике |
 | 🖨 **Принтеры** | Сеть магазина, Wi-Fi принтера, Bluetooth; ZPL, TSPL, EPL, ESC/POS |
 | 🔐 **Доступ** | Вход по телефону и паролю; новый сотрудник видит данные после подтверждения администратором |
 | 🌙 **Тема** | Светлая и тёмная, следует настройке телефона |
@@ -154,8 +155,8 @@ cd core && cargo fmt --check && cargo clippy --all-targets -- -D warnings && car
 
 ```
 core/          Rust-ядро: barcode, graphql, shops, upc, guard, regions, urls, ffi_c
-app/           Android: data/ · print/ · ui/{home,scan,results,product,stock,print,auth,profile}
-shared/        Kotlin Multiplatform: общие модели, Firebase REST, экраны Compose для iPhone
+app/           Android: data/ · print/ · ui/{home,scan,results,product,stock,layout,print,auth,profile}
+shared/        Kotlin Multiplatform: общие модели, Firebase REST, экраны Compose для iPhone, план магазина (layout/ + composeResources/files/layout/)
 iosApp/        SwiftUI-оболочка и project.yml для XcodeGen
 docs/          страница установки, видео, скриншоты, логотип
 scripts/       сборка ядра для iOS, генерация привязок UniFFI
@@ -165,7 +166,8 @@ scripts/       сборка ядра для iOS, генерация привяз
 
 - Сайт отдаёт наличие «есть / нет» по магазину; количество — только из выгрузки 1С.
 - UPCitemdb (бесплатный тариф) — около 100 запросов в сутки; привязанные штрихкоды лимит не тратят.
-- На iPhone пока нет остатков и печати ценников.
+- На iPhone пока нет остатков и печати ценников; на плане магазина — только поиск и просмотр уточнений (ставят их с Android).
+- План магазина есть пока только для ЧО 22 Одеса (Gagarin Plaza); новый магазин — папка `{shopId}` с `map.webp` и `layout.json`.
 
 ---
 

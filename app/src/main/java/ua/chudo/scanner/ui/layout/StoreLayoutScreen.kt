@@ -88,6 +88,11 @@ import ua.chudo.scanner.data.ShopStockRepository
 import ua.chudo.scanner.data.StockItem
 import ua.chudo.scanner.ui.common.MessageState
 import ua.chudo.scanner.ui.common.toUiError
+import ua.chudo.shared.layout.Box
+import ua.chudo.shared.layout.BrandMatcher
+import ua.chudo.shared.layout.MapCamera
+import ua.chudo.shared.layout.MapLabel
+import ua.chudo.shared.layout.ShopLayout
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt

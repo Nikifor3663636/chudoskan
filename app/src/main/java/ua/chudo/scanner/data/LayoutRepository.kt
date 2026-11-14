@@ -13,9 +13,9 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import ua.chudo.scanner.ui.layout.Box
-import ua.chudo.scanner.ui.layout.MapLabel
-import ua.chudo.scanner.ui.layout.ShopLayout
+import ua.chudo.shared.layout.Box
+import ua.chudo.shared.layout.MapLabel
+import ua.chudo.shared.layout.ShopLayout
 
 /** Уточнение сотрудника: товар [key] (штрихкод или бренд) лежит в точке [x],[y] (доли картинки). */
 data class LayoutPin(val key: String, val x: Float, val y: Float, val label: String?, val by: String)

@@ -173,6 +173,14 @@ Firebase на iOS подключён **через REST** (Identity Toolkit, Secu
 `iosApp/iOSApp.swift` — 20 строк: SwiftUI-окно, внутри `MainViewController()` из `shared`.
 Проект Xcode не хранится в git, его генерирует [XcodeGen](https://github.com/yonaskolb/XcodeGen) из `iosApp/project.yml`.
 
+### План магазина — один код на две платформы
+
+Логика «де лежить товар» (`shared/.../layout/LayoutMatch.kt`: нормализация брендов, сопоставление с
+подписями плана, камера карты) — чистый Kotlin без зависимостей. Android-приложение не подключает
+модуль `shared` целиком, а компилирует эту папку как свой исходник (`sourceSets.main.java.srcDir`),
+и так же берёт файлы плана (`composeResources/files/layout/` → `assets/layout/`). Одна карта,
+один алгоритм, тесты — в `shared/src/androidUnitTest`.
+
 ## 7. Поиск товара
 
 Сайт не индексирует штрихкоды, поэтому поиск — цепочка шагов. Каждый шаг виден пользователю

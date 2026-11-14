@@ -12,6 +12,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -46,12 +48,19 @@ sealed interface Screen {
     data class Results(val query: String) : Screen
     data class Product(val urlKey: String, val barcode: String?) : Screen
     data object Profile : Screen
+    data object Layout : Screen
+
+    /** Сканер для «Планування»: код возвращается через [Navigator.layoutCode]. */
+    data object ScanLayout : Screen
 }
 
 class Navigator(start: Screen) {
     val stack = mutableStateListOf(start)
     val current get() = stack.last()
     fun go(s: Screen) { stack.add(s) }
+
+    /** Штрихкод из сканера для экрана «Планування». */
+    var layoutCode by mutableStateOf<String?>(null)
     /** Заменить верхний экран (результаты → карточка товара). */
     fun replace(s: Screen) { stack[stack.lastIndex] = s }
     fun back(): Boolean = if (stack.size > 1) { stack.removeAt(stack.lastIndex); true } else false
@@ -93,6 +102,8 @@ private fun MainScreens(employee: Employee) {
             is Screen.Results -> ResultsScreen(screen.query, nav)
             is Screen.Product -> ProductScreen(screen.urlKey, screen.barcode, nav)
             Screen.Profile -> ProfileScreen(employee, nav)
+            Screen.Layout -> LayoutScreen(employee, nav)
+            Screen.ScanLayout -> ScanScreen(nav) { code -> nav.layoutCode = code; nav.back() }
         }
     }
 }
