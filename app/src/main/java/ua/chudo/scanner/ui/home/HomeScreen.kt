@@ -17,7 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -67,6 +67,7 @@ fun HomeScreen(
     onProfile: () -> Unit,
     onLabels: () -> Unit,
     onOrders: () -> Unit,
+    onStock: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val prefs = app.prefs
@@ -90,7 +91,7 @@ fun HomeScreen(
         onQuery = { query = it },
         onSubmit = { if (query.isNotBlank()) { keyboard?.hide(); onSearch(query.trim()) } },
         onRegion = { showRegions = true },
-        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders,
+        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock,
         onOpenProduct = onOpenProduct, onClearHistory = prefs::clearHistory,
     )
 
@@ -132,6 +133,7 @@ fun HomeContent(
     onProfile: () -> Unit = {},
     onLabels: () -> Unit = {},
     onOrders: () -> Unit = {},
+    onStock: () -> Unit = {},
     onOpenProduct: (String) -> Unit = {},
     onClearHistory: () -> Unit = {},
 ) {
@@ -158,7 +160,12 @@ fun HomeContent(
             }
             MineSearchField(ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit, Modifier.padding(top = 18.dp))
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MineTile(Icons.Outlined.Print, "Друк цінників", "Цінники, етикетки", accent = false, onClick = onLabels, modifier = Modifier.weight(1f))
+                // Друк — у нижній панелі; тут — залишки магазину з 1С.
+                MineTile(
+                    Icons.Outlined.Inventory2, "Залишки",
+                    if (ui.stockAt == null) "Завантаж файл з 1С" else "Кількість з 1С",
+                    accent = ui.stockAt == null, onClick = onStock, modifier = Modifier.weight(1f),
+                )
                 MineTile(
                     Icons.Outlined.ShoppingBag, "Замовлення",
                     if (ui.newOrders > 0) "${ui.newOrders} нові до збирання" else "Нових немає",

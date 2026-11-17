@@ -126,7 +126,7 @@ private fun AppNav(employee: Employee) {
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS
         Routes.LABELS -> MainTab.PRINT
-        Routes.PROFILE, Routes.STOCK -> MainTab.PROFILE
+        Routes.PROFILE -> MainTab.PROFILE
         else -> MainTab.SEARCH
     }
     fun openTab(r: String) {
@@ -206,6 +206,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onProfile = { nav.navigate(Routes.PROFILE) },
                 onLabels = { nav.navigate(Routes.LABELS) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
+                onStock = { nav.navigate(Routes.STOCK) },
             )
         }
         composable(

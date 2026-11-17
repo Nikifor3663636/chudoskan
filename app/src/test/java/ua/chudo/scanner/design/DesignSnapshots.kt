@@ -191,6 +191,30 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun productLikeSite() = paparazzi.snapshot {
+        val lego = uniffi.chudo_core.ProductDetails(
+            1L, "10954", "Конструктор LEGO Duplo Потяг із цифрами – вчимося рахувати (10954)", "lego", ".html",
+            uniffi.chudo_core.StockStatus.IN_STOCK, null, uniffi.chudo_core.Price(649.0, 969.0, 33.0, "UAH"), emptyList(),
+            "Цей ігровий набір для дошкільнят включає рухомий потяг із 10 кольоровими цифровими цеглинками, 2 фігурками та безліччю аксесуарів.",
+            listOf("Для малюків", "Дитячі іграшки", "Розвиваючі іграшки"),
+        )
+        val shops = ua.chudo.scanner.ui.product.ShopsState.Loaded(
+            listOf(
+                uniffi.chudo_core.ShopAvailability("вул. Генуезька, 5/2, ТРЦ Gagarinn Plaza", true),
+                uniffi.chudo_core.ShopAvailability("с. Фонтанка, Південна дорога, 101А, ТРЦ RIVIERA", true),
+                uniffi.chudo_core.ShopAvailability("вул. Новощіпний ряд 2, ТРЦ Острів", false),
+            ),
+        )
+        ChudoTheme(dark = false) {
+            Surface(color = Mine.colors.bg) {
+                ua.chudo.scanner.ui.product.ProductPage(
+                    lego, shops, "вул. Генуезька, 5/2, ТРЦ Gagarinn Plaza",
+                    ua.chudo.scanner.data.StockItem("10954", "5702016911114", "LEGO Duplo", 9.0), "Одеса", "5702016911114",
+                )
+            }
+        }
+    }
+
     @Test fun shelfTagPrices() = paparazzi.snapshot {
         ChudoTheme(dark = true) {
             Surface(color = Mine.colors.bg) {
