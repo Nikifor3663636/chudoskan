@@ -23,7 +23,7 @@ composeMultiplatform = "1.9.3"
 ktor = "3.3.2"
 serialization = "1.9.0"
 jbLifecycle = "2.9.6"
-coil3 = "3.3.0"
+coil3 = "3.6.3"
 cmpIcons = "1.7.3"
 
 [libraries]
