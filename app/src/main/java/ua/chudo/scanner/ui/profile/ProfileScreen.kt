@@ -62,7 +62,7 @@ import ua.chudo.scanner.ui.theme.InStockGreen
 import java.text.DateFormat
 
 @Composable
-fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?) {
+fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {}) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
     var info by remember { mutableStateOf<ShopStockInfo?>(null) }
@@ -124,6 +124,9 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Uni
         Spacer(Modifier.height(20.dp))
 
         Card {
+            // «Залишки» переехали сюда из нижней панели (там теперь Замовлення · Друк · Профіль).
+            ActionRow(Icons.Rounded.Inventory2, "Залишки магазину", onClick = onStock)
+            HorizontalDivider()
             ActionRow(Icons.Rounded.Lock, "Змінити пароль") { changePassword = true }
             HorizontalDivider()
             onPrinters?.let {

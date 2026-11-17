@@ -53,6 +53,8 @@ import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
+import ua.chudo.scanner.ui.common.MainTab
+import ua.chudo.scanner.ui.common.MineBottomBar
 import ua.chudo.scanner.ui.theme.ChudoTheme
 import ua.chudo.scanner.ui.theme.isDarkTheme
 
@@ -102,16 +104,12 @@ private object Routes {
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
 
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PROFILE, Routes.PRINTERS, Routes.LABELS)
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS)
 
-private enum class Tab { SEARCH, STOCK, ORDERS }
 
 @Composable
 private fun AppNav(employee: Employee) {
     val nav = rememberNavController()
-    val prefs = LocalContext.current.chudoApp.prefs
-    val region by prefs.region.collectAsStateWithLifecycle()
-    var showRegions by rememberSaveable { mutableStateOf(false) }
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
@@ -123,10 +121,12 @@ private fun AppNav(employee: Employee) {
         printing.attach(employee.shopId)
         printing.syncOnStart()
     }
+    // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
-        Routes.STOCK -> Tab.STOCK
-        Routes.ORDERS -> Tab.ORDERS
-        else -> Tab.SEARCH
+        Routes.ORDERS -> MainTab.ORDERS
+        Routes.LABELS -> MainTab.PRINT
+        Routes.PROFILE, Routes.STOCK -> MainTab.PROFILE
+        else -> MainTab.SEARCH
     }
     fun openTab(r: String) {
         if (route != r) nav.navigate(r) { popUpTo(Routes.HOME); launchSingleTop = true }
@@ -136,66 +136,23 @@ private fun AppNav(employee: Employee) {
         // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            // Сканер, профиль, принтеры и печать ценников — без нижней навигации.
-            if (route != null && route !in FULLSCREEN) BottomTabs(
+            // Сканер и настройки принтеров — без нижней навигации.
+            if (route != null && route !in FULLSCREEN) MineBottomBar(
                 tab = tab,
-                onSearch = { if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false) },
-                onScan = { nav.navigate(Routes.scan()) },
-                onStock = { openTab(Routes.STOCK) },
-                onOrders = { openTab(Routes.ORDERS) },
                 newOrders = newOrders,
-                onCity = { showRegions = true },
+                onTab = { t ->
+                    when (t) {
+                        MainTab.SEARCH -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
+                        MainTab.ORDERS -> openTab(Routes.ORDERS)
+                        MainTab.PRINT -> openTab(Routes.LABELS)
+                        MainTab.PROFILE -> openTab(Routes.PROFILE)
+                    }
+                },
+                onScan = { nav.navigate(Routes.scan()) },
             )
         },
     ) { inner ->
         AppNavHost(nav, employee, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner))
-    }
-
-    if (showRegions) {
-        RegionPickerSheet(
-            regions = prefs.allRegions,
-            selected = region.code,
-            onPick = { prefs.setRegion(it.code); showRegions = false },
-            onDismiss = { showRegions = false },
-        )
-    }
-}
-
-/** Пошук · Сканер · Залишки · Замовлення · Місто. */
-@Composable
-private fun BottomTabs(
-    tab: Tab,
-    onSearch: () -> Unit,
-    onScan: () -> Unit,
-    onStock: () -> Unit,
-    onOrders: () -> Unit,
-    newOrders: Int,
-    onCity: () -> Unit,
-) {
-    NavigationBar {
-        NavigationBarItem(
-            selected = tab == Tab.SEARCH, onClick = onSearch,
-            icon = { Icon(Icons.Rounded.Search, null) }, label = { Text("Пошук") },
-        )
-        NavigationBarItem(
-            selected = false, onClick = onScan,
-            icon = { Icon(Icons.Rounded.QrCodeScanner, null) }, label = { Text("Сканер") },
-        )
-        NavigationBarItem(
-            selected = tab == Tab.STOCK, onClick = onStock,
-            icon = { Icon(Icons.Rounded.Inventory2, null) }, label = { Text("Залишки") },
-        )
-        NavigationBarItem(
-            selected = tab == Tab.ORDERS, onClick = onOrders,
-            icon = {
-                BadgedBox(badge = { if (newOrders > 0) Badge { Text("$newOrders") } }) { Icon(Icons.Rounded.ShoppingBag, null) }
-            },
-            label = { Text("Замовлення", maxLines = 1) },
-        )
-        NavigationBarItem(
-            selected = false, onClick = onCity,
-            icon = { Icon(Icons.Rounded.LocationOn, null) }, label = { Text("Місто") },
-        )
     }
 }
 
@@ -213,7 +170,11 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             )
         }
         composable(Routes.PROFILE) {
-            ProfileScreen(employee, onBack = { nav.popBackStack() }, onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null)
+            ProfileScreen(
+                employee, onBack = { nav.popBackStack() },
+                onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
+                onStock = { nav.navigate(Routes.STOCK) },
+            )
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.admin) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }

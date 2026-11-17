@@ -42,6 +42,8 @@ import ua.chudo.scanner.print.Template
 import ua.chudo.scanner.data.DemoOrders
 import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.ui.auth.LoginMineForm
+import ua.chudo.scanner.ui.common.MainTab
+import ua.chudo.scanner.ui.common.MineBottomBar
 import ua.chudo.scanner.ui.orders.OrdersContent
 import ua.chudo.scanner.ui.orders.OrdersUi
 import ua.chudo.scanner.ui.auth.LoginMineShell
@@ -136,8 +138,13 @@ class DesignSnapshots {
 
     private fun orders(dark: Boolean) = paparazzi.snapshot {
         ChudoTheme(dark = dark) {
-            Surface(color = Mine.colors.bg) {
-                OrdersContent(OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true))
+            androidx.compose.material3.Scaffold(
+                containerColor = Mine.colors.bg,
+                bottomBar = { MineBottomBar(MainTab.ORDERS, newOrders = 3, onTab = {}, onScan = {}) },
+            ) { inner ->
+                Box(Modifier.padding(inner)) {
+                    OrdersContent(OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true))
+                }
             }
         }
     }
