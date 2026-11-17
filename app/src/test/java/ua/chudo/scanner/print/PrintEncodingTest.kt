@@ -80,11 +80,13 @@ class PrintEncodingTest {
 
     @Test fun guessLanguageByModel() {
         assertEquals(LabelKind.STICKY to PrintLang.ZPL, guessByModel("Zebra ZD421"))
-        assertEquals(LabelKind.STICKY to PrintLang.ZPL, guessByModel("GoDEX G500"))
+        assertEquals(LabelKind.STICKY to PrintLang.EZPL, guessByModel("GoDEX G500"))
         assertEquals(LabelKind.STICKY to PrintLang.TSPL, guessByModel("Xprinter XP-365B"))
         assertEquals(LabelKind.STICKY to PrintLang.TSPL, guessByModel("TSC TE200"))
-        assertEquals(LabelKind.PLAIN to PrintLang.PDF, guessByModel("Brother HL-L2350DW series"))
-        assertEquals(LabelKind.PLAIN to PrintLang.PDF, guessByModel("HP LaserJet MFP M28w"))
+        assertEquals(LabelKind.PLAIN to PrintLang.PCL, guessByModel("Brother HL-L2360D series"))
+        assertEquals(LabelKind.PLAIN to PrintLang.PCL, guessByModel("HP LaserJet MFP M28w"))
+        // MFC-L2700DW магазина: в отчёте конфигурации включён PCL.
+        assertEquals(LabelKind.PLAIN to PrintLang.PCL, guessByModel("Brother MFC-L2700DW series"))
         assertEquals(null, guessByModel("Unknown device"))
     }
 }

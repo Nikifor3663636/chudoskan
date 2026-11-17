@@ -2,6 +2,7 @@ package ua.chudo.scanner.ui.auth
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -80,6 +82,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.R
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.ui.common.MinePrimaryButton
+import ua.chudo.scanner.ui.theme.Mine
+import ua.chudo.scanner.ui.theme.ThemeMode
 import ua.chudo.scanner.data.AuthRepository
 import ua.chudo.scanner.data.AuthState
 import ua.chudo.scanner.data.ChudoRepository
@@ -275,17 +280,9 @@ fun PasswordDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
 private fun AuthScreen(state: AuthState) {
     val app = LocalContext.current.chudoApp
     val vm: AuthViewModel = viewModel(factory = viewModelFactory { initializer { AuthViewModel(app.auth, app.repository) } })
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
-            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            painterResource(R.drawable.logo_wordmark), null,
-            Modifier.fillMaxWidth(0.7f).height(72.dp),
-            tint = androidx.compose.ui.graphics.Color.Unspecified,
-        )
-        Spacer(Modifier.height(20.dp))
+    val dark = Mine.colors.dark
+    LoginMineShell(onToggleTheme = { app.prefs.setThemeMode(if (dark) ThemeMode.LIGHT else ThemeMode.DARK) }) {
+        if (state != AuthState.SignedOut) Spacer(Modifier.height(32.dp))
         when (state) {
             AuthState.NotConfigured -> Notice(
                 Icons.Rounded.CloudOff,
@@ -318,23 +315,29 @@ private fun AuthScreen(state: AuthState) {
 }
 
 @Composable
-private fun SignedOutForm(vm: AuthViewModel) {
+private fun ColumnScope.SignedOutForm(vm: AuthViewModel) {
     // 0 — вход, 1 — регистрация.
     var mode by rememberSaveable { mutableIntStateOf(0) }
     var forgot by rememberSaveable { mutableStateOf(false) }
     val switchTo = { m: Int -> vm.clearError(); mode = m }
-    Text(
-        if (mode == 1) "Реєстрація співробітника" else "Вхід для співробітників",
-        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
-    )
-    Spacer(Modifier.height(16.dp))
     if (mode == 1) {
+        Text(
+            "Реєстрація", Modifier.padding(top = 40.dp, bottom = 16.dp),
+            fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Mine.colors.text,
+        )
         ProfileFields(vm, needsAccount = true)
-        TextButton(onClick = { switchTo(0) }) { Text("Вже є акаунт? Увійти") }
+        RegisterLink("Вже є акаунт? ", "Увійти") { switchTo(0) }
     } else {
-        LoginFields(vm)
-        TextButton(onClick = { forgot = true }) { Text("Забув пароль") }
-        TextButton(onClick = { switchTo(1) }) { Text("Немає акаунта? Зареєструватися") }
+        var digits by rememberSaveable { mutableStateOf("") }
+        var password by rememberSaveable { mutableStateOf("") }
+        val busy by vm.busy.collectAsStateWithLifecycle()
+        val error by vm.error.collectAsStateWithLifecycle()
+        LoginMineForm(
+            digits, password, error, busy,
+            onDigits = { digits = it }, onPassword = { password = it },
+            onSubmit = { vm.signIn(digits, password) },
+            onForgot = { forgot = true }, onRegister = { switchTo(1) },
+        )
     }
     if (forgot) {
         AlertDialog(
@@ -349,19 +352,6 @@ private fun SignedOutForm(vm: AuthViewModel) {
             confirmButton = { TextButton(onClick = { forgot = false }) { Text("Зрозуміло") } },
         )
     }
-}
-
-@Composable
-private fun LoginFields(vm: AuthViewModel) {
-    var digits by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    val busy by vm.busy.collectAsStateWithLifecycle()
-    PhoneField(digits, !busy) { digits = it }
-    Spacer(Modifier.height(10.dp))
-    PasswordField(password, "Пароль") { password = it }
-    Messages(vm)
-    Spacer(Modifier.height(16.dp))
-    SubmitButton("Увійти", busy) { vm.signIn(digits, password) }
 }
 
 /** Номер после +380: 9 цифр, маска XX XXX XX XX. Принимает и вставку «0671234567» / «+380…». */
@@ -385,7 +375,7 @@ private fun PhoneField(digits: String, enabled: Boolean, onChange: (String) -> U
     )
 }
 
-private object PhoneMask : VisualTransformation {
+internal object PhoneMask : VisualTransformation {
     /** Пробел перед цифрой с этим индексом: 67 123 45 67. */
     private val gaps = intArrayOf(2, 5, 7)
 
@@ -528,17 +518,17 @@ private fun Messages(vm: AuthViewModel) {
 
 @Composable
 private fun SubmitButton(text: String, busy: Boolean, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = !busy, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)) {
-        if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Text(text)
-    }
+    MinePrimaryButton(text, onClick, height = 58.dp, busy = busy)
 }
 
 @Composable
 private fun Notice(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, text: String) {
-    Icon(icon, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-    Spacer(Modifier.height(12.dp))
-    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-    Spacer(Modifier.height(8.dp))
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-    Spacer(Modifier.height(16.dp))
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(12.dp))
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(8.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
+    }
 }

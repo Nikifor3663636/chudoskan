@@ -2,7 +2,6 @@ package ua.chudo.scanner.ui.print
 
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
@@ -91,11 +90,12 @@ import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.print.LabelKind
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.PrintService
-import ua.chudo.scanner.print.PrinterNotFoundException
+import ua.chudo.scanner.print.A4Sheet
+import ua.chudo.scanner.print.LabelFormat
+import ua.chudo.scanner.print.LabelRenderer
+import ua.chudo.scanner.print.PrintException
 import ua.chudo.scanner.print.QueueItem
-import ua.chudo.scanner.print.TagRenderer
 import ua.chudo.scanner.print.Template
-import ua.chudo.scanner.print.TemplateRenderer
 import ua.chudo.scanner.print.expand
 import ua.chudo.scanner.print.formatPrice
 import ua.chudo.scanner.print.toItem
@@ -134,10 +134,6 @@ class LabelsViewModel(
     val template = _template.asStateFlow()
     private val _promo = MutableStateFlow(false)
     val promo = _promo.asStateFlow()
-    private val _printerId = MutableStateFlow<Map<LabelKind, String>>(emptyMap())
-    val printerId = _printerId.asStateFlow()
-    val direct = svc.store.direct.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val printers = svc.store.printers.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _preview = MutableStateFlow<ImageBitmap?>(null)
     val preview = _preview.asStateFlow()
     private val _status = MutableStateFlow<PrintStatus>(PrintStatus.Idle)
@@ -147,17 +143,17 @@ class LabelsViewModel(
     init {
         viewModelScope.launch {
             svc.store.lastTemplate.first()?.let { _template.value = it }
-            _printerId.value = LabelKind.entries.mapNotNull { k -> svc.store.lastPrinter(k).first()?.let { k to it } }.toMap()
         }
         viewModelScope.launch {
             combine(_current, _queue, _template, _promo) { _, _, t, p -> t to p }.collectLatest { (t, p) ->
                 val items = jobItems()
                 _preview.value = if (items.isEmpty()) null else withContext(Dispatchers.Default) {
-                    if (t == Template.LABEL_40x25) {
-                        TagRenderer.toMono(TemplateRenderer.label(items.first().tag.toItem())).toBitmap()
+                    if (t == Template.LABEL_40x24) {
+                        // Ровно то, что уйдёт на Godex: 1-битная картинка 320×200.
+                        svc.renderer.mono(items.first().tag.toItem(), LabelFormat.Label40x24, LabelRenderer.GODEX_DPI).toBitmap()
                     } else {
                         val cells = expand(items.map { it.tag.toItem() to it.copies })
-                        TemplateRenderer.pageBitmap(TemplateRenderer.pages(cells, t).first(), t, p, PREVIEW_SCALE)
+                        svc.renderer.sheetPreview(cells, t, p && promoAvailable(), LabelRenderer.SHEET_DPI * PREVIEW_SCALE)
                     }.asImageBitmap()
                 }
             }
@@ -246,64 +242,43 @@ class LabelsViewModel(
         viewModelScope.launch { svc.store.setLastTemplate(t) }
     }
 
-    fun setPrinter(kind: LabelKind, id: String) {
-        _printerId.value = _printerId.value + (kind to id)
-        viewModelScope.launch { svc.store.setLastPrinter(kind, id) }
-    }
-
-    fun setDirect(v: Boolean) { viewModelScope.launch { svc.store.setDirect(v) } }
 
     /** Всё из очереди плюс текущий товар. */
     private fun jobItems() = _queue.value + listOfNotNull(_current.value?.let { QueueItem(it, _copies.value) })
 
-    fun print(activity: Activity?) {
+    /** Принтер выбирается сам (реестр магазина → поиск → компьютер магазина). */
+    fun print() {
         val items = jobItems()
         if (items.isEmpty() || _status.value == PrintStatus.Printing) return
         val t = _template.value
-        val kind = t.kind
-        val printer = printers.value.filter { it.role == kind }.let { list -> list.firstOrNull { it.id == _printerId.value[kind] } ?: list.firstOrNull() }
         _status.value = PrintStatus.Printing
         viewModelScope.launch {
             _status.value = try {
-                val promo = _promo.value && kind == LabelKind.PLAIN && promoAvailable()
-                when {
-                    kind == LabelKind.STICKY -> {
-                        printer ?: return@launch fail("Додай принтер для липких: Профіль → Принтери.")
-                        svc.printLabels(printer, items)
-                    }
-                    direct.value -> {
-                        printer ?: return@launch fail("Для прямої печаті додай принтер A4: Профіль → Принтери.")
-                        svc.printSheetDirect(printer, items, t, promo)
-                    }
-                    else -> svc.printSheetSystem(activity ?: return@launch fail("No activity"), items, t, promo)
-                }
-                val n = items.sumOf { it.copies }
+                val promo = _promo.value && t.kind == LabelKind.PLAIN && promoAvailable()
+                svc.print(items, t, promo)
                 _queue.value = emptyList()
                 _current.value = null
-                PrintStatus.Done("Надіслано на друк: $n шт.")
+                PrintStatus.Done("Надруковано")
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: PrinterNotFoundException) {
-                PrintStatus.Error(e.reason)
             } catch (e: Exception) {
-                PrintStatus.Error("Не вдалося надрукувати: ${e.message}")
+                PrintStatus.Error(e.message ?: "Не вдалося надрукувати")
             }
         }
     }
 
-    private fun fail(msg: String) { _status.value = PrintStatus.Error(msg) }
 }
 
 @Composable
 fun LabelsScreen(
     onBack: () -> Unit,
     onScan: () -> Unit,
-    onPrinters: () -> Unit,
+    /** «Принтери» — только администратору; сотрудник принтер не настраивает. */
+    onPrinters: (() -> Unit)?,
     scanned: String?,
     onScannedConsumed: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
-    val activity = LocalContext.current.findActivity()
     val vm: LabelsViewModel = viewModel(factory = viewModelFactory { initializer { LabelsViewModel(app.repository, app.printing) } })
     val find by vm.find.collectAsStateWithLifecycle()
     val current by vm.current.collectAsStateWithLifecycle()
@@ -322,7 +297,7 @@ fun LabelsScreen(
             onDismissRequest = { askPaper = false },
             title = { Text("Акційні цінники") },
             text = { Text("Вставте жовтий папір у принтер.") },
-            confirmButton = { TextButton(onClick = { askPaper = false; vm.print(activity) }) { Text("Друкувати") } },
+            confirmButton = { TextButton(onClick = { askPaper = false; vm.print() }) { Text("Друкувати") } },
             dismissButton = { TextButton(onClick = { askPaper = false }) { Text("Скасувати") } },
         )
     }
@@ -339,7 +314,7 @@ fun LabelsScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
                 Text("Друк цінників", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                IconButton(onClick = onPrinters) { Icon(Icons.Rounded.Settings, "Принтери") }
+                onPrinters?.let { IconButton(onClick = it) { Icon(Icons.Rounded.Settings, "Принтери") } }
             }
         }
         item {
@@ -411,12 +386,11 @@ fun LabelsScreen(
                     )
                 }
             }
-            item { PrinterPicker(template.kind, vm, onPrinters) }
             item {
                 val total = queue.sumOf { it.copies } + (if (current != null) copies else 0)
                 Button(
                     onClick = {
-                        if (promo && template.kind == LabelKind.PLAIN && vm.promoAvailable()) askPaper = true else vm.print(activity)
+                        if (promo && template.kind == LabelKind.PLAIN && vm.promoAvailable()) askPaper = true else vm.print()
                     },
                     enabled = status != PrintStatus.Printing,
                     modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
@@ -483,7 +457,7 @@ private fun PriceField(value: String, label: String, modifier: Modifier, onChang
 private fun KindAndTemplate(template: Template, promo: Boolean, vm: LabelsViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LabelKind.entries.forEach { k -> FilterChip(selected = template.kind == k, onClick = { vm.setKind(k) }, label = { Text(roleTitle(k)) }) }
+            LabelKind.entries.forEach { k -> FilterChip(selected = template.kind == k, onClick = { vm.setKind(k) }, label = { Text(if (k == LabelKind.STICKY) "Липкі" else "Звичайні") }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Template.entries.filter { it.kind == template.kind }.forEach { t ->
@@ -509,40 +483,3 @@ private fun KindAndTemplate(template: Template, promo: Boolean, vm: LabelsViewMo
 /** Предпросмотр листа A4 — четверть от 300 dpi. */
 private const val PREVIEW_SCALE = 0.25f
 
-@Composable
-private fun PrinterPicker(kind: LabelKind, vm: LabelsViewModel, onPrinters: () -> Unit) {
-    val printers by vm.printers.collectAsStateWithLifecycle()
-    val selected by vm.printerId.collectAsStateWithLifecycle()
-    val direct by vm.direct.collectAsStateWithLifecycle()
-    val mine = printers.filter { it.role == kind }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (kind == LabelKind.PLAIN) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Пряма печать")
-                    Text(
-                        if (direct) "PDF напряму на принтер (Brother, HP та ін.)"
-                        else "Через системний друк Android",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = direct, onCheckedChange = vm::setDirect)
-            }
-            if (!direct) return@Column
-        }
-        if (mine.isEmpty()) {
-            TextButton(onClick = onPrinters) { Text("Додати принтер") }
-        } else {
-            val current = mine.firstOrNull { it.id == selected[kind] } ?: mine.first()
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                mine.forEach { p -> FilterChip(selected = p.id == current.id, onClick = { vm.setPrinter(kind, p.id) }, label = { Text(p.name, maxLines = 1) }) }
-            }
-        }
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}

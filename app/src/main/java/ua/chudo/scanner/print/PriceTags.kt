@@ -25,11 +25,11 @@ data class LabelItem(
 
 /** Шаблоны как в 1С. Размер ячейки — в мм; листовые раскладываются по A4. */
 enum class Template(val title: String, val kind: LabelKind, val cellWmm: Float, val cellHmm: Float, val landscape: Boolean) {
-    LABEL_40x25("Етикетка 40×25", LabelKind.STICKY, 40f, 25f, false),
+    LABEL_40x24("Етикетка 40×24", LabelKind.STICKY, 40f, 24f, false),
     TAG_68x38("Цінник 68×38", LabelKind.PLAIN, 68f, 38f, false),
 
-    /** 148×105 мм: 4 на лист A4, лист лёжа (2×2). */
-    BIG("Крупногабарит", LabelKind.PLAIN, BIG_CELL_W_MM, BIG_CELL_H_MM, true),
+    /** 148×105 мм (A6): 2 на лист A4, лист стоя, один под другим. */
+    BIG("Крупногабарит", LabelKind.PLAIN, BIG_CELL_W_MM, BIG_CELL_H_MM, false),
     ;
 
     val layout: SheetLayout? get() = if (kind == LabelKind.PLAIN) SheetLayout.a4(cellWmm, cellHmm, landscape) else null

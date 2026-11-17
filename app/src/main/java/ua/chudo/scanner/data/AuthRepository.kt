@@ -26,6 +26,8 @@ data class Employee(
     val shopId: String,
     /** Новых сотрудников подтверждает администратор (поле `approved` в users/{uid}). */
     val approved: Boolean,
+    /** Администратор магазина (поле `admin` в users/{uid}, ставится только в консоли): видит «Профіль → Принтери». */
+    val admin: Boolean = false,
 )
 
 sealed interface AuthState {
@@ -142,6 +144,7 @@ class AuthRepository(context: Context) {
         shop = getString("shop").orEmpty(),
         shopId = getString("shopId").orEmpty(),
         approved = getBoolean("approved") == true,
+        admin = getBoolean("admin") == true,
     )
 
     companion object {

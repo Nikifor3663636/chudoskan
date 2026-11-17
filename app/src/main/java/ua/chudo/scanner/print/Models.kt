@@ -12,87 +12,101 @@ data class PriceTag(
     val code: String = "",
 )
 
-/** «Липкі» — термоэтикетки, «Звичайні» — лист A4. */
-enum class LabelKind { STICKY, PLAIN }
-
-enum class LabelTemplate(val kind: LabelKind, val widthMm: Int, val heightMm: Int, val title: String) {
-    STICKY_58x40(LabelKind.STICKY, 58, 40, "58×40"),
-    STICKY_40x30(LabelKind.STICKY, 40, 30, "40×30"),
-    STICKY_30x20(LabelKind.STICKY, 30, 20, "30×20"),
-    STICKY_40x25(LabelKind.STICKY, 40, 25, "40×25"),
-    A4_70x37(LabelKind.PLAIN, 70, 37, "A4 3×8 (70×37)"),
+/**
+ * Вид принтера: этикетки 40×24 (Godex) или лист A4 (Brother). [wire] — значение поля `kind` в реестре.
+ */
+enum class LabelKind(val wire: String, val title: String) {
+    STICKY("label_40x24", "Липкі етикетки"),
+    PLAIN("a4", "Звичайні цінники A4"),
     ;
 
     companion object {
-        fun of(kind: LabelKind) = entries.filter { it.kind == kind }
+        fun ofWire(s: String?): LabelKind? = entries.firstOrNull { it.wire == s }
     }
+}
+
+/** Размер этикетки для прежних языков (TSPL берёт его в SIZE). */
+enum class LabelTemplate(val kind: LabelKind, val widthMm: Int, val heightMm: Int, val title: String) {
+    STICKY_58x40(LabelKind.STICKY, 58, 40, "58×40"),
+    STICKY_40x24(LabelKind.STICKY, 40, 24, "40×24"),
 }
 
 data class QueueItem(val tag: PriceTag, val copies: Int)
 
-/** Как телефон достаёт до принтера. */
-enum class Transport(val title: String) {
-    /** Wi-Fi/LAN магазина: IP + порт (обычно 9100). */
-    LAN("Мережа магазину"),
-
-    /** Собственная Wi-Fi сеть принтера (Wireless Direct / Wi-Fi Direct / точка доступа), без роутера. */
-    WIFI_DIRECT("Wi-Fi принтера"),
-
-    /** Bluetooth Classic (SPP); принтер спарений у налаштуваннях телефона. */
-    BLUETOOTH("Bluetooth"),
+/** Язык команд принтера. По модели: Godex — EZPL, Brother — PCL; остальные — для совместимости. */
+enum class PrintLang(val title: String) {
+    EZPL("EZPL"),
+    ZPL("ZPL"),
+    TSPL("TSPL"),
+    EPL("EPL"),
+    ESCPOS("ESC/POS"),
+    PCL("PCL"),
 }
 
-/** Язык команд принтера. Для этикеток — картинка ценника в формате этого языка. */
-enum class PrintLang(val title: String, val hint: String) {
-    ZPL("ZPL", "Zebra, Godex, Honeywell, Citizen"),
-    TSPL("TSPL", "TSC, Xprinter, HPRT, Gprinter, більшість китайських"),
-    EPL("EPL", "старі Zebra / Eltron"),
-    ESCPOS("ESC/POS", "чекові та прості мобільні принтери"),
-    PDF("PDF", "офісні A4: Brother, HP, Canon, Epson…"),
+/** Как телефон достаёт до принтера. [wire] — поле `transport` в реестре. */
+enum class Link(val wire: String) {
+    /** Сырой TCP 9100 в сети магазина. */
+    TCP("tcp"),
+
+    /** Принтер компьютера магазина: задание в Firestore `printJobs`, печатает ПК-агент. */
+    AGENT("agent"),
+
+    /** Кабель USB OTG к этому телефону (в общий реестр не пишется). */
+    USB("usb"),
     ;
 
     companion object {
-        val LABEL = listOf(ZPL, TSPL, EPL, ESCPOS)
+        fun ofWire(s: String?): Link = entries.firstOrNull { it.wire == s } ?: TCP
     }
 }
 
 /**
- * Сохранённый принтер.
- * - [Transport.LAN]: [host]:[port]; [fingerprint] — чем узнать принтер, если сменился IP:
- *   `brother:<имя из NSD>`, `godex:<ответ на ~HI>`, `snmp:<модель>`, [ONLY_9100] или `ip:<адрес>`.
- * - [Transport.WIFI_DIRECT]: сеть принтера [ssid]/[pass]; [host] пустой — берём шлюз этой сети.
- * - [Transport.BLUETOOTH]: [host] — MAC-адрес.
+ * Принтер магазина — документ `shops/{shopId}/printers/{id}`.
+ * [id] — MAC (ifPhysAddress), иначе модель+имя: смена IP не создаёт дубль.
+ * [density]/[speed] — только у Godex, задаёт администратор; `null` — как в самотесте принтера (команды не шлём).
  */
-data class SavedPrinter(
+data class PrinterRecord(
     val id: String,
-    val name: String,
-    val role: LabelKind,
-    val host: String,
-    val port: Int,
-    val fingerprint: String,
-    val transport: Transport = Transport.LAN,
-    val lang: PrintLang = defaultLang(role),
-    val ssid: String = "",
-    val pass: String = "",
+    val model: String,
+    val kind: LabelKind,
+    val ip: String = "",
+    val port: Int = 9100,
+    val transport: Link = Link.TCP,
+    val agentId: String = "",
+    val printerName: String = "",
+    val lastSeen: Long = 0,
+    val lastOkBy: String = "",
+    val density: Int? = null,
+    val speed: Int? = null,
+    /** Только для [Link.USB] на этом телефоне. */
+    val usbVendor: Int = 0,
+    val usbProduct: Int = 0,
+) {
+    /** Язык по модели: Godex — EZPL, Brother и прочие A4 — PCL. */
+    val lang: PrintLang
+        get() = if (kind == LabelKind.PLAIN) PrintLang.PCL else guessByModel(model)?.second?.takeIf { it != PrintLang.PCL } ?: PrintLang.EZPL
+
+    val address: String
+        get() = when (transport) {
+            Link.TCP -> if (port == 9100) ip else "$ip:$port"
+            Link.AGENT -> "через комп'ютер: $printerName"
+            Link.USB -> "USB"
+        }
+}
+
+/**
+ * Устройство, найденное поиском. [kind] = null — не узнали (на 9100 что-то есть), в реестр не пишем,
+ * показываем только администратору.
+ */
+data class Discovered(
+    val ip: String,
+    val port: Int = 9100,
+    val model: String? = null,
+    val mac: String? = null,
+    val kind: LabelKind? = null,
+    /** Имя из mDNS (Brother: «Brother MFC-L2700DW series»). */
+    val name: String? = null,
 )
-
-fun defaultLang(role: LabelKind) = if (role == LabelKind.STICKY) PrintLang.ZPL else PrintLang.PDF
-
-/** Отпечаток «единственный :9100 в сети, который не офисный A4». */
-const val ONLY_9100 = "only9100"
-
-/** Найденный в сети принтер. [lang] — предположение по модели (SNMP / NSD / ~HI). */
-data class FoundPrinter(
-    val host: String,
-    val port: Int,
-    val fingerprint: String,
-    val name: String,
-    val role: LabelKind,
-    val lang: PrintLang = defaultLang(role),
-)
-
-/** Принтер недоступен; [reason] — по-людськи, що перевірити. */
-class PrinterNotFoundException(val printer: SavedPrinter, val reason: String) : Exception(reason)
 
 fun formatPrice(v: Double): String =
     if (v == Math.floor(v)) v.toLong().toString() else String.format(java.util.Locale.US, "%.2f", v).replace('.', ',')

@@ -114,6 +114,8 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
                 "updatedAt" to FieldValue.serverTimestamp(),
                 "updatedBy" to employee.name,
             ),
+            // merge: не стираем printerSubnets и другие поля магазина.
+            com.google.firebase.firestore.SetOptions.merge(),
         ).await()
         return ImportResult(fresh.size, writes.size, removes.size)
     }

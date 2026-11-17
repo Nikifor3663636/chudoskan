@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.OpenInBrowser
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.AssistChip
@@ -39,6 +40,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +50,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -67,6 +71,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.print.PriceTag
+import ua.chudo.scanner.print.formatPrice
+import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.PriceLine
 import ua.chudo.scanner.ui.common.ProductImage
@@ -95,11 +102,15 @@ fun ProductScreen(onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val region by app.prefs.region.collectAsStateWithLifecycle()
     var showRegions by rememberSaveable { mutableStateOf(false) }
+    var printSheet by rememberSaveable { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val p = s.product
     val url = productUrl(Lang.UA, p?.urlKey ?: vm.urlKey, p?.urlSuffix ?: ".html")
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = {},
@@ -137,6 +148,13 @@ fun ProductScreen(onBack: () -> Unit) {
                             Text("Відкрити на сайті")
                         }
                     }
+                    item {
+                        OutlinedButton(onClick = { printSheet = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                            Icon(Icons.Rounded.Print, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Друк цінника")
+                        }
+                    }
                     s.barcodeToRemember?.let { bc ->
                         item { RememberCard(bc, vm::rememberBarcode, vm::dismissRemember) }
                     }
@@ -155,6 +173,22 @@ fun ProductScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    val product = p
+    if (printSheet && product != null) {
+        val price = product.price
+        PrintSheet(
+            tag = PriceTag(
+                name = product.name,
+                price = price?.finalPrice?.let(::formatPrice).orEmpty(),
+                oldPrice = price?.takeIf { it.regularPrice > it.finalPrice + 0.001 }?.regularPrice?.let(::formatPrice).orEmpty(),
+                article = product.article.orEmpty(),
+                barcode = vm.barcode.orEmpty(),
+            ),
+            onDismiss = { printSheet = false },
+            onDone = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+        )
     }
 
     if (showRegions) {

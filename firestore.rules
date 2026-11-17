@@ -19,6 +19,13 @@ service cloud.firestore {
         && me().shopId == shopId;
     }
 
+    // Администратор магазина: поле admin = true в users/{uid}, ставится только в консоли.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().admin == true;
+    }
+
     // Телефон в анкете — номер, под которым вошли: логин «380XXXXXXXXX@tel.chudoostriv.app»
     // (вход по номеру и паролю) или привязанный телефон из токена.
     function phoneOk() {
@@ -37,8 +44,10 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']);
       // Менять магазин и подтверждение может только администратор (в консоли правила не действуют).
       // Сам сотрудник может: до подтверждения — переписать анкету, после — только имя и привязанный телефон.
+      // Поле admin сотрудник не меняет никогда (ни до, ни после подтверждения).
       allow update: if signedIn() && request.auth.uid == uid && phoneOk()
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']) && (
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt', 'admin'])
+        && request.resource.data.get('admin', false) == resource.data.get('admin', false) && (
         (resource.data.approved == false && request.resource.data.approved == false)
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone'])
       );
@@ -49,10 +58,38 @@ service cloud.firestore {
       allow read: if worksAt(shopId);
       // Сводка последней выгрузки остатков; удалить магазин из приложения нельзя.
       allow create, update: if worksAt(shopId)
-        && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
+        && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy', 'printerSubnets'])
         && request.resource.data.rows is int
-        && request.resource.data.updatedAt == request.time;
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.get('printerSubnets', []) == (resource == null ? [] : resource.data.get('printerSubnets', []));
+      // Подсети, где искать принтеры: телефон дописывает подсеть найденного принтера (только это поле).
+      allow create: if worksAt(shopId)
+        && request.resource.data.keys().hasOnly(['printerSubnets'])
+        && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
+      allow update: if worksAt(shopId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['printerSubnets'])
+        && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
       allow delete: if false;
+
+      // Общий реестр принтеров магазина. Найденный или напечатавший телефон делает upsert;
+      // плотность и скорость Godex меняет только администратор; удаляет только администратор.
+      match /printers/{printerId} {
+        allow read: if worksAt(shopId);
+        allow create, update: if worksAt(shopId)
+          && request.resource.data.keys().hasOnly(['model', 'kind', 'ip', 'port', 'transport', 'agentId', 'printerName', 'lastSeen', 'lastOkBy', 'density', 'speed'])
+          && request.resource.data.kind in ['label_40x24', 'a4']
+          && request.resource.data.transport in ['tcp', 'agent', 'usb']
+          && request.resource.data.model is string && request.resource.data.model.size() <= 120
+          && request.resource.data.ip is string && request.resource.data.ip.size() <= 45
+          && request.resource.data.port is int
+          && request.resource.data.lastSeen == request.time
+          && (!('lastOkBy' in request.resource.data) || request.resource.data.lastOkBy is string)
+          && (isAdmin() || (
+            request.resource.data.get('density', null) == (resource == null ? null : resource.data.get('density', null))
+            && request.resource.data.get('speed', null) == (resource == null ? null : resource.data.get('speed', null))
+          ));
+        allow delete: if worksAt(shopId) && isAdmin();
+      }
 
       // Строка остатков: только известные поля, количество — число.
       match /stock/{item} {
@@ -76,6 +113,27 @@ service cloud.firestore {
           && request.resource.data.x >= 0 && request.resource.data.x <= 1
           && request.resource.data.y >= 0 && request.resource.data.y <= 1;
       }
+    }
+
+    // ПК-агент магазина: компьютер с принтером (Godex по USB). Пишет себя сам сервисным ключом
+    // (правила его не касаются): shopId, pcName, online, lastSeen, printers: [{name, isDefault, kind}].
+    match /agents/{agentId} {
+      allow read: if worksAt(resource.data.shopId);
+      allow write: if false;
+    }
+
+    // Задания для ПК-агента: сотрудник создаёт задание своего магазина и читает только свои.
+    // Статус printing → done / error ставит агент.
+    match /printJobs/{job} {
+      allow create: if worksAt(request.resource.data.shopId)
+        && request.resource.data.keys().hasOnly(['agentId', 'printer', 'shopId', 'by', 'at', 'status', 'lang', 'data', 'size'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.status == 'queued'
+        && request.resource.data.agentId is string && request.resource.data.printer is string
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 900000;
+      allow read: if signedIn() && resource.data.by == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
+import ua.chudo.scanner.ui.theme.ThemeMode
 import uniffi.chudo_core.Region
 import uniffi.chudo_core.defaultRegion
 import uniffi.chudo_core.regions
@@ -29,6 +30,18 @@ class AppPrefs(context: Context) {
 
     private val _history = MutableStateFlow(readHistory())
     val history: StateFlow<List<HistoryItem>> = _history.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(
+        ThemeMode.entries.firstOrNull { it.name == sp.getString(KEY_THEME, null) } ?: ThemeMode.SYSTEM,
+    )
+
+    /** «Тема оформлення»: темна, світла або як у системі. */
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        sp.edit { putString(KEY_THEME, mode.name) }
+        _themeMode.value = mode
+    }
 
     fun setRegion(code: String) {
         sp.edit { putString(KEY_REGION, code) }
@@ -80,6 +93,7 @@ class AppPrefs(context: Context) {
 
     private companion object {
         const val KEY_REGION = "region"
+        const val KEY_THEME = "theme"
         const val KEY_HISTORY = "history"
         const val KEY_BARCODE = "bc:"
         const val MAX_HISTORY = 20

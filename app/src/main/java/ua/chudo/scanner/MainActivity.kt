@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -22,6 +23,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,13 +52,21 @@ import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
 import ua.chudo.scanner.ui.theme.ChudoTheme
+import ua.chudo.scanner.ui.theme.isDarkTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ChudoTheme {
+            // Тема из профиля может не совпадать с системной — значки статус-бара под неё.
+            val dark = isDarkTheme()
+            DisposableEffect(dark) {
+                val style = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { dark }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose {}
+            }
+            ChudoTheme(dark) {
                 Surface(color = MaterialTheme.colorScheme.background) { AuthGate { AppNav(it) } }
             }
         }
@@ -100,6 +111,12 @@ private fun AppNav(employee: Employee) {
     val region by prefs.region.collectAsStateWithLifecycle()
     var showRegions by rememberSaveable { mutableStateOf(false) }
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
+    val printing = LocalContext.current.chudoApp.printing
+    // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
+    LaunchedEffect(employee.shopId) {
+        printing.attach(employee.shopId)
+        printing.syncOnStart()
+    }
     val tab = when (route) {
         Routes.STOCK -> Tab.STOCK
         Routes.LAYOUT -> Tab.LAYOUT
@@ -185,15 +202,16 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             )
         }
         composable(Routes.PROFILE) {
-            ProfileScreen(employee, onBack = { nav.popBackStack() }, onPrinters = { nav.navigate(Routes.PRINTERS) })
+            ProfileScreen(employee, onBack = { nav.popBackStack() }, onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null)
         }
-        composable(Routes.PRINTERS) { PrintersScreen(onBack = { nav.popBackStack() }) }
+        // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
+        composable(Routes.PRINTERS) { if (employee.admin) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
         composable(Routes.LABELS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(LABEL_CODE, null).collectAsStateWithLifecycle()
             LabelsScreen(
                 onBack = { nav.popBackStack() },
                 onScan = { nav.navigate(Routes.SCAN_LABEL) },
-                onPrinters = { nav.navigate(Routes.PRINTERS) },
+                onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
             )

@@ -1,141 +1,258 @@
 package ua.chudo.scanner.print
 
-import android.app.Activity
 import android.content.Context
-import android.graphics.Bitmap
-import androidx.core.graphics.scale
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-/** Состояние принтера: [ok] = null — не проверяли (Wi-Fi принтера / Bluetooth проверяются тестом). */
+/** Состояние принтера: [ok] = null — ещё проверяем. */
 data class PrinterStatus(val ok: Boolean?, val text: String)
 
+/** Ни реестр, ни сеть, ни компьютер магазина не дали принтер нужного вида. */
+class PrinterNotFoundException(val kind: LabelKind) : PrintException(
+    if (kind == LabelKind.STICKY) "Принтер етикеток не знайдено. Перевір, що він увімкнений і підключений до мережі"
+    else "Принтер A4 не знайдено. Перевір, що він увімкнений і підключений до мережі",
+)
+
+/** Принтер для печати = способ доставки + язык команд + вид бумаги. */
+class Printer(val record: PrinterRecord, val transport: PrinterTransport, val language: PrinterLanguage, val kind: LabelKind)
+
 /**
- * Печать ценников на любой принтер:
- * - липкие — картинка ценника в языке принтера ([PrintLang]) по сети, Wi-Fi принтера или Bluetooth;
- * - обычные (A4) — системный друк Android (любой принтер) или PDF напрямую.
+ * Печать без участия сотрудника: вид бумаги по шаблону → [PrinterResolver] выбирает принтер магазина →
+ * [LabelRenderer] рисует → язык (EZPL / PCL) → транспорт (TCP / USB / ПК-агент) → реестр запоминает, кто и где напечатал.
  */
 class PrintService(context: Context) {
-    val store = PrinterStore(context)
-    val discovery = PrinterDiscovery(context)
-    val wifi = WifiDirectLink(context)
-    val bluetooth = BluetoothLink(context)
+    private val app = context.applicationContext
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val store = PrinterStore(app)
+    val discovery = PrinterDiscovery(app)
+    val usb = UsbPrinters(app)
+    val renderer = LabelRenderer(app)
+    private val firestore: FirebaseFirestore? get() = runCatching { if (FirebaseApp.getApps(app).isEmpty()) null else FirebaseFirestore.getInstance() }.getOrNull()
+    private val agents = AgentDirectory { firestore }
+    private val uid: String get() = runCatching { FirebaseAuth.getInstance().currentUser?.uid }.getOrNull().orEmpty()
+
+    private var registry: PrinterRegistry? = null
+    private var listening: Job? = null
+    private val _records = MutableStateFlow<List<PrinterRecord>?>(null)
+
+    /** Принтеры магазина из реестра; `null` — ещё не загрузили. */
+    val records: StateFlow<List<PrinterRecord>?> = _records.asStateFlow()
+    private val _subnets = MutableStateFlow<List<String>>(emptyList())
+    val subnets: StateFlow<List<String>> = _subnets.asStateFlow()
+
+    @Volatile var shopId: String = ""
+        private set
+
+    val resolver = PrinterResolver(object : PrinterSource {
+        override fun registry() = _records.value.orEmpty()
+        override suspend fun alive(r: PrinterRecord) = transport(r, aliveTimeoutMs = 1000).isAlive()
+        override suspend fun usb(kind: LabelKind) = usb.list().firstOrNull { it.kind == kind }
+            ?.takeIf { UsbOtgTransport(app, it.usbVendor, it.usbProduct).device() != null }
+
+        override suspend fun discover(kind: LabelKind): PrinterRecord? {
+            val d = discovery.findFirst(kind, _subnets.value) ?: return null
+            return record(d)?.also { r -> runCatching { registry?.upsert(r, uid) } }
+        }
+
+        override suspend fun agent(kind: LabelKind) = agents.printers(shopId).firstOrNull { it.kind == kind }
+    })
+
+    /** После входа: слушаем реестр и подсети своего магазина (другие телефоны не сканируют — берут отсюда). */
+    fun attach(shopId: String) {
+        if (shopId.isEmpty() || shopId == this.shopId && listening != null) return
+        val db = firestore ?: return
+        this.shopId = shopId
+        val reg = PrinterRegistry(db, shopId).also { registry = it }
+        listening?.cancel()
+        listening = scope.launch {
+            launch { reg.listen().collect { _records.value = it } }
+            launch { reg.subnets().collect { _subnets.value = it } }
+        }
+    }
+
+    /** Запись реестра для найденного устройства; не узнали вид — `null` (в реестр не пишем). */
+    fun record(d: Discovered): PrinterRecord? {
+        val kind = d.kind ?: return null
+        val model = d.model ?: d.name ?: return null
+        val existing = _records.value.orEmpty()
+        val id = PrinterIds.of(d.mac, model).let { id ->
+            // Раньше записан без MAC (другой путь опознания) — не плодим дубль, обновляем тот же.
+            existing.firstOrNull { it.id == id }?.id ?: existing.firstOrNull { it.transport == Link.TCP && it.model == model && it.kind == kind }?.id ?: id
+        }
+        return PrinterRecord(id = id, model = model, kind = kind, ip = d.ip, port = d.port, transport = Link.TCP)
+    }
+
+    fun transport(r: PrinterRecord, aliveTimeoutMs: Int = TcpTransport.CONNECT_TIMEOUT_MS): PrinterTransport = when (r.transport) {
+        Link.TCP -> TcpTransport(r.ip, r.port, connectTimeoutMs = aliveTimeoutMs)
+        Link.USB -> UsbOtgTransport(app, r.usbVendor, r.usbProduct)
+        Link.AGENT -> AgentTransport(
+            firestore ?: throw PrintException("Друк через комп'ютер потребує підключеного Firebase."),
+            r.agentId, r.printerName, shopId, uid, r.lang,
+        )
+    }
+
+    fun printer(r: PrinterRecord): Printer {
+        val lang: PrinterLanguage = when (r.lang) {
+            PrintLang.PCL -> PclRaster()
+            PrintLang.EZPL -> EzplGraphic(EzplSettings(darkness = r.density, speed = r.speed))
+            else -> LegacyLabelLanguage(r.lang)
+        }
+        return Printer(r, transport(r), lang, r.kind)
+    }
+
+    /** Байты задания: этикетки 40×24 — по картинке на товар с копиями; листы — товары × количество подряд. */
+    suspend fun render(p: Printer, items: List<QueueItem>, t: Template, promo: Boolean): ByteArray = withContext(Dispatchers.Default) {
+        if (t.kind == LabelKind.STICKY) {
+            p.language.render(PrintJob(items.map { PrintPage(renderer.mono(it.tag.toItem(), LabelFormat.Label40x24, LabelRenderer.GODEX_DPI), it.copies) }))
+        } else {
+            val cells = expand(items.map { it.tag.toItem() to it.copies })
+            p.language.render(PrintJob(renderer.sheetPages(cells, t, promo).map { PrintPage(it) }))
+        }
+    }
 
     /**
-     * Рабочий адрес сетевого принтера: сохранённый IP → нет ответа → тихий пересканирование /24
-     * по отпечатку → обновляем IP. `null` — принтер в сети не найден.
+     * «Друк»: сам выбирает принтер вида шаблона и печатает. Не нашли — [PrinterNotFoundException];
+     * ошибка печати — [PrintException] с понятным текстом, а выбор сессии сбрасывается, чтобы «Спробувати ще» искал заново.
      */
-    suspend fun ensureHost(p: SavedPrinter): String? {
-        if (RawTcp.reachable(p.host, p.port, 800)) return p.host
-        if (discovery.localIp() == null) return null
-        val host = discovery.locate(p) ?: return null
-        store.upsert(p.copy(host = host))
-        return host
-    }
-
-    /** Доставить байты на принтер любым способом подключения. */
-    private suspend fun deliver(p: SavedPrinter, bytes: ByteArray) {
-        when (p.transport) {
-            Transport.LAN -> {
-                val host = ensureHost(p) ?: throw PrinterNotFoundException(
-                    p,
-                    if (discovery.localIp() == null) "Телефон не в Wi-Fi. Підключись до Wi-Fi магазину."
-                    else "Принтер «${p.name}» не відповідає. Перевір, що він увімкнений і в тій самій мережі, що й телефон.",
-                )
-                RawTcp.send(host, p.port, bytes)
-            }
-            Transport.WIFI_DIRECT -> wifi.use(p.ssid, p.pass, p.host, p.port) { net, host ->
-                RawTcp.send(host, p.port, bytes, factory = net.socketFactory)
-            }
-            Transport.BLUETOOTH -> bluetooth.send(p.host, bytes)
+    suspend fun print(items: List<QueueItem>, t: Template, promo: Boolean): PrinterRecord {
+        val pick = resolver.resolve(t.kind) ?: throw PrinterNotFoundException(t.kind)
+        try {
+            printOn(pick.record, items, t, promo)
+        } catch (e: Exception) {
+            resolver.forget(t.kind)
+            throw e
         }
+        return pick.record
     }
 
-    private fun images(items: List<QueueItem>, t: LabelTemplate, lang: PrintLang): List<Pair<MonoImage, Int>> =
-        items.map { q ->
-            var bmp: Bitmap = TagRenderer.render(q.tag, t)
-            if (lang == PrintLang.ESCPOS && bmp.width > EscPos.MAX_WIDTH) {
-                bmp = bmp.scale(EscPos.MAX_WIDTH, bmp.height * EscPos.MAX_WIDTH / bmp.width)
-            }
-            TagRenderer.toMono(bmp) to q.copies
-        }
-
-    suspend fun printSticky(p: SavedPrinter, items: List<QueueItem>, t: LabelTemplate) {
-        val lang = p.lang.takeIf { it != PrintLang.PDF } ?: PrintLang.ZPL
-        val bytes = withContext(Dispatchers.Default) { LabelEncoder.encode(lang, images(items, t, lang), t) }
-        deliver(p, bytes)
+    /** Печать на конкретный принтер (и тест администратора). Удалось — upsert в реестр: ip, lastSeen, lastOkBy. */
+    suspend fun printOn(r: PrinterRecord, items: List<QueueItem>, t: Template, promo: Boolean) {
+        if (r.kind != t.kind) throw PrintException("«${r.model}» друкує ${if (r.kind == LabelKind.STICKY) "етикетки 40×24" else "аркуші A4"}.")
+        val p = printer(r)
+        p.transport.send(render(p, items, t, promo))
+        runCatching { registry?.upsert(r, uid, ok = true) }
     }
 
-    /** Етикетки 40×25: 320×200 точек, 1 бит. */
-    suspend fun printLabels(p: SavedPrinter, items: List<QueueItem>) {
-        val lang = p.lang.takeIf { it != PrintLang.PDF } ?: PrintLang.ZPL
+    /**
+     * «Тест друку» (администратор): Godex — этикетка 40×24, Brother — страница A4
+     * («ЧудоСкан — тест друку», дата и время, магазин, модель, IP, EAN-13).
+     */
+    suspend fun test(r: PrinterRecord, shop: String): String {
+        val p = printer(r)
+        val code = Ean13.normalize(TEST_EAN12)!!
         val bytes = withContext(Dispatchers.Default) {
-            val imgs = items.map { TagRenderer.toMono(TemplateRenderer.label(it.tag.toItem())) to it.copies }
-            LabelEncoder.encode(lang, imgs, LabelTemplate.STICKY_40x25)
+            if (r.kind == LabelKind.STICKY) {
+                val item = LabelItem(barcode = code, article = "TEST", brand = "ЧудоСкан", name = "Тест друку · ${r.model}", price = 199.0)
+                p.language.render(PrintJob(listOf(PrintPage(renderer.mono(item, LabelFormat.Label40x24, LabelRenderer.GODEX_DPI)))))
+            } else {
+                val now = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.forLanguageTag("uk")).format(Date())
+                val lines = listOf(
+                    "ЧудоСкан — тест друку",
+                    "Дата й час: $now",
+                    "Магазин: ${shop.ifEmpty { "—" }}",
+                    "Принтер: ${r.model}",
+                    "IP: ${r.address}",
+                    "Тестовий EAN-13: $code",
+                )
+                p.language.render(PrintJob(listOf(PrintPage(renderer.testPage(lines, code)))))
+            }
         }
-        deliver(p, bytes)
+        p.transport.send(bytes)
+        runCatching { registry?.upsert(r, uid, ok = true) }
+        return "Надруковано"
     }
 
-    /** PDF A4 по шаблону (items × qty подряд) и число страниц. */
-    suspend fun sheetPdf(items: List<QueueItem>, t: Template, promo: Boolean): Pair<ByteArray, Int> =
-        withContext(Dispatchers.Default) { TemplateRenderer.pdf(expand(items.map { it.tag.toItem() to it.copies }), t, promo) }
-
-    suspend fun printSheetSystem(activity: Activity, items: List<QueueItem>, t: Template, promo: Boolean) {
-        val (pdf, pages) = sheetPdf(items, t, promo)
-        A4Sheet.systemPrint(activity, "Цінники", pdf, pages, t.landscape)
+    /** Статус для списка администратора. */
+    suspend fun status(r: PrinterRecord): PrinterStatus = when (r.transport) {
+        Link.TCP -> if (transport(r, 1000).isAlive()) PrinterStatus(true, ONLINE) else PrinterStatus(false, OFFLINE)
+        Link.USB -> {
+            val t = UsbOtgTransport(app, r.usbVendor, r.usbProduct)
+            when {
+                t.device() == null -> PrinterStatus(false, "Недоступний — кабель USB не підключено")
+                !t.isAlive() -> PrinterStatus(true, "Підключено по USB · дозвіл спитаємо під час друку")
+                else -> PrinterStatus(true, ONLINE)
+            }
+        }
+        Link.AGENT -> if (runCatching { transport(r).isAlive() }.getOrDefault(false)) PrinterStatus(true, "Онлайн через комп'ютер")
+        else PrinterStatus(false, "Недоступний — комп'ютер магазину не на зв'язку")
     }
 
-    /** «Пряма печать» A4: PDF сырыми байтами (Brother, HP и большинство офисных лазерных). */
-    suspend fun printSheetDirect(p: SavedPrinter, items: List<QueueItem>, t: Template, promo: Boolean) {
-        deliver(p, sheetPdf(items, t, promo).first)
+    /** Для листа печати: какой принтер возьмём и отвечает ли он («Godex G500 · онлайн»). Без поиска в сети. */
+    suspend fun quickStatus(kind: LabelKind): Pair<PrinterRecord, Boolean>? {
+        withTimeoutOrNull(5_000) { records.filterNotNull().first() }
+        val list = _records.value.orEmpty().filter { it.kind == kind }
+        val chosen = list.firstOrNull { it.id == resolver.chosen(kind) }
+        val ordered = listOfNotNull(chosen) + list.filter { it != chosen && it.transport == Link.TCP }
+        for (r in ordered) if (transport(r, 1000).isAlive()) return r to true
+        usb.list().firstOrNull { it.kind == kind }?.let { return it to true }
+        agents.printers(shopId).firstOrNull { it.kind == kind }?.let { return it to true }
+        return list.firstOrNull()?.let { it to false }
     }
 
     /**
-     * «Тест»: липкий — печатает пробную этикетку на выбранном языке (сразу видно, подходит ли язык),
-     * обычный — проверяет связь (лист A4 зря не тратим).
+     * При запуске, не чаще раза в 10 минут: тихо проверяем принтеры реестра (lastSeen),
+     * пропавшие ищем по подсетям магазина — новый IP попадёт в реестр под тем же id.
      */
-    suspend fun test(p: SavedPrinter): String {
-        if (p.role == LabelKind.STICKY) {
-            val tag = PriceTag("ЧудоСкан · тест ${p.lang.title}", "123,45", "150", "TEST", "4820000000000")
-            printSticky(p, listOf(QueueItem(tag, 1)), LabelTemplate.STICKY_58x40)
-            return "Тестову етикетку надіслано (${p.lang.title}). Якщо вийшла порожня або з «кракозябрами» — обери іншу мову принтера і натисни «Тест» ще раз."
-        }
-        return when (p.transport) {
-            Transport.LAN -> if (ensureHost(p) != null) "Принтер відповідає." else "Немає відповіді від ${p.host}:${p.port}."
-            Transport.WIFI_DIRECT -> wifi.use(p.ssid, p.pass, p.host, p.port) { _, host -> "Принтер відповідає ($host у мережі «${p.ssid}»)." }
-            Transport.BLUETOOTH -> if (bluetooth.reachable(p.host)) "Принтер відповідає по Bluetooth." else "Немає зв'язку по Bluetooth."
+    fun syncOnStart() {
+        if (registry == null) return
+        scope.launch {
+            val now = System.currentTimeMillis()
+            if (now - store.lastSync() < SYNC_EVERY_MS) return@launch
+            store.setLastSync(now)
+            val list = withTimeoutOrNull(15_000) { records.filterNotNull().first() } ?: return@launch
+            val tcp = list.filter { it.transport == Link.TCP && it.ip.isNotEmpty() }
+            val dead = coroutineScope {
+                tcp.map { r -> async { r to transport(r, 1000).isAlive() } }.awaitAll()
+            }.mapNotNull { (r, ok) -> if (ok) { runCatching { registry?.touch(r) }; null } else r }
+            if (dead.isEmpty() && tcp.isNotEmpty()) return@launch
+            // Кого-то нет на месте (или реестр пуст) — один поиск по всем подсетям.
+            runCatching { adminScan() }
         }
     }
 
-    /** Быстрая проверка для списка принтеров. Wi-Fi принтера не трогаем: подключение показывает системный запрос. */
-    suspend fun status(p: SavedPrinter): PrinterStatus = when (p.transport) {
-        Transport.LAN -> {
-            val host = ensureHost(p)
-            when {
-                host == null -> PrinterStatus(false, "Не в мережі")
-                p.lang == PrintLang.ZPL -> zplStatus(host, p.port) ?: PrinterStatus(true, "Онлайн")
-                else -> PrinterStatus(true, "Онлайн")
-            }
-        }
-        Transport.BLUETOOTH -> when {
-            !bluetooth.enabled -> PrinterStatus(false, "Bluetooth вимкнено")
-            bluetooth.bonded().none { it.second == p.host } -> PrinterStatus(false, "Не спарений з телефоном")
-            else -> PrinterStatus(null, "Bluetooth · перевір тестом")
-        }
-        Transport.WIFI_DIRECT -> PrinterStatus(null, "Wi-Fi «${p.ssid}» · перевір тестом")
+    /** Полный поиск: узнанные пишем в реестр, неопознанные возвращаем (их видит только администратор). */
+    suspend fun adminScan(): List<Discovered> {
+        val found = discovery.discoverAll(_subnets.value)
+        found.forEach { d -> record(d)?.let { r -> runCatching { registry?.upsert(r, uid) } } }
+        return found.filter { it.kind == null }
     }
 
-    /** ZPL ~HS: папір, пауза, відкрита голова. `null` — принтер не отвечает на ~HS (например, Godex). */
-    private suspend fun zplStatus(host: String, port: Int): PrinterStatus? {
-        val raw = RawTcp.query(host, port, "~HS\r\n".toByteArray(Charsets.US_ASCII), 800) ?: return null
-        val lines = raw.split('\u0002').map { it.substringBefore('\u0003').split(',') }.filter { it.size > 3 }
-        val s1 = lines.getOrNull(0) ?: return null
-        val s2 = lines.getOrNull(1)
-        return when {
-            s1.getOrNull(1)?.trim() == "1" -> PrinterStatus(false, "Закінчились етикетки")
-            s2?.getOrNull(2)?.trim() == "1" -> PrinterStatus(false, "Відкрита кришка / голова")
-            s1.getOrNull(2)?.trim() == "1" -> PrinterStatus(false, "На паузі")
-            else -> PrinterStatus(true, "Онлайн, готовий")
-        }
+    /** «Додати вручну»: IP + вид; модель и MAC пробуем узнать. */
+    suspend fun addManual(ip: String, kind: LabelKind) {
+        val d = discovery.identify(ip)
+        val r = record(d.copy(kind = kind, model = d.model ?: if (kind == LabelKind.STICKY) "Принтер етикеток $ip" else "Принтер A4 $ip"))!!
+        (registry ?: throw PrintException("Реєстр принтерів недоступний: увійди як співробітник магазину.")).upsert(r, uid)
+    }
+
+    suspend fun setTuning(r: PrinterRecord, density: Int?, speed: Int?) = registry?.setTuning(r.id, density, speed)
+    suspend fun delete(r: PrinterRecord) = registry?.delete(r.id)
+    suspend fun agentPrinters() = agents.printers(shopId)
+
+    companion object {
+        const val ONLINE = "Онлайн — готовий до друку"
+        const val OFFLINE = "Не відповідає. Перевір, що принтер увімкнений, і натисни «Знайти знову»."
+        const val SYNC_EVERY_MS = 10 * 60 * 1000L
+
+        /** Тестовый код: префикс Украины 482 + 9 цифр; контрольную допишет [Ean13.normalize]. */
+        const val TEST_EAN12 = "482307760123"
     }
 }

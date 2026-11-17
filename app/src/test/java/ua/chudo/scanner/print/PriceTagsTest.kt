@@ -48,14 +48,15 @@ class PriceTagsTest {
         assertEquals(3f, l.marginXmm, 1e-4f)
     }
 
-    @Test fun bigFourPerLandscapeSheet() {
+    @Test fun bigTwoPerPortraitSheet() {
         val l = Template.BIG.layout!!
-        assertEquals(2, l.cols)
+        assertEquals(1, l.cols)
         assertEquals(2, l.rows)
-        assertEquals(4, l.perPage)
-        assertEquals(2, l.pages(5))
-        assertEquals(Cell(1, 0, 0), l.cell(4))
-        assertEquals(null, Template.LABEL_40x25.layout)
+        assertEquals(2, l.perPage)
+        assertEquals(3, l.pages(5))
+        assertEquals(Cell(1, 0, 0), l.cell(2))
+        assertEquals(31f, l.marginXmm, 1e-4f)
+        assertEquals(null, Template.LABEL_40x24.layout)
     }
 
     @Test fun itemsTimesQtyInOrder() {

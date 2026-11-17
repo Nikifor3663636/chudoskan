@@ -1,6 +1,8 @@
 package ua.chudo.scanner.print
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.net.DatagramPacket
@@ -14,12 +16,41 @@ import java.net.InetAddress
 object Snmp {
     private val HR_DEVICE_DESCR = intArrayOf(1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1)
     internal val SYS_DESCR = intArrayOf(1, 3, 6, 1, 2, 1, 1, 1, 0)
+    private val IF_PHYS_ADDRESS = intArrayOf(1, 3, 6, 1, 2, 1, 2, 2, 1, 6)
 
-    suspend fun model(host: String, timeoutMs: Int = 700): String? =
-        (get(host, HR_DEVICE_DESCR, timeoutMs) ?: get(host, SYS_DESCR, timeoutMs))
-            ?.filter { it in ' '..'~' || it.code > 0x400 }?.trim()?.take(80)?.ifEmpty { null }
+    /**
+     * Модель: GET sysDescr (1.3.6.1.2.1.1.1.0) и hrDeviceDescr параллельно, по 1 с.
+     * Для показа лучше hrDeviceDescr («Brother HL-L2360D series»): у Brother sysDescr — это сетевая плата («Brother NC-340h…»).
+     */
+    suspend fun model(host: String, timeoutMs: Int = 1000): String? = coroutineScope {
+        val sys = async { get(host, SYS_DESCR, timeoutMs) }
+        val hr = async { get(host, HR_DEVICE_DESCR, timeoutMs) }
+        pick(hr.await(), sys.await())
+    }
 
-    suspend fun get(host: String, oid: IntArray, timeoutMs: Int): String? = withContext(Dispatchers.IO) {
+    /** Чистим ответ (управляющие символы, длина) и выбираем: hrDeviceDescr, иначе sysDescr. */
+    internal fun pick(hr: String?, sys: String?): String? =
+        listOf(hr, sys).firstNotNullOfOrNull { s -> s?.filter { it in ' '..'~' || it.code > 0x400 }?.trim()?.take(80)?.ifEmpty { null } }
+
+    /** Значение из ответа GET (последняя OCTET STRING; первая — community). */
+    internal fun value(response: ByteArray): String? = octets(response).drop(1).lastOrNull()?.let { String(it, Charsets.UTF_8) }
+
+    /**
+     * MAC интерфейса — постоянный id принтера в реестре: ifPhysAddress (1.3.6.1.2.1.2.2.1.6.N) для ifIndex 1, затем 2.
+     * Формат «00:00:5E:00:53:AA»; `null` — нет ответа или нулевой адрес.
+     */
+    suspend fun mac(host: String, timeoutMs: Int = 1000): String? {
+        for (index in 1..2) formatMac(getRaw(host, IF_PHYS_ADDRESS + index, timeoutMs))?.let { return it }
+        return null
+    }
+
+    internal fun formatMac(b: ByteArray?): String? =
+        b?.takeIf { it.size == 6 && it.any { x -> x.toInt() != 0 } }?.joinToString(":") { "%02X".format(it.toInt() and 0xFF) }
+
+    suspend fun get(host: String, oid: IntArray, timeoutMs: Int): String? = getRaw(host, oid, timeoutMs)?.let { String(it, Charsets.UTF_8) }
+
+    /** Значение GET как байты (MAC приходит двоичным OCTET STRING). */
+    suspend fun getRaw(host: String, oid: IntArray, timeoutMs: Int): ByteArray? = withContext(Dispatchers.IO) {
         runCatching {
             DatagramSocket().use { s ->
                 s.soTimeout = timeoutMs
@@ -29,7 +60,7 @@ object Snmp {
                 val p = DatagramPacket(buf, buf.size)
                 s.receive(p)
                 // Последняя OCTET STRING в ответе — значение (первая — community).
-                octetStrings(buf.copyOf(p.length)).drop(1).lastOrNull()
+                octets(buf.copyOf(p.length)).drop(1).lastOrNull()
             }
         }.getOrNull()
     }
@@ -74,9 +105,12 @@ object Snmp {
         return out.toByteArray()
     }
 
-    /** Все OCTET STRING из BER-дерева по порядку. */
-    internal fun octetStrings(b: ByteArray): List<String> {
-        val found = mutableListOf<String>()
+    /** Все OCTET STRING из BER-дерева по порядку (строками). */
+    internal fun octetStrings(b: ByteArray): List<String> = octets(b).map { String(it, Charsets.UTF_8) }
+
+    /** Все OCTET STRING из BER-дерева по порядку (байтами). */
+    internal fun octets(b: ByteArray): List<ByteArray> {
+        val found = mutableListOf<ByteArray>()
         fun walk(from: Int, to: Int) {
             var i = from
             while (i + 1 < to) {
@@ -92,7 +126,7 @@ object Snmp {
                 val end = start + len
                 if (end > to) return
                 when {
-                    tag == 0x04 -> found += String(b, start, len, Charsets.UTF_8)
+                    tag == 0x04 -> found += b.copyOfRange(start, end)
                     tag and 0x20 != 0 -> walk(start, end) // составной тип (SEQUENCE, PDU)
                 }
                 i = end
@@ -103,17 +137,19 @@ object Snmp {
     }
 }
 
-/** Что за принтер по названию модели: роль и язык. `null` — не знаем. */
+/** Что за принтер по названию модели: вид и язык. `null` — не знаем (показываем только администратору). */
 fun guessByModel(model: String): Pair<LabelKind, PrintLang>? {
     val m = model.lowercase()
     fun has(vararg w: String) = w.any { it in m }
     return when {
-        has("zebra", "zd220", "zd230", "zd4", "zd6", "zt2", "zt4", "zt6", "gk420", "gx420", "honeywell", "intermec", "datamax", "citizen", "godex", "g500", "g530", "rt200", "rt230", "ez-") ->
+        has("godex", "g500", "g530", "rt200", "rt230", "ez-") -> LabelKind.STICKY to PrintLang.EZPL
+        has("zebra", "zd220", "zd230", "zd4", "zd6", "zt2", "zt4", "zt6", "gk420", "gx420", "honeywell", "intermec", "datamax", "citizen") ->
             LabelKind.STICKY to PrintLang.ZPL
         has("tsc", "ttp-", "tdp-", "te2", "te3", "da2", "xprinter", "xp-", "gprinter", "gp-", "hprt", "rongta", "idprt", "munbyn", "bixolon", "sato") ->
             LabelKind.STICKY to PrintLang.TSPL
-        has("brother", "hp ", "hewlett", "laserjet", "officejet", "deskjet", "canon", "epson", "kyocera", "xerox", "ricoh", "lexmark", "samsung", "pantum", "oki", "konica", "sharp", "mfc-", "dcp-", "hl-") ->
-            LabelKind.PLAIN to PrintLang.PDF
+        // Brother: и HL-L2360DN, и MFC-L2700DW магазина (в его отчёте конфигурации включён PCL).
+        has("brother", "hp ", "hewlett", "laserjet", "kyocera", "xerox", "ricoh", "lexmark", "samsung", "pantum", "konica", "mfc-", "dcp-", "hl-") ->
+            LabelKind.PLAIN to PrintLang.PCL
         else -> null
     }
 }

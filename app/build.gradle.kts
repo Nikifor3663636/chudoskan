@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.paparazzi)
 }
 
 // Вход сотрудников и остатки магазинов — Firebase. Файл google-services.json кладётся в app/
@@ -20,8 +21,8 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "2.7"
+        versionCode = 10
+        versionName = "2.8"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
@@ -92,6 +93,8 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    // Тест: штрихкод из LabelRenderer читается как тот же EAN-13.
+    testImplementation(libs.zxing.core)
 
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

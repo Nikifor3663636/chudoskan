@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Принтеры, при подключении которых по USB OTG Android предложит открыть ЧудоСкан. -->
+<resources>
+    <!-- GODEX INTERNATIONAL CO., LTD. — vendor ID 6495 (0x195F) по реестру usb.org. -->
+    <usb-device vendor-id="6495" />
+    <!-- Любой USB-принтер (класс 7). -->
+    <usb-device class="7" />
+</resources>

@@ -138,8 +138,8 @@ flowchart TB
         prefs[AppPrefs<br/>SharedPreferences]
     end
     subgraph Print[print/]
-        disc[PrinterDiscovery + Snmp] --> links[Links<br/>TCP · Wi-Fi Direct · Bluetooth]
-        render[TagRenderer] --> enc[LabelEncoder<br/>ZPL · TSPL · EPL · ESC/POS]
+        resolver[PrinterResolver<br/>реестр · поиск · ПК-агент] --> tr[Transports<br/>TCP 9100 · USB OTG · агент]
+        render[LabelRenderer] --> lang[Languages<br/>EZPL · PCL]
     end
     UI --> VM --> Data
     UI --> Print
@@ -242,26 +242,29 @@ sequenceDiagram
 
 ## 9. Печать ценников
 
+Сотрудник ничего не выбирает и не настраивает: «Друк» → напечатано.
+
 ```mermaid
 flowchart LR
-    tag[PriceTag<br/>название, цена, старая цена, EAN-13] --> r[TagRenderer<br/>Canvas → 203 dpi → 1 бит]
-    r --> enc{Язык принтера}
-    enc --> zpl[ZPL<br/>Zebra, Godex]
-    enc --> tspl[TSPL<br/>TSC, Xprinter]
-    enc --> epl[EPL]
-    enc --> esc[ESC/POS]
-    zpl & tspl & epl & esc --> link{Подключение}
-    link --> tcp[Сеть магазина<br/>TCP 9100]
-    link --> wd[Wi-Fi принтера<br/>WifiNetworkSpecifier]
-    link --> bt[Bluetooth SPP]
-    tag --> a4[Лист A4 на 24 ценника<br/>системная печать / PDF]
+    tag[PriceTag] --> r[LabelRenderer<br/>один Bitmap: превью = печать]
+    r -->|40×24, 203 dpi, 1 бит| ezpl[EZPL<br/>Godex]
+    r -->|A4 300 dpi, 1 бит| pcl[PCL растр<br/>Brother]
+    ezpl & pcl --> pick{PrinterResolver}
+    pick --> c[кеш сессии] & reg[реестр магазина<br/>первый ответивший] & disc[поиск ≤ 6 с] & agent[ПК-агент]
+    c & reg & disc --> tcp[TCP 9100]
+    pick --> usb[USB OTG]
+    agent --> jobs[(Firestore printJobs)] --> pc[agent/ на ПК<br/>RAW в спулер Windows]
 ```
 
-- **Поиск принтеров:** перебор /24 подсети на порт 9100 плюс mDNS; модель — по SNMP
-  (`sysDescr`, `hrDeviceDescr`), у Godex — командой `~HI`. Если принтер сменил IP, он находится заново
-  по «отпечатку».
-- **Язык** угадывается по модели и меняется в карточке принтера; байты каждого языка проверены
-  тестами (`PrintEncodingTest`).
+- **Реестр** `shops/{shopId}/printers/{id}`: id — MAC (SNMP `ifPhysAddress`), иначе модель+имя, поэтому смена IP
+  не создаёт дубль. Нашедший или напечатавший телефон делает upsert; остальные слушают реестр и не сканируют.
+- **Поиск** (фоновый): NSD своей подсети, TCP 9100 по `shops/{shopId}.printerSubnets` + /24 Wi-Fi телефона,
+  SNMP `sysDescr`/`hrDeviceDescr`/MAC, при молчании SNMP — страница `http://IP/` (Godex). Неопознанное —
+  только администратору. При запуске (не чаще раза в 10 минут) реестр тихо проверяется.
+- **Экран «Принтери»** — только администратору (`users/{uid}.admin`): тест, плотность и скорость Godex,
+  «Додати вручну», удаление.
+- **EAN-13**: тихая зона 5 модулей, модуль — целое число точек (Godex 2, Brother 3), без сглаживания;
+  тест декодирует настоящий Bitmap печати ZXing.
 
 ## 10. Сборка и CI
 
@@ -292,7 +295,9 @@ Lint Android настроен строго: предупреждения счи�
 | Реальные ответы | `core/tests/real_responses.rs` + `fixtures/` | Разбор настоящих ответов сайта и UPCitemdb |
 | Контракт моделей | `shared/src/androidUnitTest/CoreContractTest.kt` | Kotlin-модели iOS-моста ↔ JSON ядра |
 | SHA-1 | `shared/src/androidUnitTest/Sha1Test.kt` | Отпечаток для `shopId` |
-| Печать | `app/src/test/.../PrintEncodingTest.kt` | Байты ZPL / TSPL / EPL / ESC/POS |
+| Печать | `app/src/test/.../print/*Test.kt` | EAN-13 (ZXing), байты EZPL / PCL / ZPL / TSPL, SNMP, mDNS, CIDR, автовыбор принтера |
+| Дизайн | `app/src/test/.../design/DesignSnapshots.kt` | Снимки Paparazzi экранов «Mine» и ценников; штрихкод из Bitmap печати читается ZXing |
+| ПК-агент | `agent/lib.test.js` | Вид принтера по имени, список принтеров ПК |
 
 Если сайт поменяет разметку, первыми упадут тесты на `fixtures`: видно, что сломалось, до того, как
 это заметят продавцы.

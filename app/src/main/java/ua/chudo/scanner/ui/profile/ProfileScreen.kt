@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
@@ -61,7 +62,7 @@ import ua.chudo.scanner.ui.theme.InStockGreen
 import java.text.DateFormat
 
 @Composable
-fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit) {
+fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
     var info by remember { mutableStateOf<ShopStockInfo?>(null) }
@@ -93,7 +94,10 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
             }
             IconButton(onClick = { editName = true }) { Icon(Icons.Rounded.Edit, "Змінити ім'я") }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(28.dp))
+        val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
+        ThemePicker(theme, app.prefs::setThemeMode)
+        Spacer(Modifier.height(24.dp))
 
         Card {
             InfoRow(Icons.Rounded.Phone, "Телефон", formatPhone(employee.phone))
@@ -122,8 +126,10 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: () -> Unit
         Card {
             ActionRow(Icons.Rounded.Lock, "Змінити пароль") { changePassword = true }
             HorizontalDivider()
-            ActionRow(Icons.Rounded.Print, "Принтери", onClick = onPrinters)
-            HorizontalDivider()
+            onPrinters?.let {
+                ActionRow(Icons.Rounded.Print, "Принтери", onClick = it)
+                HorizontalDivider()
+            }
             ActionRow(Icons.AutoMirrored.Rounded.Logout, "Вийти", danger = true) { confirmLogout = true }
         }
         message?.let {

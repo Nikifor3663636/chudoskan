@@ -40,7 +40,8 @@ class ProductViewModel(
     handle: SavedStateHandle,
 ) : ViewModel() {
     val urlKey: String = checkNotNull(handle["urlKey"])
-    private val barcode: String? = handle.get<String>("bc")?.takeIf { it.isNotBlank() }
+    /** Штрихкод, по которому открыли товар (для ценника). */
+    val barcode: String? = handle.get<String>("bc")?.takeIf { it.isNotBlank() }
 
     private val _state = MutableStateFlow(
         ProductUiState(barcodeToRemember = barcode?.takeIf { prefs.rememberedProduct(it) != urlKey })

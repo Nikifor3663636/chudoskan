@@ -23,7 +23,7 @@ object LabelEncoder {
                     PrintLang.TSPL -> Tspl.label(img, n, t)
                     PrintLang.EPL -> Epl.label(img, n)
                     PrintLang.ESCPOS -> EscPos.label(img, n)
-                    PrintLang.PDF -> error("PDF — лише для A4")
+                    PrintLang.EZPL, PrintLang.PCL -> error("${lang.title} — не для цього кодувальника")
                 },
             )
         }
