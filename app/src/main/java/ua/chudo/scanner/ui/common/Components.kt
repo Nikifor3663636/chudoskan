@@ -23,10 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +44,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
-import ua.chudo.scanner.ui.theme.InStockGreen
+import ua.chudo.scanner.print.PriceFormat
+import ua.chudo.scanner.ui.theme.Mine
+import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.Price
 import uniffi.chudo_core.ProductSummary
@@ -75,98 +75,75 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
     }
 }
 
+/** Наличие на сайте: цветная точка и простые слова. */
 @Composable
 fun StockBadge(stock: StockStatus, modifier: Modifier = Modifier) {
+    val m = Mine.colors
     val (text, color) = when (stock) {
-        StockStatus.IN_STOCK -> "Є на сайті" to InStockGreen
-        StockStatus.OUT_OF_STOCK -> "Немає онлайн" to OutOfStockGrey
-        StockStatus.UNKNOWN -> "Невідомо" to OutOfStockGrey
+        StockStatus.IN_STOCK -> "Є на сайті" to m.success
+        StockStatus.OUT_OF_STOCK -> "Немає на сайті" to m.outline
+        StockStatus.UNKNOWN -> "Наявність невідома" to m.outline
     }
-    Row(
-        modifier
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        StatusDot(color)
         Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = color)
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (stock == StockStatus.IN_STOCK) m.text else m.textSecondary)
     }
 }
 
 @Composable
 fun DiscountBadge(percent: Double, modifier: Modifier = Modifier) {
+    val m = Mine.colors
     Text(
         "−${percent.toInt()}%",
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.secondary)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        color = MaterialTheme.colorScheme.onSecondary,
-        style = MaterialTheme.typography.labelLarge,
+        modifier.clip(RoundedCornerShape(8.dp)).background(m.accent).padding(horizontal = 8.dp, vertical = 2.dp),
+        color = m.onAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
     )
 }
 
+/** Цена строкой: Montserrat, как на ценнике; старая — зачёркнута рядом. */
 @Composable
 fun PriceLine(price: Price?, compact: Boolean = false) {
+    val m = Mine.colors
     if (price == null) {
-        Text("Ціна недоступна", style = MaterialTheme.typography.bodyMedium, color = OutOfStockGrey)
+        Text("Ціна недоступна", fontSize = 15.sp, color = m.textSecondary)
         return
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            formatPrice(price.finalPrice),
-            style = if (compact) MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
-            else ua.chudo.scanner.ui.theme.PriceStyle,
-            color = if (price.discountPercent > 0) MaterialTheme.colorScheme.secondary
-            else MaterialTheme.colorScheme.onSurface,
+            "${PriceFormat.tag(price.finalPrice).first} ₴",
+            fontFamily = PriceFont, fontWeight = FontWeight.ExtraBold, fontSize = if (compact) 19.sp else 28.sp, color = m.text,
         )
-        if (price.regularPrice > price.finalPrice) {
+        if (price.regularPrice > price.finalPrice + 0.001) {
             Text(
-                formatPrice(price.regularPrice),
-                style = MaterialTheme.typography.bodyMedium,
+                "${PriceFormat.tag(price.regularPrice).first} ₴", fontSize = 14.sp, color = m.textSecondary,
                 textDecoration = TextDecoration.LineThrough,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (price.discountPercent >= 1) DiscountBadge(price.discountPercent)
         }
-        if (!compact && price.discountPercent >= 1) DiscountBadge(price.discountPercent)
     }
 }
 
+/** Товар в списке результатов: фото, название, артикул, цена, наличие. Точное совпадение — с акцентной рамкой. */
 @Composable
 fun ProductCard(item: ProductSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val m = Mine.colors
     val highlight = item.exactMatch
     Surface(
         onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (highlight) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.large)
-                else Modifier
-            ),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        tonalElevation = 1.dp,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = m.card, contentColor = m.text,
+        border = androidx.compose.foundation.BorderStroke(if (highlight) 2.dp else 1.dp, if (highlight) m.accent else m.line),
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            ProductImage(item.image, Modifier.size(84.dp))
+            ProductImage(item.image, Modifier.size(88.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (highlight) {
-                    Text(
-                        "Точний збіг артикулу",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Text(item.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                item.article?.let {
-                    Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PriceLine(item.price, compact = true)
-                }
+                if (highlight) Text("Точний збіг артикулу", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = m.accent)
+                Text(item.name, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                item.article?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
+                PriceLine(item.price, compact = true)
                 StockBadge(item.stock)
             }
         }
@@ -185,6 +162,7 @@ fun Shimmer(modifier: Modifier = Modifier, shapeRadius: Dp = 12.dp) {
     )
 }
 
+/** Пустой экран или ошибка: что случилось и что сделать — кнопками. */
 @Composable
 fun MessageState(
     icon: ImageVector,
@@ -194,30 +172,20 @@ fun MessageState(
     primary: Pair<String, () -> Unit>? = null,
     secondary: Pair<String, () -> Unit>? = null,
 ) {
-    Column(
-        modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier.size(88.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+    val m = Mine.colors
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(80.dp).clip(CircleShape).background(m.accentTone), contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(36.dp), tint = m.accent)
         }
         Spacer(Modifier.height(20.dp))
-        Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(title, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = m.text, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        Text(text, fontSize = 15.sp, lineHeight = 22.sp, color = m.textSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
-        primary?.let { (label, action) -> Button(onClick = action, Modifier.fillMaxWidth()) { Text(label) } }
+        primary?.let { (label, action) -> MinePrimaryButton(label, action) }
         secondary?.let { (label, action) ->
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = action, Modifier.fillMaxWidth()) { Text(label) }
+            Spacer(Modifier.height(10.dp))
+            MineButton(label, action, Modifier.fillMaxWidth().height(52.dp))
         }
     }
 }
@@ -238,8 +206,7 @@ fun ErrorState(error: UiError, siteUrl: String?, onRetry: () -> Unit, modifier: 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable (() -> Unit)? = null) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Mine.colors.text, modifier = Modifier.weight(1f))
         trailing?.invoke()
     }
 }
-

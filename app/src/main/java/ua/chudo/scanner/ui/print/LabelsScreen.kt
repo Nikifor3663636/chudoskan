@@ -1,5 +1,21 @@
 package ua.chudo.scanner.ui.print
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.common.BarcodeScanIcon
+import ua.chudo.scanner.ui.common.MineButton
+import ua.chudo.scanner.ui.common.MineChip
+import ua.chudo.scanner.ui.common.MineListRow
+import ua.chudo.scanner.ui.common.MinePrimaryButton
+import ua.chudo.scanner.ui.common.MineSearchField
+import ua.chudo.scanner.ui.common.MineStepper
+import ua.chudo.scanner.ui.theme.Mine
 import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
@@ -290,12 +306,13 @@ fun LabelsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var askPaper by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
+    val m = Mine.colors
 
     if (askPaper) {
         AlertDialog(
             onDismissRequest = { askPaper = false },
             title = { Text("Акційні цінники") },
-            text = { Text("Вставте жовтий папір у принтер.") },
+            text = { Text("Встав жовтий папір у принтер.") },
             confirmButton = { TextButton(onClick = { askPaper = false; vm.print() }) { Text("Друкувати") } },
             dismissButton = { TextButton(onClick = { askPaper = false }) { Text("Скасувати") } },
         )
@@ -306,139 +323,147 @@ fun LabelsScreen(
     }
 
     LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
-                Text("Друк цінників", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                onPrinters?.let { IconButton(onClick = it) { Icon(Icons.Rounded.Settings, "Принтери") } }
+            Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Друк цінників", Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = m.text)
+                onPrinters?.let { IconButton(onClick = it) { Icon(Icons.Rounded.Settings, "Принтери", tint = m.textSecondary) } }
             }
-        }
-        item {
-            OutlinedTextField(
-                value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                placeholder = { Text("Артикул, штрихкод або назва") },
-                trailingIcon = {
-                    Row {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Очистити") }
-                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, "Сканувати") }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); vm.search(query) }),
+            Text(
+                "Знайди товар, перевір ціну й друкуй. Принтер обирається сам.",
+                Modifier.padding(top = 4.dp), fontSize = 15.sp, lineHeight = 21.sp, color = m.textSecondary,
             )
         }
-        when (val f = find) {
-            FindState.Idle -> {}
-            is FindState.Loading -> item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp)); Text(f.step)
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MineSearchField(query, { query = it }, "Артикул, штрихкод або назва", { keyboard?.hide(); vm.search(query) }, Modifier.weight(1f))
+                Surface(onClick = onScan, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(18.dp), color = m.accentTone, contentColor = m.accent) {
+                    Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
                 }
             }
-            is FindState.Pick -> items(f.items, key = { it.id }) { s ->
-                Card(Modifier.fillMaxWidth().clickable { vm.pick(s, f.barcode) }) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(s.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(s.article, s.price?.finalPrice?.let { formatPrice(it) + " ₴" }).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        }
+        when (val f = find) {
+            FindState.Idle -> if (current == null && queue.isEmpty()) item {
+                Surface(shape = RoundedCornerShape(20.dp), color = m.surface, contentColor = m.text) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                        Text("Черга порожня", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Відскануй штрихкод або введи артикул — ціна й назва підтягнуться із сайту. Можна додати кілька товарів і надрукувати разом.",
+                            Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 21.sp, color = m.textSecondary,
+                        )
+                    }
+                }
+            }
+            is FindState.Loading -> item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = m.accent)
+                    Spacer(Modifier.width(10.dp)); Text(f.step, fontSize = 15.sp, color = m.textSecondary)
+                }
+            }
+            is FindState.Pick -> {
+                item { Text("Обери товар", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.textSecondary) }
+                items(f.items, key = { it.id }) { s ->
+                    MineListRow(onClick = { vm.pick(s, f.barcode) }, divider = s != f.items.last()) {
+                        Column {
+                            Text(s.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                listOfNotNull(s.article?.let { "Арт. $it" }, s.price?.finalPrice?.let { formatPrice(it) + " ₴" }).joinToString(", "),
+                                fontSize = 14.sp, color = m.textSecondary,
+                            )
+                        }
                     }
                 }
             }
             is FindState.NotFound -> item {
                 Column {
-                    Text("Не знайшли «${f.query}» на сайті.")
-                    TextButton(onClick = { vm.manual(f.query) }) { Text("Заповнити цінник вручну") }
+                    Text("«${f.query}» на сайті не знайшли.", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = m.text)
+                    MineButton("Заповнити цінник вручну", { vm.manual(f.query) }, Modifier.padding(top = 10.dp))
                 }
             }
-            is FindState.Failed -> item { Text(f.message, color = MaterialTheme.colorScheme.error) }
+            is FindState.Failed -> item { Text(f.message, fontSize = 15.sp, color = m.warningText) }
         }
 
         current?.let { tag -> item { TagEditor(tag, copies, vm) } }
 
         if (queue.isNotEmpty()) {
-            item { Text("Черга (${queue.size})", style = MaterialTheme.typography.titleMedium) }
+            item { Text("У черзі ${queue.size}", Modifier.padding(top = 6.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text) }
             itemsIndexed(queue) { i, q ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(q.tag.name.ifEmpty { q.tag.barcode }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${q.tag.price} ₴ · ×${q.copies}", style = MaterialTheme.typography.bodySmall)
+                MineListRow(onClick = null, divider = i != queue.lastIndex) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(q.tag.name.ifEmpty { q.tag.barcode }, fontSize = 16.sp, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${q.tag.price} ₴, ${q.copies} шт", fontSize = 14.sp, color = m.textSecondary)
+                        }
+                        IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, "Прибрати з черги", tint = m.textSecondary) }
                     }
-                    IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, "Прибрати") }
                 }
             }
         }
 
         if (current != null || queue.isNotEmpty()) {
-            item { HorizontalDivider() }
-            item { KindAndTemplate(template, promo, vm) }
+            item { FormatPicker(template, promo, vm) }
             preview?.let { img ->
                 item {
                     Image(
                         img, "Попередній перегляд",
                         Modifier.fillMaxWidth().heightIn(max = if (template.kind == LabelKind.STICKY) 220.dp else 420.dp)
                             .aspectRatio(img.width.toFloat() / img.height)
-                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline)),
+                            .clip(RoundedCornerShape(12.dp)).border(BorderStroke(1.dp, m.line), RoundedCornerShape(12.dp)),
                         filterQuality = FilterQuality.None,
                     )
                 }
             }
             item {
                 val total = queue.sumOf { it.copies } + (if (current != null) copies else 0)
-                Button(
-                    onClick = {
-                        if (promo && template.kind == LabelKind.PLAIN && vm.promoAvailable()) askPaper = true else vm.print()
-                    },
-                    enabled = status != PrintStatus.Printing,
-                    modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
-                ) {
-                    if (status == PrintStatus.Printing) CircularProgressIndicator(Modifier.height(22.dp).width(22.dp), strokeWidth = 2.dp, color = Color.White)
-                    else { Icon(Icons.Rounded.Print, null); Spacer(Modifier.width(8.dp)); Text("Друкувати ($total)") }
-                }
+                MinePrimaryButton(
+                    if (status == PrintStatus.Printing) "Друкую…" else printButtonText(template, total),
+                    onClick = { if (promo && template.kind == LabelKind.PLAIN && vm.promoAvailable()) askPaper = true else vm.print() },
+                    height = 58.dp, enabled = status != PrintStatus.Printing,
+                )
             }
         }
         when (val s = status) {
-            is PrintStatus.Done -> item { Text(s.message, color = MaterialTheme.colorScheme.primary) }
-            is PrintStatus.Error -> item { Text(s.message, color = MaterialTheme.colorScheme.error) }
+            is PrintStatus.Done -> item { Text(s.message, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.success) }
+            is PrintStatus.Error -> item { Text(s.message, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, color = m.warningText) }
             else -> {}
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
+/** Цінник, який редагуємо: назва, ціни, артикул, штрихкод, бренд, код 1С, кількість. */
 @Composable
 private fun TagEditor(tag: PriceTag, copies: Int, vm: LabelsViewModel) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val m = Mine.colors
+    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Товар", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = vm::dropCurrent) { Icon(Icons.Rounded.Close, "Прибрати") }
+                Text("Цінник", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                IconButton(onClick = vm::dropCurrent) { Icon(Icons.Rounded.Close, "Прибрати", tint = m.textSecondary) }
             }
-            OutlinedTextField(tag.name, { v -> vm.edit { it.copy(name = v) } }, Modifier.fillMaxWidth(), label = { Text("Назва") }, maxLines = 2)
+            OutlinedTextField(tag.name, { v -> vm.edit { it.copy(name = v) } }, Modifier.fillMaxWidth(), label = { Text("Назва") }, maxLines = 3, shape = RoundedCornerShape(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PriceField(tag.price, "Ціна", Modifier.weight(1f)) { v -> vm.edit { it.copy(price = v) } }
                 PriceField(tag.oldPrice, "Стара ціна", Modifier.weight(1f)) { v -> vm.edit { it.copy(oldPrice = v) } }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(tag.article, { v -> vm.edit { it.copy(article = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Артикул") })
+                OutlinedTextField(tag.article, { v -> vm.edit { it.copy(article = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Артикул") }, shape = RoundedCornerShape(14.dp))
                 OutlinedTextField(
                     tag.barcode, { v -> vm.edit { it.copy(barcode = v.filter(Char::isDigit).take(13)) } }, Modifier.weight(1f), singleLine = true,
-                    label = { Text("Штрихкод") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Штрихкод") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), shape = RoundedCornerShape(14.dp),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(tag.brand, { v -> vm.edit { it.copy(brand = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Бренд") })
-                OutlinedTextField(tag.code, { v -> vm.edit { it.copy(code = v.trim()) } }, Modifier.weight(1f), singleLine = true, label = { Text("Код 1С") })
+                OutlinedTextField(tag.brand, { v -> vm.edit { it.copy(brand = v) } }, Modifier.weight(1f), singleLine = true, label = { Text("Бренд") }, shape = RoundedCornerShape(14.dp))
+                OutlinedTextField(tag.code, { v -> vm.edit { it.copy(code = v.trim()) } }, Modifier.weight(1f), singleLine = true, label = { Text("Код 1С") }, shape = RoundedCornerShape(14.dp))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Кількість", Modifier.weight(1f))
-                IconButton(onClick = { vm.setCopies(copies - 1) }, enabled = copies > 1) { Icon(Icons.Rounded.Remove, "−") }
-                Text("$copies", style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { vm.setCopies(copies + 1) }, enabled = copies < 99) { Icon(Icons.Rounded.Add, "+") }
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Кількість", Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                MineStepper(copies, vm::setCopies)
             }
-            OutlinedButton(onClick = vm::addToQueue, modifier = Modifier.fillMaxWidth()) { Text("Додати в чергу й шукати ще") }
+            MineButton("Додати в чергу й шукати ще", vm::addToQueue, Modifier.fillMaxWidth().padding(top = 4.dp))
         }
     }
 }
@@ -447,33 +472,37 @@ private fun TagEditor(tag: PriceTag, copies: Int, vm: LabelsViewModel) {
 private fun PriceField(value: String, label: String, modifier: Modifier, onChange: (String) -> Unit) {
     OutlinedTextField(
         value, { onChange(it.filter { c -> c.isDigit() || c == ',' || c == '.' }.replace('.', ',')) }, modifier,
-        singleLine = true, label = { Text(label) }, suffix = { Text("₴") },
+        singleLine = true, label = { Text(label) }, suffix = { Text("₴") }, shape = RoundedCornerShape(14.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
     )
 }
 
+/** Формат — один ряд чипов (как в листе печати); акционный — переключатель. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun KindAndTemplate(template: Template, promo: Boolean, vm: LabelsViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LabelKind.entries.forEach { k -> FilterChip(selected = template.kind == k, onClick = { vm.setKind(k) }, label = { Text(if (k == LabelKind.STICKY) "Липкі" else "Звичайні") }) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Template.entries.filter { it.kind == template.kind }.forEach { t ->
-                FilterChip(selected = template == t, onClick = { vm.setTemplate(t) }, label = { Text(t.title) })
-            }
+private fun FormatPicker(template: Template, promo: Boolean, vm: LabelsViewModel) {
+    val m = Mine.colors
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Формат", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Template.entries.forEach { t -> MineChip(formatTitle(t), template == t, { vm.setTemplate(t) }) }
         }
         if (template.kind == LabelKind.PLAIN) {
             val available = vm.promoAvailable()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Акційний")
-                    Text(
-                        if (available) "Стара ціна перекреслена над новою" else "Потрібна стара ціна, більша за нову",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Surface(shape = RoundedCornerShape(16.dp), color = m.surface, contentColor = m.text) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Акційний цінник", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            if (available) "Стара ціна буде закреслена. Встав жовтий папір." else "Потрібна стара ціна, більша за нову.",
+                            fontSize = 13.sp, lineHeight = 17.sp, color = m.textSecondary,
+                        )
+                    }
+                    Switch(
+                        checked = promo && available, onCheckedChange = vm::setPromo, enabled = available,
+                        colors = SwitchDefaults.colors(checkedTrackColor = m.accent, checkedThumbColor = m.onAccent, checkedBorderColor = Color.Transparent),
                     )
                 }
-                Switch(checked = promo && available, onCheckedChange = vm::setPromo, enabled = available)
             }
         }
     }

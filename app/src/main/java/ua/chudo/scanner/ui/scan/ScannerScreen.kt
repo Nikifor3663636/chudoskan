@@ -1,5 +1,14 @@
 package ua.chudo.scanner.ui.scan
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.theme.MineDark
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -207,43 +216,44 @@ private fun CameraScreen(
         }
 
         Column(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(20.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 "Наведи рамку на штрихкод",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
+                color = MineDark.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
             )
             Text(
-                "EAN-13 / EAN-8 / UPC з упаковки",
-                color = Color.White.copy(alpha = 0.75f),
-                style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.Center,
+                "Телефон сам прочитає код і відкриє товар",
+                Modifier.padding(top = 6.dp),
+                color = MineDark.textSecondary, fontSize = 15.sp, textAlign = TextAlign.Center,
             )
-
-            FilledTonalButton(onClick = onClose) { Text("Ввести вручну") }
+            // Код не читається (пом'ятий, без штрихкоду) — повертаємось і вводимо артикул.
+            Surface(
+                onClick = onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(26.dp), color = MineDark.card.copy(alpha = 0.92f), contentColor = MineDark.text,
+                border = BorderStroke(1.dp, MineDark.outline),
+            ) {
+                Box(contentAlignment = Alignment.Center) { Text("Ввести артикул вручну", fontSize = 16.sp, fontWeight = FontWeight.Medium) }
+            }
         }
     }
 }
 
+/** Круглая кнопка 48 dp поверх камеры. */
 @Composable
 private fun RoundIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
-    IconButton(
-        onClick = onClick,
-        colors = IconButtonDefaults.iconButtonColors(
-            containerColor = Color.Black.copy(alpha = 0.45f),
-            contentColor = Color.White,
-        ),
-    ) { content() }
+    Surface(
+        onClick = onClick, modifier = Modifier.size(48.dp), shape = CircleShape,
+        color = MineDark.card.copy(alpha = 0.85f), contentColor = MineDark.text,
+    ) { Box(contentAlignment = Alignment.Center) { content() } }
 }
 
 /** Затемнение, уголки и бегущая линия. */
 @Composable
 private fun ScanOverlay(modifier: Modifier) {
-    val accent = MaterialTheme.colorScheme.tertiaryContainer
+    // Рамка — фирменным оранжевым (как кнопка сканера).
+    val accent = MineDark.accent
     val t = rememberInfiniteTransition(label = "laser")
     val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "p")
 

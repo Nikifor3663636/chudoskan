@@ -104,7 +104,8 @@ private object Routes {
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
 
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS)
+// Сканер, настройки принтеров и карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще») — без нижней навигации.
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT)
 
 
 @Composable
@@ -163,7 +164,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
             StockScreen(
                 employee,
-                onProfile = { nav.navigate(Routes.PROFILE) },
+                onBack = { nav.popBackStack() },
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
@@ -199,11 +200,12 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
         }
         composable(Routes.HOME) {
             HomeScreen(
-                onScan = { nav.navigate(Routes.scan()) },
+                employee,
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onProfile = { nav.navigate(Routes.PROFILE) },
                 onLabels = { nav.navigate(Routes.LABELS) },
+                onOrders = { nav.navigate(Routes.ORDERS) },
             )
         }
         composable(
@@ -250,7 +252,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 navArgument("bc") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) {
-            ProductScreen(onBack = { nav.popBackStack() })
+            ProductScreen(employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) })
         }
     }
 }

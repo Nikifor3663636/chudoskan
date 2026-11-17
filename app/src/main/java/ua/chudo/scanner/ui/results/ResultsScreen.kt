@@ -1,5 +1,17 @@
 package ua.chudo.scanner.ui.results
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.theme.Mine
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -117,17 +129,9 @@ fun ResultsScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(vm.query, maxLines = 1) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+    Column(Modifier.fillMaxSize().background(Mine.colors.bg)) {
+        ResultsHeader(vm.query, onBack)
+        Box(Modifier.fillMaxSize()) {
             AnimatedContent(targetState = state, label = "results", contentKey = { it::class }) { s ->
                 when (s) {
                     is ResultsState.Loading -> Loading(s.step)
@@ -164,6 +168,22 @@ fun ResultsScreen(
     }
 }
 
+/** «Пошук» и запрос — крупно, с круглой кнопкой «назад». */
+@Composable
+private fun ResultsHeader(query: String, onBack: () -> Unit) {
+    val m = Mine.colors
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Surface(onClick = onBack, modifier = Modifier.size(44.dp), shape = CircleShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", Modifier.size(22.dp)) }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Результати пошуку", fontSize = 14.sp, color = m.textSecondary)
+            Text(query, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 private fun Loading(step: String) {
     Column(
@@ -171,10 +191,10 @@ private fun Loading(step: String) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        CircularProgressIndicator(Modifier.size(48.dp), strokeWidth = 4.dp)
+        CircularProgressIndicator(Modifier.size(48.dp), strokeWidth = 4.dp, color = Mine.colors.accent)
         Spacer(Modifier.height(20.dp))
         AnimatedContent(step, label = "step") {
-            Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(it, fontSize = 16.sp, color = Mine.colors.textSecondary)
         }
     }
 }
@@ -182,12 +202,12 @@ private fun Loading(step: String) {
 @Composable
 private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Знайдено ${r.items.size}", style = MaterialTheme.typography.titleMedium)
+                Text("Знайдено ${r.items.size}", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary)
                 viaNote(r.via)?.let { ViaNote(it) }
             }
         }
@@ -197,18 +217,13 @@ private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
 
 private fun viaNote(via: Via): String? = when (via) {
     Via.Direct, Via.Remembered -> null
-    is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
+    is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі, артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
     is Via.UpcTitle -> "Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар."
 }
 
 @Composable
 private fun ViaNote(text: String) {
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.tertiaryContainer) {
-        Text(
-            text,
-            Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
-        )
+    Surface(shape = RoundedCornerShape(14.dp), color = Mine.colors.accentTone, contentColor = Mine.colors.text) {
+        Text(text, Modifier.padding(12.dp), fontSize = 14.sp, lineHeight = 20.sp)
     }
 }

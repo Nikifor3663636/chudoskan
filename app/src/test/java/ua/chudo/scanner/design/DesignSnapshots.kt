@@ -149,6 +149,62 @@ class DesignSnapshots {
         }
     }
 
+    private val recent = listOf(
+        ua.chudo.scanner.data.HistoryItem("lego", "LEGO Duplo Потяг із цифрами: вчимося рахувати", "10954", null),
+        ua.chudo.scanner.data.HistoryItem("hw", "Hot Wheels Форсаж, в асортименті", "HNW46", null),
+        ua.chudo.scanner.data.HistoryItem("xs", "X-Shot бластер Purple Blaze", "36882R", null),
+    )
+
+    @Test fun homeLight() = home(false)
+
+    @Test fun homeDark() = home(true)
+
+    private fun home(dark: Boolean) = paparazzi.snapshot {
+        ChudoTheme(dark = dark) {
+            androidx.compose.material3.Scaffold(
+                containerColor = Mine.colors.bg,
+                bottomBar = { MineBottomBar(MainTab.SEARCH, newOrders = 3, onTab = {}, onScan = {}) },
+            ) { inner ->
+                Box(Modifier.padding(inner)) {
+                    ua.chudo.scanner.ui.home.HomeContent(
+                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Вакаренко Микита", java.util.Date(), "", recent, 3),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun profileDark() = profile(true)
+
+    @Test fun profileLight() = profile(false)
+
+    private fun profile(dark: Boolean) = paparazzi.snapshot {
+        ChudoTheme(dark = dark) {
+            Surface(color = Mine.colors.bg) {
+                ua.chudo.scanner.ui.profile.ProfileContent(
+                    ua.chudo.scanner.ui.profile.ProfileUi(
+                        name = "Вакаренко Микита", phone = "+380 96 232 09 33", city = "Одеса", shop = "Gagarin Plaza",
+                        stock = "2 418 позицій", theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test fun shelfTagPrices() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.bg) {
+                Column(Modifier.fillMaxSize().padding(20.dp)) {
+                    ua.chudo.scanner.ui.common.ShelfTagPrice(649.0, null)
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
+                    ua.chudo.scanner.ui.common.ShelfTagPrice(649.0, 969.0)
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
+                    ua.chudo.scanner.ui.common.ShelfTagPrice(17999.0, 24075.0)
+                }
+            }
+        }
+    }
+
     // ---------- Ценники: превью = печать ----------
 
     private val lego = LabelItem(

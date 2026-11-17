@@ -1,5 +1,17 @@
 package ua.chudo.scanner.ui.stock
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.common.BarcodeScanIcon
+import ua.chudo.scanner.ui.common.MineButton
+import ua.chudo.scanner.ui.common.MineHeader
+import ua.chudo.scanner.ui.common.MineSearchField
+import ua.chudo.scanner.ui.common.MineTone
+import ua.chudo.scanner.ui.common.PriceFont
+import ua.chudo.scanner.ui.common.StatusDot
+import ua.chudo.scanner.ui.theme.Mine
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -264,7 +276,7 @@ private fun Double.qty(): String = QTY_FORMAT.format(this)
 @Composable
 fun StockScreen(
     employee: Employee,
-    onProfile: () -> Unit,
+    onBack: () -> Unit,
     onScan: () -> Unit,
     /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
     scanned: String?,
@@ -289,40 +301,30 @@ fun StockScreen(
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { ShopHeader(employee, onProfile) }
+        item { ShopHeader(employee, onBack) }
         item { UploadCard(info) { picker.launch(FILE_TYPES) } }
         item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                placeholder = { Text("Артикул, штрихкод або назва") },
-                leadingIcon = { Icon(Icons.Rounded.Inventory2, null) },
-                trailingIcon = {
-                    Row {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = ""; vm.clear() }) {
-                            Icon(Icons.Rounded.Close, "Очистити")
-                        }
-                        IconButton(onClick = onScan) { Icon(Icons.Rounded.QrCodeScanner, "Сканувати") }
-                    }
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); vm.search(query) }),
-            )
+            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MineSearchField(
+                    query, { query = it; if (it.isEmpty()) vm.clear() }, "Артикул, штрихкод або назва",
+                    { keyboard?.hide(); vm.search(query) }, Modifier.weight(1f),
+                )
+                Surface(onClick = onScan, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(18.dp), color = Mine.colors.accentTone, contentColor = Mine.colors.accent) {
+                    Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
+                }
+            }
         }
 
         when (val st = s) {
             StockState.Idle -> {}
             is StockState.Loading -> item {
                 Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = Mine.colors.accent)
                     Spacer(Modifier.height(16.dp))
-                    Text(st.step, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(st.step, fontSize = 15.sp, color = Mine.colors.textSecondary, textAlign = TextAlign.Center)
                 }
             }
             is StockState.Failed -> item { ErrorState(st.error, null, { vm.search(query) }) }
@@ -340,11 +342,11 @@ fun StockScreen(
                         "Немає у вивантаженні 1С",
                         "Штрихкод ${st.code}",
                     )
-                    Button(onClick = { vm.search(st.code) }) { Text("Шукати на сайті") }
+                    MineButton("Шукати на сайті", { vm.search(st.code) })
                 }
             }
             is StockState.Pick -> {
-                item { Text("Обери товар", style = MaterialTheme.typography.titleMedium) }
+                item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
                 items(st.items, key = { it.id }) { ProductCard(it, onClick = { vm.open(it.urlKey) }) }
             }
             is StockState.Ready -> {
@@ -367,47 +369,39 @@ private val FILE_TYPES = arrayOf(
 )
 
 @Composable
-private fun ShopHeader(e: Employee, onProfile: () -> Unit) {
-    Row(verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f)) {
-            Text("Залишки магазину", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Store, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(6.dp))
-                Text(e.shop, style = MaterialTheme.typography.bodyMedium)
-            }
-            Text(e.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Avatar(e.name, onClick = onProfile)
+private fun ShopHeader(e: Employee, onBack: () -> Unit) {
+    val m = Mine.colors
+    Column {
+        MineHeader("Залишки магазину", onBack)
+        Text(e.shop, Modifier.padding(start = 4.dp), fontSize = 15.sp, color = m.textSecondary)
     }
 }
 
+/** Вивантаження з 1С: коли оновлено, скільки позицій і кнопка завантажити новий файл. */
 @Composable
 private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Text(
-                if (info == null) {
-                    "Залишки магазину ще не завантажено."
-                } else {
-                    val date = info.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"
-                    "Вивантаження 1С: $date · ${info.rows} позицій" + (info.updatedBy?.let { " · $it" } ?: "")
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Spacer(Modifier.height(10.dp))
-            FilledTonalButton(onClick = onUpload) {
-                Icon(Icons.Rounded.UploadFile, null, Modifier.size(18.dp))
+    val m = Mine.colors
+    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(if (info == null) m.warning else m.success)
                 Spacer(Modifier.width(8.dp))
-                Text("Завантажити вивантаження 1С")
+                Text(
+                    if (info == null) "Залишки ще не завантажено"
+                    else "Оновлено " + (info.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"),
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                )
             }
+            info?.let {
+                Text(
+                    "${it.rows} позицій" + (it.updatedBy?.let { by -> ", завантажив(ла) $by" } ?: ""),
+                    Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.textSecondary,
+                )
+            }
+            MineButton("Завантажити файл з 1С", onUpload, Modifier.padding(top = 14.dp).fillMaxWidth(), tone = if (info == null) MineTone.ACCENT else MineTone.OUTLINE)
             Text(
-                "Excel (.xlsx) або CSV з колонками «Артикул» / «Штрихкод» і «Кількість» / «Залишок».",
-                Modifier.padding(top = 6.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                "Excel (.xlsx) або CSV з колонками «Артикул» чи «Штрихкод» і «Кількість» чи «Залишок».",
+                Modifier.padding(top = 8.dp), fontSize = 13.sp, lineHeight = 18.sp, color = m.textSecondary,
             )
         }
     }
@@ -415,50 +409,46 @@ private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
 
 @Composable
 private fun ProductHeader(p: ProductDetails?, item: StockItem?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    val m = Mine.colors
+    Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         ProductImage(p?.images?.firstOrNull(), Modifier.size(64.dp))
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(p?.name ?: item?.name ?: "—", style = MaterialTheme.typography.titleSmall, maxLines = 2)
-            (p?.article ?: item?.article)?.let {
-                Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(p?.name ?: item?.name ?: "—", fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
+            (p?.article ?: item?.article)?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
         }
     }
 }
 
+/** Кількість у своєму магазині — великим шрифтом цін (як на цінниках). */
 @Composable
 private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
-    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(e.shop, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
+    val m = Mine.colors
+    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text("У твоєму магазині", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary)
             val item = st.item
             when {
                 item != null -> Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        item.qty.qty(),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (item.qty > 0) InStockGreen else OutOfStockGrey,
+                        item.qty.qty(), fontFamily = PriceFont, fontWeight = FontWeight.ExtraBold, fontSize = 48.sp, lineHeight = 52.sp,
+                        color = if (item.qty > 0) m.success else m.logout,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text("шт. на залишку", Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.titleMedium)
+                    Text(" шт", Modifier.padding(bottom = 8.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
-                st.stockError != null -> Text(st.stockError, color = MaterialTheme.colorScheme.error)
-                !uploaded -> Text("Завантаж вивантаження 1С, щоб бачити кількість.")
+                st.stockError != null -> Text(st.stockError, Modifier.padding(top = 6.dp), fontSize = 15.sp, color = m.warningText)
+                !uploaded -> Text("Завантаж файл з 1С, щоб бачити кількість.", Modifier.padding(top = 6.dp), fontSize = 16.sp)
                 else -> Text(
-                    "У вивантаженні магазину цього товару немає (0 шт. або інший артикул).",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "Цього товару немає у вивантаженні (0 шт або інший артикул).",
+                    Modifier.padding(top = 6.dp), fontSize = 16.sp, color = m.textSecondary,
                 )
             }
             st.siteAvailable?.let { have ->
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "На сайті: " + if (have) "є" else "немає",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (have) InStockGreen else OutOfStockGrey,
-                )
+                Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(if (have) m.success else m.outline)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
+                }
             }
         }
     }

@@ -58,8 +58,13 @@ import ua.chudo.scanner.ui.auth.PasswordDialog
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.formatPhone
 import ua.chudo.scanner.ui.common.Avatar
-import ua.chudo.scanner.ui.theme.InStockGreen
-import java.text.DateFormat
+import ua.chudo.scanner.ui.common.MineHeader
+import ua.chudo.scanner.ui.theme.Mine
+import ua.chudo.scanner.ui.theme.ThemeMode
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {}) {
@@ -74,72 +79,16 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Uni
 
     LaunchedEffect(employee.shopId) { info = runCatching { app.shopStock.info(employee.shopId) }.getOrNull() }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
-            Text("Профіль", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(16.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Avatar(employee.name, size = 64.dp)
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(employee.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Verified, null, Modifier.size(16.dp), tint = InStockGreen)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Співробітник підтверджений", style = MaterialTheme.typography.bodySmall, color = InStockGreen)
-                }
-            }
-            IconButton(onClick = { editName = true }) { Icon(Icons.Rounded.Edit, "Змінити ім'я") }
-        }
-        Spacer(Modifier.height(28.dp))
-        val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
-        ThemePicker(theme, app.prefs::setThemeMode)
-        Spacer(Modifier.height(24.dp))
-
-        Card {
-            InfoRow(Icons.Rounded.Phone, "Телефон", formatPhone(employee.phone))
-            HorizontalDivider()
-            InfoRow(Icons.Rounded.LocationOn, "Місто", region?.name ?: employee.region)
-            HorizontalDivider()
-            InfoRow(Icons.Rounded.Store, "Магазин", employee.shop)
-            HorizontalDivider()
-            InfoRow(
-                Icons.Rounded.Inventory2,
-                "Залишки 1С",
-                info?.let { i ->
-                    val date = i.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"
-                    "${i.rows} позицій · $date"
-                } ?: "ще не завантажено",
-            )
-        }
-        Text(
-            "Магазин змінює адміністратор.",
-            Modifier.padding(start = 4.dp, top = 6.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(20.dp))
-
-        Card {
-            // «Залишки» переехали сюда из нижней панели (там теперь Замовлення · Друк · Профіль).
-            ActionRow(Icons.Rounded.Inventory2, "Залишки магазину", onClick = onStock)
-            HorizontalDivider()
-            ActionRow(Icons.Rounded.Lock, "Змінити пароль") { changePassword = true }
-            HorizontalDivider()
-            onPrinters?.let {
-                ActionRow(Icons.Rounded.Print, "Принтери", onClick = it)
-                HorizontalDivider()
-            }
-            ActionRow(Icons.AutoMirrored.Rounded.Logout, "Вийти", danger = true) { confirmLogout = true }
-        }
-        message?.let {
-            Text(it, Modifier.padding(top = 10.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.height(32.dp))
-    }
+    val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
+    ProfileContent(
+        ProfileUi(
+            name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
+            shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
+            theme = theme, admin = onPrinters != null, message = message,
+        ),
+        onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
+        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
+    )
 
     if (changePassword) {
         PasswordDialog(
@@ -186,31 +135,87 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Uni
     }
 }
 
-@Composable
-private fun Card(content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.fillMaxWidth()) {
-        Column { content() }
-    }
-}
+data class ProfileUi(
+    val name: String,
+    val phone: String,
+    val city: String,
+    val shop: String,
+    val stock: String,
+    val theme: ThemeMode,
+    val admin: Boolean,
+    val message: String? = null,
+)
 
+/** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
 @Composable
-private fun InfoRow(icon: ImageVector, label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(14.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.bodyLarge)
+fun ProfileContent(
+    ui: ProfileUi,
+    onBack: () -> Unit = {},
+    onEditName: () -> Unit = {},
+    onTheme: (ThemeMode) -> Unit = {},
+    onStock: () -> Unit = {},
+    onPrinters: () -> Unit = {},
+    onPassword: () -> Unit = {},
+    onLogout: () -> Unit = {},
+) {
+    val m = Mine.colors
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        MineHeader("Профіль", onBack)
+        Row(Modifier.padding(top = 12.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(ui.name, size = 64.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(ui.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text)
+                Text("Співробітник підтверджений", Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.success)
+            }
+            IconButton(onClick = onEditName) { Icon(Icons.Rounded.Edit, "Змінити ім'я", tint = m.textSecondary) }
         }
+        Spacer(Modifier.height(28.dp))
+        ThemePicker(ui.theme, onTheme)
+        Spacer(Modifier.height(24.dp))
+
+        Surface(shape = RoundedCornerShape(20.dp), color = m.surface, contentColor = m.text) {
+            Column {
+                if (ui.admin) {
+                    ProfileRow("Принтери", "Налаштування", onClick = onPrinters)
+                    RowDivider()
+                }
+                ProfileRow("Залишки магазину", ui.stock, onClick = onStock)
+                RowDivider()
+                ProfileRow("Магазин", ui.shop)
+                RowDivider()
+                ProfileRow("Місто", ui.city)
+                RowDivider()
+                ProfileRow("Телефон", ui.phone)
+                RowDivider()
+                ProfileRow("Змінити пароль", null, onClick = onPassword)
+                RowDivider()
+                ProfileRow("Вийти", null, danger = true, onClick = onLogout)
+            }
+        }
+        Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        ui.message?.let { Text(it, Modifier.padding(start = 4.dp, top = 10.dp), fontSize = 15.sp, color = m.success) }
+        Spacer(Modifier.height(32.dp))
+    }
+}
+
+/** Строка списка профиля: название слева, значение справа; нажимаемая — со стрелкой. */
+@Composable
+private fun ProfileRow(label: String, value: String?, danger: Boolean = false, onClick: (() -> Unit)? = null) {
+    val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 56.dp).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label, Modifier.weight(1f), fontSize = 16.sp,
+            fontWeight = if (danger) FontWeight.Medium else FontWeight.Normal, color = if (danger) m.logout else m.text,
+        )
+        value?.let { Text(it, Modifier.padding(start = 12.dp), fontSize = 14.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        if (onClick != null && !danger) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(20.dp), tint = m.textSecondary)
     }
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, label: String, danger: Boolean = false, onClick: () -> Unit) {
-    val color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = if (danger) color else MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(14.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = color)
-    }
-}
+private fun RowDivider() = HorizontalDivider(color = Mine.colors.line)

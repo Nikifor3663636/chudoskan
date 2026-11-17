@@ -1,9 +1,7 @@
 package ua.chudo.scanner.ui.home
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,147 +15,84 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.chudo.scanner.R
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.HistoryItem
-import ua.chudo.scanner.ui.common.MyAvatar
+import ua.chudo.scanner.data.OrderStage
+import ua.chudo.scanner.ui.common.Avatar
+import ua.chudo.scanner.ui.common.MineListRow
+import ua.chudo.scanner.ui.common.MinePlacePill
+import ua.chudo.scanner.ui.common.MineSearchField
+import ua.chudo.scanner.ui.common.MineTile
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.RegionPickerSheet
-import ua.chudo.scanner.ui.common.SectionTitle
-import androidx.compose.material.icons.rounded.Print
-import androidx.compose.material.icons.rounded.Storefront
-import ua.chudo.scanner.ui.common.openUrl
+import ua.chudo.scanner.ui.common.StatusDot
+import ua.chudo.scanner.ui.theme.Mine
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
+/** Главный: город, «Що шукаємо?», поиск, ярлыки «Друк цінників» и «Замовлення», недавние товары. */
 @Composable
 fun HomeScreen(
-    onScan: () -> Unit,
+    employee: Employee,
     onSearch: (String) -> Unit,
     onOpenProduct: (String) -> Unit,
     onProfile: () -> Unit,
     onLabels: () -> Unit,
+    onOrders: () -> Unit,
 ) {
-    val prefs = LocalContext.current.chudoApp.prefs
+    val app = LocalContext.current.chudoApp
+    val prefs = app.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
     val history by prefs.history.collectAsStateWithLifecycle()
+    val orders by app.orders.orders.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var showRegions by rememberSaveable { mutableStateOf(false) }
+    var stockAt by remember { mutableStateOf<Date?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
 
-    fun submit() {
-        if (query.isNotBlank()) {
-            keyboard?.hide()
-            onSearch(query.trim())
-        }
+    LaunchedEffect(employee.shopId) {
+        stockAt = runCatching { app.shopStock.info(employee.shopId)?.updatedAt }.getOrNull()
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Image(
-                        painterResource(R.drawable.logo_wordmark),
-                        contentDescription = "Чудо Острів",
-                        modifier = Modifier.height(44.dp),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Наявність іграшок у магазинах",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                val ctx = LocalContext.current
-                IconButton(onClick = { ctx.openUrl("https://chudo-ostriv.com.ua/ua/") }) {
-                    Icon(Icons.Rounded.Storefront, "Сайт")
-                }
-                IconButton(onClick = onLabels) { Icon(Icons.Rounded.Print, "Друк цінників") }
-                MyAvatar(onProfile)
-            }
-        }
-
-        item {
-            AssistChip(
-                onClick = { showRegions = true },
-                label = { Text(region.name) },
-                leadingIcon = { Icon(Icons.Rounded.LocationOn, null, Modifier.size(18.dp)) },
-            )
-        }
-
-        item { ScanHero(onScan) }
-
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Артикул, штрихкод або назва") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) { Icon(Icons.Rounded.Close, "Очистити") }
-                    }
-                },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { submit() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                ),
-            )
-        }
-
-        if (history.isEmpty()) {
-            item { Tips() }
-        } else {
-            item {
-                SectionTitle("Нещодавні") {
-                    TextButton(onClick = prefs::clearHistory) { Text("Очистити") }
-                }
-            }
-            items(history, key = { it.urlKey }) { HistoryRow(it) { onOpenProduct(it.urlKey) } }
-        }
-    }
+    HomeContent(
+        HomeUi(
+            region = region.name, employee = employee.name, stockAt = stockAt, query = query, history = history,
+            newOrders = orders.count { it.stage == OrderStage.NEW },
+        ),
+        onQuery = { query = it },
+        onSubmit = { if (query.isNotBlank()) { keyboard?.hide(); onSearch(query.trim()) } },
+        onRegion = { showRegions = true },
+        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders,
+        onOpenProduct = onOpenProduct, onClearHistory = prefs::clearHistory,
+    )
 
     if (showRegions) {
         RegionPickerSheet(
@@ -169,84 +104,99 @@ fun HomeScreen(
     }
 }
 
+data class HomeUi(
+    val region: String,
+    val employee: String,
+    val stockAt: Date?,
+    val query: String,
+    val history: List<HistoryItem>,
+    val newOrders: Int,
+)
+
+/** «оновлено о 12:20» сегодня, иначе «оновлено 14.11». */
+fun updatedText(at: Date?): String? {
+    at ?: return null
+    val day = Calendar.getInstance().apply { time = at }
+    val now = Calendar.getInstance()
+    val today = day.get(Calendar.YEAR) == now.get(Calendar.YEAR) && day.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
+    return if (today) "Залишки з 1С оновлено о ${SimpleDateFormat("HH:mm", Locale.forLanguageTag("uk")).format(at)}"
+    else "Залишки з 1С оновлено ${SimpleDateFormat("dd.MM", Locale.forLanguageTag("uk")).format(at)}"
+}
+
 @Composable
-private fun ScanHero(onScan: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Surface(onClick = onScan, shape = MaterialTheme.shapes.large, color = Color.Transparent) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFFFF7500), Color(0xFFFF9A3D))))
-                .padding(22.dp)
-        ) {
-            Column {
-                Box(
-                    Modifier.size(56.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.QrCodeScanner, null, Modifier.size(32.dp), tint = Color.White)
+fun HomeContent(
+    ui: HomeUi,
+    onQuery: (String) -> Unit = {},
+    onSubmit: () -> Unit = {},
+    onRegion: () -> Unit = {},
+    onProfile: () -> Unit = {},
+    onLabels: () -> Unit = {},
+    onOrders: () -> Unit = {},
+    onOpenProduct: (String) -> Unit = {},
+    onClearHistory: () -> Unit = {},
+) {
+    val m = Mine.colors
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 40.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Логотип — прежний, без изменений.
+                Image(painterResource(R.drawable.logo_wordmark), "Чудо Острів", Modifier.height(34.dp))
+                Spacer(Modifier.weight(1f))
+                Avatar(ui.employee, size = 44.dp, onClick = onProfile)
+            }
+            Row(Modifier.padding(top = 18.dp)) { MinePlacePill(ui.region, onRegion) }
+            Text("Що шукаємо?", Modifier.padding(top = 18.dp), fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Black, color = m.text)
+            updatedText(ui.stockAt)?.let {
+                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(m.success)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, fontSize = 15.sp, color = m.textSecondary)
                 }
-                Spacer(Modifier.height(18.dp))
-                Text("Сканувати штрихкод", style = MaterialTheme.typography.titleLarge, color = Color.White)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Наведи камеру на упаковку — покажемо ціну і де товар є зараз",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f),
+            }
+            MineSearchField(ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit, Modifier.padding(top = 18.dp))
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MineTile(Icons.Outlined.Print, "Друк цінників", "Цінники, етикетки", accent = false, onClick = onLabels, modifier = Modifier.weight(1f))
+                MineTile(
+                    Icons.Outlined.ShoppingBag, "Замовлення",
+                    if (ui.newOrders > 0) "${ui.newOrders} нові до збирання" else "Нових немає",
+                    accent = ui.newOrders > 0, onClick = onOrders, modifier = Modifier.weight(1f),
                 )
             }
-            Box(
-                Modifier.align(Alignment.TopEnd).size(40.dp).clip(CircleShape).background(cs.tertiaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, tint = cs.onTertiaryContainer)
-            }
         }
-    }
-}
-
-@Composable
-private fun HistoryRow(item: HistoryItem, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-    ) {
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            ProductImage(item.image, Modifier.size(52.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                item.article?.let {
-                    Text("Арт. $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (ui.history.isEmpty()) {
+            item {
+                Surface(Modifier.padding(top = 28.dp).fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = m.surface, contentColor = m.text) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text("Тут з'являться товари, які ти відкривав", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Натисни помаранчеву кнопку внизу й наведи камеру на штрихкод або введи артикул з цінника.",
+                            Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 21.sp, color = m.textSecondary,
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                Row(Modifier.padding(top = 26.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Нещодавні", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text)
+                    TextButton(onClick = onClearHistory) { Text("Очистити", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.link) }
+                }
+            }
+            items(ui.history, key = { it.urlKey }) { h ->
+                MineListRow(onClick = { onOpenProduct(h.urlKey) }, divider = h != ui.history.last()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ProductImage(h.image, Modifier.size(52.dp))
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(h.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            h.article?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
+                        }
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Tips() {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Як це працює", style = MaterialTheme.typography.titleMedium)
-            Tip("1", "Скануй штрихкод або введи артикул з цінника (64103, HKB86).")
-            Tip("2", "Обери місто — побачиш, у яких магазинах товар є зараз.")
-            Tip("3", "Якщо сайт не знає штрихкод, шукаємо його у відкритій базі та запам'ятовуємо твій вибір.")
-        }
-    }
-}
-
-@Composable
-private fun Tip(n: String, text: String) {
-    Row(verticalAlignment = Alignment.Top) {
-        Box(
-            Modifier.size(24.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(n, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
