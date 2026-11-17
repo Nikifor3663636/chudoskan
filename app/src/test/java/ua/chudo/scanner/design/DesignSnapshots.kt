@@ -39,7 +39,11 @@ import ua.chudo.scanner.print.PROMO_PAPER
 import ua.chudo.scanner.print.PrinterRecord
 import ua.chudo.scanner.print.PrinterStatus
 import ua.chudo.scanner.print.Template
+import ua.chudo.scanner.data.DemoOrders
+import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.ui.auth.LoginMineForm
+import ua.chudo.scanner.ui.orders.OrdersContent
+import ua.chudo.scanner.ui.orders.OrdersUi
 import ua.chudo.scanner.ui.auth.LoginMineShell
 import ua.chudo.scanner.ui.print.PrintSheetContent
 import ua.chudo.scanner.ui.print.PrintSheetUi
@@ -122,6 +126,18 @@ class DesignSnapshots {
                     Text("Профіль", fontSize = 26.sp, color = Mine.colors.text)
                     Box(Modifier.padding(top = 24.dp)) { ThemePicker(ThemeMode.DARK) {} }
                 }
+            }
+        }
+    }
+
+    @Test fun ordersDark() = orders(dark = true)
+
+    @Test fun ordersLight() = orders(dark = false)
+
+    private fun orders(dark: Boolean) = paparazzi.snapshot {
+        ChudoTheme(dark = dark) {
+            Surface(color = Mine.colors.bg) {
+                OrdersContent(OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true))
             }
         }
     }

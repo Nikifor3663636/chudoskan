@@ -31,7 +31,8 @@ class ChudoApp : Application() {
 
     /** Только когда Firebase подключён ([AuthRepository.configured]). */
     val shopStock by lazy { ShopStockRepository(FirebaseFirestore.getInstance()) }
-    val layouts by lazy { ua.chudo.scanner.data.LayoutRepository(this, FirebaseFirestore.getInstance()) }
+    /** Интернет-заказы на самовывоз (пока демо-источник). */
+    val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }
 }
 

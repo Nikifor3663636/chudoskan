@@ -173,13 +173,15 @@ Firebase на iOS подключён **через REST** (Identity Toolkit, Secu
 `iosApp/iOSApp.swift` — 20 строк: SwiftUI-окно, внутри `MainViewController()` из `shared`.
 Проект Xcode не хранится в git, его генерирует [XcodeGen](https://github.com/yonaskolb/XcodeGen) из `iosApp/project.yml`.
 
-### План магазина — один код на две платформы
+### План магазина — iPhone и веб
 
-Логика «де лежить товар» (`shared/.../layout/LayoutMatch.kt`: нормализация брендов, сопоставление с
-подписями плана, камера карты) — чистый Kotlin без зависимостей. Android-приложение не подключает
-модуль `shared` целиком, а компилирует эту папку как свой исходник (`sourceSets.main.java.srcDir`),
-и так же берёт файлы плана (`composeResources/files/layout/` → `assets/layout/`). Одна карта,
-один алгоритм, тесты — в `shared/src/androidUnitTest`.
+Логика «де лежить товар» (`shared/.../layout/LayoutMatch.kt`) — чистый Kotlin в модуле `shared`, тесты — в
+`shared/src/androidUnitTest`. В Android-приложении на месте вкладки «Планування» теперь «Замовлення».
+
+### Интернет-заказы на самовывоз (Android)
+
+Вкладка «Замовлення»: «Нові / Збираю / Готові», сборка заказа сканером, «Видано». Источник заказов — интерфейс
+`OrdersSource`; пока подключены только демо-данные (`DemoOrders`), экран честно это показывает.
 
 ## 7. Поиск товара
 

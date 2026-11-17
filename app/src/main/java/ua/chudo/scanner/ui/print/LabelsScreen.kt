@@ -90,7 +90,6 @@ import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.print.LabelKind
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.PrintService
-import ua.chudo.scanner.print.A4Sheet
 import ua.chudo.scanner.print.LabelFormat
 import ua.chudo.scanner.print.LabelRenderer
 import ua.chudo.scanner.print.PrintException

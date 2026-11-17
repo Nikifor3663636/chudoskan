@@ -14,7 +14,9 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Inventory2
-import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.ShoppingBag
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -42,7 +44,7 @@ import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
-import ua.chudo.scanner.ui.layout.StoreLayoutScreen
+import ua.chudo.scanner.ui.orders.OrdersScreen
 import ua.chudo.scanner.ui.print.LabelsScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
 import ua.chudo.scanner.ui.profile.ProfileScreen
@@ -77,8 +79,8 @@ private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
 private const val LABEL_MODE = "label"
 private const val LABEL_CODE = "label_code"
-private const val LAYOUT_MODE = "layout"
-private const val LAYOUT_CODE = "layout_code"
+private const val ORDERS_MODE = "orders"
+private const val ORDERS_CODE = "orders_code"
 
 private object Routes {
     const val HOME = "home"
@@ -86,12 +88,12 @@ private object Routes {
     const val RESULTS = "results/{q}"
     const val PRODUCT = "product/{urlKey}?bc={bc}"
     const val STOCK = "stock"
-    const val LAYOUT = "layout"
+    const val ORDERS = "orders"
     const val PROFILE = "profile"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_LABEL = "scan?mode=$LABEL_MODE"
-    const val SCAN_LAYOUT = "scan?mode=$LAYOUT_MODE"
+    const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
 
@@ -102,7 +104,7 @@ private object Routes {
 
 private val FULLSCREEN = setOf(Routes.SCAN, Routes.PROFILE, Routes.PRINTERS, Routes.LABELS)
 
-private enum class Tab { SEARCH, STOCK, LAYOUT }
+private enum class Tab { SEARCH, STOCK, ORDERS }
 
 @Composable
 private fun AppNav(employee: Employee) {
@@ -112,6 +114,10 @@ private fun AppNav(employee: Employee) {
     var showRegions by rememberSaveable { mutableStateOf(false) }
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val printing = LocalContext.current.chudoApp.printing
+    val ordersRepo = LocalContext.current.chudoApp.orders
+    LaunchedEffect(employee.shopId) { ordersRepo.load(employee.shopId) }
+    val orders by ordersRepo.orders.collectAsStateWithLifecycle()
+    val newOrders = orders.count { it.stage == ua.chudo.scanner.data.OrderStage.NEW }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
     LaunchedEffect(employee.shopId) {
         printing.attach(employee.shopId)
@@ -119,7 +125,7 @@ private fun AppNav(employee: Employee) {
     }
     val tab = when (route) {
         Routes.STOCK -> Tab.STOCK
-        Routes.LAYOUT -> Tab.LAYOUT
+        Routes.ORDERS -> Tab.ORDERS
         else -> Tab.SEARCH
     }
     fun openTab(r: String) {
@@ -136,7 +142,8 @@ private fun AppNav(employee: Employee) {
                 onSearch = { if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false) },
                 onScan = { nav.navigate(Routes.scan()) },
                 onStock = { openTab(Routes.STOCK) },
-                onLayout = { openTab(Routes.LAYOUT) },
+                onOrders = { openTab(Routes.ORDERS) },
+                newOrders = newOrders,
                 onCity = { showRegions = true },
             )
         },
@@ -154,14 +161,15 @@ private fun AppNav(employee: Employee) {
     }
 }
 
-/** Пошук · Сканер · Залишки · Планування · Місто. */
+/** Пошук · Сканер · Залишки · Замовлення · Місто. */
 @Composable
 private fun BottomTabs(
     tab: Tab,
     onSearch: () -> Unit,
     onScan: () -> Unit,
     onStock: () -> Unit,
-    onLayout: () -> Unit,
+    onOrders: () -> Unit,
+    newOrders: Int,
     onCity: () -> Unit,
 ) {
     NavigationBar {
@@ -178,8 +186,11 @@ private fun BottomTabs(
             icon = { Icon(Icons.Rounded.Inventory2, null) }, label = { Text("Залишки") },
         )
         NavigationBarItem(
-            selected = tab == Tab.LAYOUT, onClick = onLayout,
-            icon = { Icon(Icons.Rounded.Map, null) }, label = { Text("Планування", maxLines = 1) },
+            selected = tab == Tab.ORDERS, onClick = onOrders,
+            icon = {
+                BadgedBox(badge = { if (newOrders > 0) Badge { Text("$newOrders") } }) { Icon(Icons.Rounded.ShoppingBag, null) }
+            },
+            label = { Text("Замовлення", maxLines = 1) },
         )
         NavigationBarItem(
             selected = false, onClick = onCity,
@@ -216,13 +227,13 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
             )
         }
-        composable(Routes.LAYOUT) { entry ->
-            val scanned by entry.savedStateHandle.getStateFlow<String?>(LAYOUT_CODE, null).collectAsStateWithLifecycle()
-            StoreLayoutScreen(
+        composable(Routes.ORDERS) { entry ->
+            val scanned by entry.savedStateHandle.getStateFlow<String?>(ORDERS_CODE, null).collectAsStateWithLifecycle()
+            OrdersScreen(
                 employee,
-                onScan = { nav.navigate(Routes.SCAN_LAYOUT) },
+                onScan = { nav.navigate(Routes.SCAN_ORDERS) },
                 scanned = scanned,
-                onScannedConsumed = { entry.savedStateHandle[LAYOUT_CODE] = null },
+                onScannedConsumed = { entry.savedStateHandle[ORDERS_CODE] = null },
             )
         }
         composable(Routes.HOME) {
@@ -243,7 +254,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             val returnKey = when (arg) {
                 STOCK_MODE -> STOCK_CODE
                 LABEL_MODE -> LABEL_CODE
-                LAYOUT_MODE -> LAYOUT_CODE
+                ORDERS_MODE -> ORDERS_CODE
                 else -> null
             }
             ScannerScreen(

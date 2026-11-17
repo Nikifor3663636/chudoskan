@@ -21,15 +21,9 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "2.8"
+        versionCode = 11
+        versionName = "2.9"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
-    }
-
-    // План магазина: логика и файлы общие с iOS (модуль shared) — один код и одна карта на обе платформы.
-    sourceSets["main"].apply {
-        java.srcDir("../shared/src/commonMain/kotlin/ua/chudo/shared/layout")
-        assets.srcDir("../shared/src/commonMain/composeResources/files")
     }
 
     buildTypes {
