@@ -76,7 +76,8 @@ service cloud.firestore {
       match /printers/{printerId} {
         allow read: if worksAt(shopId);
         allow create, update: if worksAt(shopId)
-          && request.resource.data.keys().hasOnly(['model', 'kind', 'ip', 'port', 'transport', 'agentId', 'printerName', 'lastSeen', 'lastOkBy', 'density', 'speed'])
+          && request.resource.data.keys().hasOnly(['model', 'kind', 'ip', 'port', 'transport', 'agentId', 'printerName', 'lastSeen', 'lastOkBy', 'density', 'speed', 'name'])
+          && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 40))
           && request.resource.data.kind in ['label_40x24', 'a4']
           && request.resource.data.transport in ['tcp', 'agent', 'usb']
           && request.resource.data.model is string && request.resource.data.model.size() <= 120
@@ -87,6 +88,7 @@ service cloud.firestore {
           && (isAdmin() || (
             request.resource.data.get('density', null) == (resource == null ? null : resource.data.get('density', null))
             && request.resource.data.get('speed', null) == (resource == null ? null : resource.data.get('speed', null))
+            && request.resource.data.get('name', null) == (resource == null ? null : resource.data.get('name', null))
           ));
         allow delete: if worksAt(shopId) && isAdmin();
       }

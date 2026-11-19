@@ -5,6 +5,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +26,8 @@ import java.util.Locale
 
 /** Состояние принтера: [ok] = null — ещё проверяем. */
 data class PrinterStatus(val ok: Boolean?, val text: String)
+
+class PreferredPrinterUnavailable(val pick: Pick) : PrintException("${pick.record.displayName} не відповідає")
 
 /** Ни реестр, ни сеть, ни компьютер магазина не дали принтер нужного вида. */
 class PrinterNotFoundException(val kind: LabelKind) : PrintException(
@@ -63,6 +66,9 @@ class PrintService(context: Context) {
         private set
 
     val resolver = PrinterResolver(object : PrinterSource {
+        override suspend fun preferred(kind: LabelKind) = store.preferred(kind).first()
+        override suspend fun clearPreferred(kind: LabelKind) { store.setPreferred(kind, "auto") }
+        override suspend fun candidates(kind: LabelKind) = availablePrinters(kind, includeOfflineAgents = true)
         override fun registry() = _records.value.orEmpty()
         override suspend fun alive(r: PrinterRecord) = transport(r, aliveTimeoutMs = 1000).isAlive()
         override suspend fun usb(kind: LabelKind) = usb.list().firstOrNull { it.kind == kind }
@@ -81,6 +87,8 @@ class PrintService(context: Context) {
         if (shopId.isEmpty() || shopId == this.shopId && listening != null) return
         val db = firestore ?: return
         this.shopId = shopId
+        _records.value = null
+        LabelKind.entries.forEach { resolver.forget(it) }
         val reg = PrinterRegistry(db, shopId).also { registry = it }
         listening?.cancel()
         listening = scope.launch {
@@ -135,6 +143,7 @@ class PrintService(context: Context) {
      */
     suspend fun print(items: List<QueueItem>, t: Template, promo: Boolean): PrinterRecord {
         val pick = resolver.resolve(t.kind) ?: throw PrinterNotFoundException(t.kind)
+        if (pick.confirmationRequired) throw PreferredPrinterUnavailable(pick)
         try {
             printOn(pick.record, items, t, promo)
         } catch (e: Exception) {
@@ -198,6 +207,13 @@ class PrintService(context: Context) {
 
     /** Для листа печати: какой принтер возьмём и отвечает ли он («Godex G500 · онлайн»). Без поиска в сети. */
     suspend fun quickStatus(kind: LabelKind): Pair<PrinterRecord, Boolean>? {
+        val preferred = store.preferred(kind).first()
+        if (preferred != "auto") {
+            val selected = availablePrinters(kind, includeOfflineAgents = true).firstOrNull { it.id == preferred }
+            if (selected != null) return selected to isAlive(selected)
+            store.setPreferred(kind, "auto")
+            resolver.forget(kind)
+        }
         withTimeoutOrNull(5_000) { records.filterNotNull().first() }
         val list = _records.value.orEmpty().filter { it.kind == kind }
         val chosen = list.firstOrNull { it.id == resolver.chosen(kind) }
@@ -244,6 +260,22 @@ class PrintService(context: Context) {
     }
 
     suspend fun setTuning(r: PrinterRecord, density: Int?, speed: Int?) = registry?.setTuning(r.id, density, speed)
+    suspend fun rename(r: PrinterRecord, name: String) =
+        (registry ?: throw PrintException("Реєстр принтерів недоступний")).rename(r.id, name)
+
+    /** Do not clear a preference until the registry has actually loaded. */
+    suspend fun availablePrinters(kind: LabelKind, includeOfflineAgents: Boolean = false): List<PrinterRecord> {
+        val registered = withTimeoutOrNull(5_000) { records.filterNotNull().first() }
+            ?: throw PrintException("Не вдалося завантажити принтери. Спробуй ще.")
+        val remote = withTimeoutOrNull(5_000) { agents.printers(shopId, includeOfflineAgents, strict = true) }
+            ?: throw PrintException("Не вдалося завантажити принтери комп'ютера. Спробуй ще.")
+        return (registered.map { r -> remote.firstOrNull { it.id == r.id }?.let { r.copy(computerName = it.computerName) } ?: r } + usb.list() + remote)
+            .filter { it.kind == kind }.distinctBy { it.id }
+    }
+
+    suspend fun isAlive(r: PrinterRecord): Boolean = try {
+        withTimeoutOrNull(1_000) { transport(r, 1000).isAlive() } == true
+    } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
     suspend fun delete(r: PrinterRecord) = registry?.delete(r.id)
     suspend fun agentPrinters() = agents.printers(shopId)
 

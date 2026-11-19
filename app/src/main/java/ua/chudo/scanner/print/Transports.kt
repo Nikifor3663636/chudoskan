@@ -111,7 +111,8 @@ class UsbOtgTransport(context: Context, private val vendorId: Int, private val p
 
     fun device(): UsbDevice? = usb.deviceList.values.firstOrNull { it.vendorId == vendorId && it.productId == productId }
 
-    override suspend fun isAlive(): Boolean = device()?.let(usb::hasPermission) == true
+    // Permission is requested by send(); its absence must not block selecting this device.
+    override suspend fun isAlive(): Boolean = device() != null
 
     override suspend fun send(bytes: ByteArray) {
         val dev = device() ?: throw PrintException("USB-принтер не підключено. Встав кабель OTG у телефон і принтер.")
@@ -222,7 +223,7 @@ class AgentTransport(
 ) : PrinterTransport {
     override suspend fun isAlive(): Boolean = runCatching {
         val doc = db.collection("agents").document(agentId).get().await()
-        AgentDirectory.online(doc.getTimestamp("lastSeen"))
+        AgentDirectory.online(doc.getTimestamp("lastSeen")) && doc.getBoolean("online") != false
     }.getOrDefault(false)
 
     override suspend fun send(bytes: ByteArray) {
@@ -266,11 +267,13 @@ class AgentTransport(
  * `agents/{agentId}`: `shopId`, `pcName`, `online`, `lastSeen`, `printers`: [{`name`, `isDefault`, `kind`}] — агент пишет раз в 60 с.
  */
 class AgentDirectory(private val db: () -> FirebaseFirestore?) {
-    suspend fun printers(shopId: String): List<PrinterRecord> {
+    suspend fun printers(shopId: String, includeOffline: Boolean = false, strict: Boolean = false): List<PrinterRecord> {
         val fs = db() ?: return emptyList()
         if (shopId.isEmpty()) return emptyList()
-        val docs = runCatching { fs.collection("agents").whereEqualTo("shopId", shopId).get().await().documents }.getOrDefault(emptyList())
-        return docs.filter { online(it.getTimestamp("lastSeen")) && it.getBoolean("online") != false }.flatMap { d ->
+        val docs = try { fs.collection("agents").whereEqualTo("shopId", shopId).get().await().documents }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (strict) throw e else emptyList() }
+        return docs.filter { includeOffline || (online(it.getTimestamp("lastSeen")) && it.getBoolean("online") != false) }.flatMap { d ->
             @Suppress("UNCHECKED_CAST")
             val list = d.get("printers") as? List<Map<String, Any?>> ?: emptyList()
             list.mapNotNull { m ->
@@ -279,6 +282,7 @@ class AgentDirectory(private val db: () -> FirebaseFirestore?) {
                 PrinterRecord(
                     id = PrinterIds.agent(d.id, name), model = name, kind = kind, transport = Link.AGENT,
                     agentId = d.id, printerName = name,
+                    computerName = d.getString("pcName").orEmpty(),
                     // Принтер по умолчанию на ПК — первым.
                     lastSeen = if (m["isDefault"] == true) 1 else 0,
                 )

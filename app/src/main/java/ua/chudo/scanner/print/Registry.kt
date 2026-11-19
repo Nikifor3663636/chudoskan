@@ -92,12 +92,18 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
         printers.document(id).delete().await()
     }
 
+    suspend fun rename(id: String, name: String) {
+        require(name.length <= 40)
+        printers.document(id).update(mapOf("name" to name.trim(), "lastSeen" to FieldValue.serverTimestamp())).await()
+    }
+
     companion object {
         fun DocumentSnapshot.toRecord(): PrinterRecord? {
             val kind = LabelKind.ofWire(getString("kind")) ?: return null
             return PrinterRecord(
                 id = id,
                 model = getString("model").orEmpty(),
+                name = getString("name").orEmpty(),
                 kind = kind,
                 ip = getString("ip").orEmpty(),
                 port = getLong("port")?.toInt() ?: 9100,

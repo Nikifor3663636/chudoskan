@@ -200,6 +200,12 @@ class PrintersViewModel(private val svc: PrintService, private val shop: String)
     fun delete(r: PrinterRecord) = viewModelScope.launch {
         runCatching { svc.delete(r) }.onFailure { _snack.emit("Видаляти принтери може лише адміністратор.") }
     }
+
+    fun rename(r: PrinterRecord, name: String, onDone: () -> Unit) = viewModelScope.launch {
+        try { svc.rename(r, name); onDone() }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { _snack.emit(e.message ?: "Не вдалося перейменувати") }
+    }
 }
 
 fun kindShort(k: LabelKind) = if (k == LabelKind.STICKY) "40×24" else "A4"
@@ -376,7 +382,7 @@ private fun RecordCard(r: PrinterRecord, ui: PrintersUi, a: PrintersActions) {
             MineIconBox(if (r.kind == LabelKind.STICKY) Icons.Rounded.Sell else Icons.Rounded.Print)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(r.model, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
+                Text(r.displayName, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
                 Text(r.address, fontSize = 14.sp, color = m.textSecondary, maxLines = 2)
             }
         }
@@ -453,11 +459,21 @@ private fun UnknownCard(d: Discovered, onAdd: (Discovered, LabelKind) -> Unit) {
 private fun EditSheet(r: PrinterRecord, vm: PrintersViewModel, onDismiss: () -> Unit) {
     val m = Mine.colors
     var confirm by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var name by remember(r.id, r.name) { mutableStateOf(r.name) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = m.sheet, contentColor = m.text) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column {
-                Text(r.model, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(r.displayName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text("${r.kind.title} · ${r.address}", fontSize = 14.sp, color = m.textSecondary)
+            }
+            if (renaming) {
+                OutlinedTextField(name, { if (it.length <= 40) name = it },
+                    label = { Text("Назва принтера") }, supportingText = { Text("${name.length}/40 · порожня назва — модель та адреса") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                MineButton("Зберегти назву", { vm.rename(r, name) { renaming = false } }, Modifier.fillMaxWidth())
+            } else {
+                MineButton("Перейменувати", { renaming = true }, Modifier.fillMaxWidth())
             }
             if (r.lang == PrintLang.EZPL) {
                 Tuning("Щільність", r.density, 10, 0..19) { vm.setTuning(r, it, r.speed) }
@@ -468,7 +484,7 @@ private fun EditSheet(r: PrinterRecord, vm: PrintersViewModel, onDismiss: () -> 
                 )
             }
             if (confirm) {
-                Text("Прибрати «${r.model}» з реєстру магазину? Якщо принтер у мережі, пошук знайде його знову.", fontSize = 15.sp)
+                Text("Прибрати «${r.displayName}» з реєстру магазину? Якщо принтер у мережі, пошук знайде його знову.", fontSize = 15.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MineButton("Скасувати", { confirm = false }, Modifier.weight(1f))
                     MineButton("Видалити", { vm.delete(r); onDismiss() }, Modifier.weight(1f), MineTone.DANGER)

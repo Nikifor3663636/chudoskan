@@ -58,7 +58,12 @@ class RegistryAndPickTest {
         var usb: PrinterRecord? = null,
         var found: PrinterRecord? = null,
         var agent: PrinterRecord? = null,
+        var preference: String = "auto",
+        var extra: List<PrinterRecord> = emptyList(),
     ) : PrinterSource {
+        override suspend fun preferred(kind: LabelKind) = preference
+        override suspend fun clearPreferred(kind: LabelKind) { preference = "auto" }
+        override suspend fun candidates(kind: LabelKind) = (reg + extra + listOfNotNull(usb, agent)).filter { it.kind == kind }
         val calls = mutableListOf<String>()
         override fun registry() = reg
         override suspend fun alive(r: PrinterRecord): Boolean {
@@ -75,6 +80,42 @@ class RegistryAndPickTest {
         val r = PrinterResolver(Fake(reg = listOf(godex, mfc), alive = mapOf("g" to 0, "mfc" to 0)))
         assertEquals("g", r.resolve(LabelKind.STICKY)!!.record.id)
         assertEquals("mfc", r.resolve(LabelKind.PLAIN)!!.record.id)
+    }
+
+    @Test fun preferredWinsOverFasterPrinterAndCache() = runBlocking {
+        val src = Fake(reg = listOf(mfc, hl), alive = mapOf("mfc" to 30, "hl" to 0))
+        val resolver = PrinterResolver(src)
+        assertEquals(hl, resolver.resolve(LabelKind.PLAIN)!!.record)
+        src.preference = mfc.id
+        assertEquals(Pick(mfc, Via.PREFERRED), resolver.resolve(LabelKind.PLAIN))
+    }
+
+    @Test fun deadPreferredRequiresConfirmationWithoutChangingPreference() = runBlocking {
+        val src = Fake(reg = listOf(mfc, hl), alive = mapOf("hl" to 0), preference = mfc.id)
+        val resolver = PrinterResolver(src)
+        repeat(2) {
+            assertEquals(Pick(mfc, Via.PREFERRED, true, hl), resolver.resolve(LabelKind.PLAIN))
+            assertEquals(mfc.id, src.preference)
+            assertNull(resolver.chosen(LabelKind.PLAIN))
+        }
+    }
+
+    @Test fun removedPreferredResetsToAuto() = runBlocking {
+        val src = Fake(reg = listOf(hl), alive = mapOf("hl" to 0), preference = mfc.id)
+        assertEquals(Pick(hl, Via.REGISTRY), PrinterResolver(src).resolve(LabelKind.PLAIN))
+        assertEquals("auto", src.preference)
+    }
+
+    @Test fun preferredAgentOutsideRegistryAndWithoutAlternative() = runBlocking {
+        val src = Fake(extra = listOf(pc), preference = pc.id)
+        assertEquals(Pick(pc, Via.PREFERRED, true), PrinterResolver(src).resolve(LabelKind.STICKY))
+        src.alive = mapOf(pc.id to 0)
+        assertEquals(Pick(pc, Via.PREFERRED), PrinterResolver(src).resolve(LabelKind.STICKY))
+    }
+
+    @Test fun preferredProbeTimesOut() = runBlocking {
+        val src = Fake(reg = listOf(mfc, hl), alive = mapOf("mfc" to 60_000, "hl" to 0), preference = mfc.id)
+        assertEquals(Pick(mfc, Via.PREFERRED, true, hl), PrinterResolver(src).resolve(LabelKind.PLAIN))
     }
 
     @Test fun firstToAnswerWinsAndIsCached() = runBlocking {

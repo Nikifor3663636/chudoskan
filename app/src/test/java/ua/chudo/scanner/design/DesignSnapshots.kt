@@ -111,6 +111,20 @@ class DesignSnapshots {
 
     @Test fun loginMineDark() = login(dark = true)
 
+    @Test fun printSheetPreferredOffline() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.sheet) {
+                PrintSheetContent(PrintSheetUi(
+                    subtitle = "LEGO Duplo Потяг із цифрами, 649 ₴", format = Template.TAG_68x38,
+                    promo = true, oldPrice = "969", qty = 2,
+                    printer = PrinterLine("Brother MFC-L2700DW · 192.168.22.250", false),
+                    error = "Brother MFC-L2700DW · 192.168.22.250 не відповідає",
+                    alternative = "Brother HL-L2360DN · 192.168.22.251",
+                ))
+            }
+        }
+    }
+
     @Test fun loginMineLight() = login(dark = false)
 
     private fun login(dark: Boolean) = paparazzi.snapshot {

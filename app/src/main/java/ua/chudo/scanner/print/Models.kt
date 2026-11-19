@@ -81,7 +81,11 @@ data class PrinterRecord(
     /** Только для [Link.USB] на этом телефоне. */
     val usbVendor: Int = 0,
     val usbProduct: Int = 0,
+    val name: String = "",
+    val computerName: String = "",
 ) {
+    val displayName: String get() = name.takeIf { it.isNotBlank() }
+        ?: listOf(model, address).filter { it.isNotBlank() }.joinToString(" · ")
     /** Язык по модели: Godex — EZPL, Brother и прочие A4 — PCL. */
     val lang: PrintLang
         get() = if (kind == LabelKind.PLAIN) PrintLang.PCL else guessByModel(model)?.second?.takeIf { it != PrintLang.PCL } ?: PrintLang.EZPL
@@ -89,7 +93,7 @@ data class PrinterRecord(
     val address: String
         get() = when (transport) {
             Link.TCP -> if (port == 9100) ip else "$ip:$port"
-            Link.AGENT -> "через комп'ютер: $printerName"
+            Link.AGENT -> "через комп'ютер ${computerName.ifBlank { agentId }}"
             Link.USB -> "USB"
         }
 }
