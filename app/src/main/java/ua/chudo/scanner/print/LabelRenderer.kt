@@ -31,6 +31,10 @@ enum class LabelFormat(val title: String, val wPx: Int, val hPx: Int, val promo:
     Tag68x38Promo("Цінник 68×38, акційний", 544, 304, true),
     TagBig("Крупногабарит", 1184, 840, false),
     TagBigPromo("Крупногабарит, акційний", 1184, 840, true),
+
+    /** 140×100 мм, як у 1С: та сама верстка, що й 148×105, від країв. */
+    TagBig140("Крупногабарит 140×100", 1120, 800, false),
+    TagBig140Promo("Крупногабарит 140×100, акційний", 1120, 800, true),
     ;
 
     companion object {
@@ -38,6 +42,7 @@ enum class LabelFormat(val title: String, val wPx: Int, val hPx: Int, val promo:
             Template.LABEL_40x24 -> Label40x24
             Template.TAG_68x38 -> if (promo) Tag68x38Promo else Tag68x38
             Template.BIG -> if (promo) TagBigPromo else TagBig
+            Template.BIG_140x100 -> if (promo) TagBig140Promo else TagBig140
         }
     }
 }
@@ -85,28 +90,34 @@ class LabelRenderer(context: Context) {
         when (f) {
             LabelFormat.Label40x24 -> label40x24(c, item, k)
             LabelFormat.Tag68x38, LabelFormat.Tag68x38Promo -> tag68x38(c, item, k, f.promo)
-            LabelFormat.TagBig, LabelFormat.TagBigPromo -> tagBig(c, item, k, f.promo)
+            LabelFormat.TagBig, LabelFormat.TagBigPromo, LabelFormat.TagBig140, LabelFormat.TagBig140Promo -> tagBig(c, item, k, f)
         }
     }
 
     // ---------- Листы A4 (Brother, 300 dpi) ----------
 
-    /** Страницы A4 в 1 бит: ячейки по сетке шаблона, каждая ячейка — тот же [draw]. */
-    fun sheetPages(cells: List<LabelItem>, t: Template, promo: Boolean, dpi: Float = SHEET_DPI): List<MonoImage> {
-        val l = requireNotNull(t.layout)
+    /**
+     * Страницы A4 в 1 бит: ячейки по сетке шаблона, каждая ячейка — тот же [draw].
+     * Альбомний аркуш малюємо 3508×2480 і повертаємо на 90°: Brother отримує книжний 2480×3508.
+     */
+    fun sheetPages(cells: List<LabelItem>, t: Template, promo: Boolean, landscape: Boolean = t.defaultLandscape, dpi: Float = SHEET_DPI): List<MonoImage> {
+        val l = requireNotNull(t.layout(landscape))
         val f = LabelFormat.of(t, promo)
-        return cells.chunked(l.perPage).map { chunk -> MonoImage.fromAlpha(page(chunk, t, f, dpi, Bitmap.Config.ALPHA_8)) }
+        return cells.chunked(l.perPage).map { chunk ->
+            val img = MonoImage.fromAlpha(page(chunk, l, f, dpi, Bitmap.Config.ALPHA_8))
+            if (l.landscape) img.rotateClockwise() else img
+        }
     }
 
     /** Лист для превью (уменьшенный [dpi]): белая бумага под ценниками, промо — жёлтые ячейки. */
-    fun sheetPreview(cells: List<LabelItem>, t: Template, promo: Boolean, dpi: Float): Bitmap {
+    fun sheetPreview(cells: List<LabelItem>, t: Template, promo: Boolean, dpi: Float, landscape: Boolean = t.defaultLandscape): Bitmap {
         val f = LabelFormat.of(t, promo)
-        val ink = page(cells.take(requireNotNull(t.layout).perPage), t, f, dpi, Bitmap.Config.ARGB_8888)
+        val l = requireNotNull(t.layout(landscape))
+        val ink = page(cells.take(l.perPage), l, f, dpi, Bitmap.Config.ARGB_8888)
         val out = createBitmap(ink.width, ink.height)
         val c = Canvas(out)
         c.drawColor(Color.WHITE)
         if (f.promo) {
-            val l = t.layout!!
             val paper = Paint().apply { color = PROMO_PAPER }
             val (cw, ch) = sizeDots(f, dpi)
             cells.take(l.perPage).indices.forEach { i ->
@@ -118,8 +129,7 @@ class LabelRenderer(context: Context) {
         return out
     }
 
-    private fun page(cells: List<LabelItem>, t: Template, f: LabelFormat, dpi: Float, config: Bitmap.Config): Bitmap {
-        val l = requireNotNull(t.layout)
+    private fun page(cells: List<LabelItem>, l: SheetLayout, f: LabelFormat, dpi: Float, config: Bitmap.Config): Bitmap {
         val pw = (l.pageWmm * dpi / 25.4f).roundToInt()
         val ph = (l.pageHmm * dpi / 25.4f).roundToInt()
         val bmp = createBitmap(pw, ph, config)
@@ -232,20 +242,22 @@ class LabelRenderer(context: Context) {
         )
     }
 
-    /** C) Крупногабарит 148×105 (TagBig.dc.html, TagBigPromo.dc.html). */
-    private fun tagBig(c: Canvas, item: LabelItem, k: Scale, promo: Boolean) {
-        val w = k.d(1184f)
-        val h = k.d(840f)
+    /** C) Крупногабарит 148×105 (TagBig.dc.html, TagBigPromo.dc.html) і 140×100 — та сама верстка від країв. */
+    private fun tagBig(c: Canvas, item: LabelItem, k: Scale, f: LabelFormat) {
+        val promo = f.promo
+        val w = k.d(f.wPx.toFloat())
+        val h = k.d(f.hPx.toFloat())
+        val vy = f.hPx / 840f // 140×100 нижчий за 148×105: штрихкод і стара ціна — пропорційно вище
         val b = k.d(2f)
         dashedFrame(c, w, h, k.d(2f), k)
 
         val nameSize = k.d(44f)
-        block(c, item.title(), text(golos500, nameSize), b + k.d(40f), b + k.d(28f), k.d(1010f), lineHeight = nameSize * 1.25f, maxLines = 3)
-        ean13Box(c, item.barcode, k, (w - b - k.d(40f + 72f)).roundToInt(), (b + k.d(250f)).roundToInt(), k.i(72f), k.i(236f), vertical = true)
+        block(c, item.title(), text(golos500, nameSize), b + k.d(40f), b + k.d(28f), w - k.d(1184f - 1010f), lineHeight = nameSize * 1.25f, maxLines = 3)
+        ean13Box(c, item.barcode, k, (w - b - k.d(40f + 72f)).roundToInt(), (b + k.d(250f * vy)).roundToInt(), k.i(72f), k.i(236f), vertical = true)
         footer(c, item, k, w, h, b, left = 44f, right = 40f, bottom = 26f, leftSize = 24f, rightSize = 22f)
 
         if (promo) {
-            oldPrice(c, item, b + k.d(40f), b + k.d(270f), text(mont700, k.d(132f)).apply { letterSpacing = -3f / 132f }, k.d(-14f), k.d(30f), k.d(62f), k.d(6f), -11f)
+            oldPrice(c, item, b + k.d(40f), b + k.d(270f * vy), text(mont700, k.d(132f)).apply { letterSpacing = -3f / 132f }, k.d(-14f), k.d(30f), k.d(62f), k.d(6f), -11f)
         }
         price(
             c, item, b + k.d(34f), h - b - k.d(84f), maxRight = w - b - k.d(40f),

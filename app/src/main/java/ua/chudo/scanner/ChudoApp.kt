@@ -35,6 +35,8 @@ class ChudoApp : Application() {
     val networkStock by lazy { ua.chudo.scanner.data.NetworkStockRepository(FirebaseFirestore.getInstance(), filesDir) }
     /** Показ залишків мережі: склади й дата — раз на сесію. */
     val networkLookup by lazy { ua.chudo.scanner.data.NetworkStockLookup(FirebaseFirestore.getInstance()) }
+    /** Товари, вибрані на «Залишках» для пакетного друку; «Друк цінників» забирає їх у чергу. */
+    val labelBatch = kotlinx.coroutines.flow.MutableStateFlow<List<ua.chudo.scanner.data.NetAvailability>>(emptyList())
     /** Интернет-заказы на самовывоз (пока демо-источник). */
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }

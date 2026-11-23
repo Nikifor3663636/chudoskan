@@ -66,14 +66,31 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
         }.also { stores = it }
     }
 
-    private suspend fun updatedAt(): Date? = lock.withLock {
+    private var changedAfter: com.google.firebase.Timestamp? = null
+
+    private suspend fun loadMeta() = lock.withLock {
         if (!metaLoaded) {
-            updatedAt = runCatching {
-                db.collection(NetworkStockRepository.META).document(NetworkStockRepository.STOCK).get().await().getTimestamp("updatedAt")?.toDate()
-            }.getOrNull()
+            runCatching { db.collection(NetworkStockRepository.META).document(NetworkStockRepository.STOCK).get().await() }.getOrNull()?.let { d ->
+                updatedAt = d.getTimestamp("updatedAt")?.toDate()
+                changedAfter = d.getTimestamp("changedAfter")
+            }
             metaLoaded = true
         }
-        updatedAt
+    }
+
+    private suspend fun updatedAt(): Date? { loadMeta(); return updatedAt }
+
+    /**
+     * «Змінені з минулого завантаження», які є у своєму магазині: `stock where updatedAt > changedAfter`
+     * (до [limit] читань). Першого завантаження ще не порівнювали — порожньо.
+     */
+    suspend fun changedSinceLastImport(shopId: String, limit: Long = 500): List<NetAvailability> {
+        loadMeta()
+        val after = changedAfter ?: return emptyList()
+        val own = ownCode(shopId) ?: return emptyList()
+        val docs = db.collection(NetworkStockRepository.STOCK).whereGreaterThan("updatedAt", after).limit(limit).get().await().documents
+        return docs.mapNotNull { d -> d.toNetItem()?.takeIf { (it.q[own] ?: 0.0) > 0 }?.let { availability(shopId, d.id, it) } }
+            .sortedBy { it.item.name }
     }
 
     private suspend fun ownCode(shopId: String): String? {

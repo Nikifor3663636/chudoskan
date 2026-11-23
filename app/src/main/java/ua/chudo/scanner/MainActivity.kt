@@ -170,6 +170,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+                onLabels = { nav.navigate(Routes.LABELS) { launchSingleTop = true } },
             )
         }
         composable(Routes.PROFILE) {
@@ -194,6 +195,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
+                shopId = employee.shopId,
             )
         }
         composable(Routes.ORDERS) { entry ->

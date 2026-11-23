@@ -333,6 +333,7 @@ describe('залишки мережі', () => {
     await assertFails(setDoc(doc(db, 'meta', 'other'), { rows: 1 }));
     await assertFails(setDoc(doc(db, 'meta', 'stock'), { items: 1, file: 'x.xlsx' }));
     await assertFails(setDoc(doc(db, 'meta', 'stock'), { items: '1' }));
+    await assertFails(setDoc(doc(db, 'meta', 'stock'), { changedAfter: 'вчора' }));
     // Від'ємне значення далеко в map теж ловиться.
     const stores = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i + 1), 1]));
     await assertSucceeds(setDoc(doc(db, 'stock', '4'), row(stores(100))));
@@ -391,7 +392,7 @@ describe('імпорт залишків мережі (етап 3)', () => {
     b.set(doc(db, 'stores', '22'), { shopId: '22' }, { merge: true });
     b.set(doc(db, 'shops', '22'), { code1C: '22' }, { merge: true });
     await assertSucceeds(b.commit());
-    await assertSucceeds(setDoc(doc(db, 'meta', 'stock'), { updatedAt: serverTimestamp(), updatedBy: 'Залишки', items: 23780, stores: 46 }));
+    await assertSucceeds(setDoc(doc(db, 'meta', 'stock'), { updatedAt: serverTimestamp(), updatedBy: 'Залишки', items: 23780, stores: 46, changedAfter: Timestamp.now() }));
     await assertSucceeds(addDoc(collection(db, 'adminLog'),
       { by: 'stocker', at: serverTimestamp(), action: 'stockImport', details: 'магазинів 46 · товарів 23780' }));
     // Інші дії в журнал stockAdmin не пише.

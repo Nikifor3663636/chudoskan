@@ -273,7 +273,8 @@ service cloud.firestore {
     match /meta/{id} {
       allow read: if isApproved() && id == 'stock';
       allow create, update: if isStockAdmin() && id == 'stock'
-        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores'])
+        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores', 'changedAfter'])
+        && (!('changedAfter' in request.resource.data) || request.resource.data.changedAfter is timestamp)
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
         && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 100))
         && (!('items' in request.resource.data) || request.resource.data.items is int)

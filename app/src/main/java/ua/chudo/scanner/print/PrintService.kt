@@ -129,13 +129,19 @@ class PrintService(context: Context) {
         return Printer(r, transport(r), lang, r.kind)
     }
 
-    /** Байты задания: этикетки 40×24 — по картинке на товар с копиями; листы — товары × количество подряд. */
-    suspend fun render(p: Printer, items: List<QueueItem>, t: Template, promo: Boolean): ByteArray = withContext(Dispatchers.Default) {
-        if (t.kind == LabelKind.STICKY) {
-            p.language.render(PrintJob(items.map { PrintPage(renderer.mono(it.tag.toItem(), LabelFormat.Label40x24, LabelRenderer.GODEX_DPI), it.copies) }))
-        } else {
-            val cells = expand(items.map { it.tag.toItem() to it.copies })
-            p.language.render(PrintJob(renderer.sheetPages(cells, t, promo).map { PrintPage(it) }))
+    /**
+     * Байты задания: этикетки 40×24 — по картинке на товар с копиями; листы — товары × количество подряд,
+     * один документ на скільки завгодно аркушів. Книжна / альбомна — з налаштування шаблону.
+     */
+    suspend fun render(p: Printer, items: List<QueueItem>, t: Template, promo: Boolean): ByteArray {
+        val landscape = store.landscape(t).first()
+        return withContext(Dispatchers.Default) {
+            if (t.kind == LabelKind.STICKY) {
+                p.language.render(PrintJob(items.map { PrintPage(renderer.mono(it.tag.toItem(), LabelFormat.Label40x24, LabelRenderer.GODEX_DPI), it.copies) }))
+            } else {
+                val cells = expand(items.map { it.tag.toItem() to it.copies })
+                p.language.render(PrintJob(renderer.sheetPages(cells, t, promo, landscape).map { PrintPage(it) }))
+            }
         }
     }
 
@@ -144,6 +150,7 @@ class PrintService(context: Context) {
      * ошибка печати — [PrintException] с понятным текстом, а выбор сессии сбрасывается, чтобы «Спробувати ще» искал заново.
      */
     suspend fun print(items: List<QueueItem>, t: Template, promo: Boolean): PrinterRecord {
+        requirePrices(items.map { it.tag.toItem() })
         val pick = resolver.resolve(t.kind) ?: throw PrinterNotFoundException(t.kind)
         if (pick.confirmationRequired) throw PreferredPrinterUnavailable(pick)
         try {
@@ -158,6 +165,7 @@ class PrintService(context: Context) {
     /** Печать на конкретный принтер (и тест администратора). Удалось — upsert в реестр: ip, lastSeen, lastOkBy. */
     suspend fun printOn(r: PrinterRecord, items: List<QueueItem>, t: Template, promo: Boolean) {
         if (r.kind != t.kind) throw PrintException("«${r.model}» друкує ${if (r.kind == LabelKind.STICKY) "етикетки 40×24" else "аркуші A4"}.")
+        requirePrices(items.map { it.tag.toItem() })
         val p = printer(r)
         p.transport.send(render(p, items, t, promo))
         runCatching { registry?.upsert(r, uid, ok = true) }

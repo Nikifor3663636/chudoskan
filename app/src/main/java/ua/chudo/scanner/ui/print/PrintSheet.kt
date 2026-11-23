@@ -76,8 +76,13 @@ fun printButtonText(t: Template, n: Int): String {
 fun formatTitle(t: Template) = when (t) {
     Template.LABEL_40x24 -> "Етикетка 40×24"
     Template.TAG_68x38 -> "Цінник 68×38"
-    Template.BIG -> "Крупногабарит"
+    Template.BIG -> "Крупногабарит 148×105"
+    Template.BIG_140x100 -> "Крупногабарит 140×100"
 }
+
+/** «Альбомна: 20 на аркуш». */
+fun orientationNote(t: Template, landscape: Boolean): String =
+    t.layout(landscape)?.let { "${if (landscape) "Альбомна" else "Книжна"}: ${it.perPage} на аркуш" }.orEmpty()
 
 /** Назва та стан обраного принтера. [missing] — обраного немає серед доступних, [model] — «Обраний принтер не підключено». */
 data class PrinterLine(val model: String?, val online: Boolean?, val missing: Boolean = false)
@@ -95,6 +100,8 @@ data class PrintSheetUi(
     /** Принтер не нашли / ошибка печати: одно сообщение, кнопка становится «Спробувати ще». */
     val error: String? = null,
     val alternative: String? = null,
+    /** Альбомний аркуш для A4-шаблону (для етикетки 40×24 не показуємо). */
+    val landscape: Boolean = Template.TAG_68x38.defaultLandscape,
 )
 
 /** Друк цінника: формат, кількість і локальний вибір принтера. */
@@ -114,6 +121,7 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
     var alternative by remember { mutableStateOf<PrinterRecord?>(null) }
     val preferred by remember(format.kind) { svc.store.preferred(format.kind) }.collectAsStateWithLifecycle("auto")
     val records by svc.records.collectAsStateWithLifecycle()
+    val landscape by remember(format) { svc.store.landscape(format) }.collectAsStateWithLifecycle(format.defaultLandscape)
 
     LaunchedEffect(Unit) { svc.store.lastTemplate.collect { t -> if (t != null) format = t } }
     LaunchedEffect(format.kind, preferred, records, statusRevision) {
@@ -162,7 +170,9 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
                 promo = promo && item.canPromo,
                 oldPrice = if (item.canPromo) PriceFormat.tag(item.oldPrice!!).first else null,
                 qty = qty, printer = line, busy = busy, error = error, alternative = alternative?.displayName,
+                landscape = landscape,
             ),
+            onLandscape = { v -> if (!busy) scope.launch { svc.store.setLandscape(format, v) } },
             onFormat = { if (!busy) { format = it; error = null; alternative = null; scope.launch { svc.store.setLastTemplate(it) } } },
             onPromo = { promo = it },
             onQty = { qty = it },
@@ -191,6 +201,7 @@ fun PrintSheetContent(
     onPrint: () -> Unit = {},
     onChoosePrinter: () -> Unit = {},
     onAlternative: () -> Unit = {},
+    onLandscape: (Boolean) -> Unit = {},
 ) {
     val m = Mine.colors
     Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -204,6 +215,7 @@ fun PrintSheetContent(
                 Template.entries.forEach { t -> MineChip(formatTitle(t), ui.format == t, { onFormat(t) }) }
             }
         }
+        if (ui.format.kind == LabelKind.PLAIN) OrientationPicker(ui.format, ui.landscape, onLandscape)
         if (ui.oldPrice != null && ui.format.kind == LabelKind.PLAIN) {
             Surface(shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -332,5 +344,20 @@ private fun PrinterPicker(
             item { TextButton(onClick = { refresh++ }, enabled = !saving) { Text("Оновити", color = m.accent) } }
             item { Spacer(Modifier.size(20.dp)) }
         }
+    }
+}
+
+/** «Книжна / Альбомна» для A4-шаблону — окремо для кожного шаблону. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun OrientationPicker(t: Template, landscape: Boolean, onChange: (Boolean) -> Unit) {
+    val m = Mine.colors
+    Column {
+        Text("Аркуш A4", Modifier.padding(bottom = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            MineChip("Книжна", !landscape, { onChange(false) })
+            MineChip("Альбомна", landscape, { onChange(true) })
+        }
+        Text(orientationNote(t, landscape), Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary)
     }
 }

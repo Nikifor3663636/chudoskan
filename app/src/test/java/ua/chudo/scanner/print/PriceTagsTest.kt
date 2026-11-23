@@ -37,7 +37,7 @@ class PriceTagsTest {
     }
 
     @Test fun tag68x38Grid() {
-        val l = Template.TAG_68x38.layout!!
+        val l = Template.TAG_68x38.layout(landscape = false)!!
         assertEquals(3, l.cols)
         assertEquals(7, l.rows)
         assertEquals(21, l.perPage)
@@ -49,20 +49,20 @@ class PriceTagsTest {
     }
 
     @Test fun bigTwoPerPortraitSheet() {
-        val l = Template.BIG.layout!!
+        val l = Template.BIG.layout(landscape = false)!!
         assertEquals(1, l.cols)
         assertEquals(2, l.rows)
         assertEquals(2, l.perPage)
         assertEquals(3, l.pages(5))
         assertEquals(Cell(1, 0, 0), l.cell(2))
         assertEquals(31f, l.marginXmm, 1e-4f)
-        assertEquals(null, Template.LABEL_40x24.layout)
+        assertEquals(null, Template.LABEL_40x24.layout())
     }
 
     @Test fun itemsTimesQtyInOrder() {
         val cells = expand(listOf("a" to 2, "b" to 1, "c" to 3))
         assertEquals(listOf("a", "a", "b", "c", "c", "c"), cells)
-        val l = Template.TAG_68x38.layout!!
+        val l = Template.TAG_68x38.layout(landscape = false)!!
         assertEquals(2, l.pages(expand(listOf("x" to 20, "y" to 5)).size))
     }
 }

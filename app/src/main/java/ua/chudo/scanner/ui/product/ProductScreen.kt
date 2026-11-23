@@ -78,8 +78,7 @@ import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.StockItem
 import ua.chudo.scanner.ui.stock.NetworkStockCard
 import ua.chudo.scanner.print.PriceFormat
-import ua.chudo.scanner.print.PriceTag
-import ua.chudo.scanner.print.formatPrice
+import ua.chudo.scanner.print.TagData
 import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MineButton
@@ -164,12 +163,11 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
     if (printSheet && product != null) {
         val price = product.price
         PrintSheet(
-            tag = PriceTag(
-                name = product.name,
-                price = price?.finalPrice?.let(::formatPrice).orEmpty(),
-                oldPrice = price?.takeIf { it.regularPrice > it.finalPrice + 0.001 }?.regularPrice?.let(::formatPrice).orEmpty(),
-                article = product.article.orEmpty(),
-                barcode = vm.barcode ?: own?.barcode.orEmpty(),
+            // Штрихкод, код і артикул — з 1С (stock/{штрихкод}), назва й ціни — з сайту.
+            tag = TagData.merge(
+                TagData.Site(product.name, product.article, price?.finalPrice, price?.regularPrice),
+                net?.let { TagData.OneC(it.barcode, it.item.name, it.item.code, it.item.article) },
+                vm.barcode ?: own?.barcode,
             ),
             onDismiss = { printSheet = false },
             onDone = { msg -> scope.launch { snackbar.showSnackbar(msg) } },

@@ -273,6 +273,23 @@ class DesignSnapshots {
 
     @Test fun tagBigPromo() = tag(jeepPromo, LabelFormat.TagBigPromo)
 
+    @Test fun tagBig140x100() = tag(jeep, LabelFormat.TagBig140)
+
+    @Test fun tagBig140x100Promo() = tag(jeepPromo, LabelFormat.TagBig140Promo)
+
+    /** Альбомний аркуш A4 68×38: 4×5 = 20 цінників у друкованій області Brother. */
+    @Test fun sheet68x38Landscape() = sheet(Template.TAG_68x38, List(20) { crayola })
+
+    /** Альбомний аркуш A4 140×100: 2×2 = 4. */
+    @Test fun sheet140x100Landscape() = sheet(Template.BIG_140x100, List(4) { jeep })
+
+    private fun sheet(t: Template, cells: List<LabelItem>) {
+        val bmp = LabelRenderer(paparazzi.context).sheetPreview(cells, t, promo = false, dpi = 60f, landscape = true).asImageBitmap()
+        paparazzi.snapshot {
+            Box(Modifier.background(Color(0xFF808080)).padding(8.dp)) { Image(bmp, null) }
+        }
+    }
+
     /** Ценник в масштабе макета (8 px/мм) на бумаге: белой или жёлтой для акции. */
     private fun tag(item: LabelItem, f: LabelFormat) {
         val r = LabelRenderer(paparazzi.context)
@@ -299,6 +316,7 @@ class DesignSnapshots {
             Triple(eggs, LabelFormat.Tag68x38Promo, LabelRenderer.SHEET_DPI),
             Triple(jeep, LabelFormat.TagBig, LabelRenderer.SHEET_DPI),
             Triple(jeepPromo, LabelFormat.TagBigPromo, LabelRenderer.SHEET_DPI),
+            Triple(jeep, LabelFormat.TagBig140, LabelRenderer.SHEET_DPI),
         )
         for ((item, f, dpi) in cases) {
             val mono = r.mono(item, f, dpi)

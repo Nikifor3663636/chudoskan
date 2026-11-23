@@ -151,9 +151,59 @@ class StockViewModel(
     private val stock: ShopStockRepository,
     private val prefs: AppPrefs,
     private val net: NetworkStockLookup? = null,
+    /** Спільний пакет для «Друк цінників». */
+    private val batch: MutableStateFlow<List<NetAvailability>>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow<StockState>(StockState.Idle)
     val state = _state.asStateFlow()
+
+    // ---------- Пакетний друк: вибрані товари ----------
+
+    private val _selected = MutableStateFlow<List<NetAvailability>>(emptyList())
+    val selected = _selected.asStateFlow()
+    private val _changedLoading = MutableStateFlow(false)
+    val changedLoading = _changedLoading.asStateFlow()
+    private val _batchNote = MutableStateFlow<String?>(null)
+    val batchNote = _batchNote.asStateFlow()
+
+    fun toggleSelected(av: NetAvailability) {
+        _selected.value = if (_selected.value.any { it.barcode == av.barcode }) _selected.value.filter { it.barcode != av.barcode }
+        else _selected.value + av
+    }
+
+    fun unselect(barcode: String) { _selected.value = _selected.value.filter { it.barcode != barcode } }
+
+    /** «Змінені з минулого завантаження» — додати до вибраних ті, що є у своєму магазині. */
+    fun addChanged() {
+        val n = net ?: return
+        if (_changedLoading.value) return
+        _changedLoading.value = true
+        _batchNote.value = null
+        viewModelScope.launch {
+            try {
+                val found = n.changedSinceLastImport(employee.shopId)
+                val have = _selected.value.map { it.barcode }.toSet()
+                _selected.value = _selected.value + found.filter { it.barcode !in have }
+                _batchNote.value = if (found.isEmpty()) "Змінених товарів у твоєму магазині немає." else "Додано змінених: ${found.size}"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _batchNote.value = e.authMessage()
+            } finally {
+                _changedLoading.value = false
+            }
+        }
+    }
+
+    /** «Цінники»: вибране — у чергу «Друк цінників» (ціни підтягнуться з сайту там). */
+    fun sendToLabels(): Boolean {
+        val b = batch ?: return false
+        if (_selected.value.isEmpty()) return false
+        b.value = b.value + _selected.value.filter { s -> b.value.none { it.barcode == s.barcode } }
+        _selected.value = emptyList()
+        _batchNote.value = null
+        return true
+    }
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
     val import = _import.asStateFlow()
     private val _info = MutableStateFlow<ShopStockInfo?>(null)
@@ -317,14 +367,19 @@ fun StockScreen(
     /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
     scanned: String?,
     onScannedConsumed: () -> Unit,
+    /** «Цінники»: вибрані товари вже в черзі «Друк цінників». */
+    onLabels: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
         key = "stock-${employee.uid}",
-        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup) } },
+        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, app.labelBatch) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
+    val selected by vm.selected.collectAsStateWithLifecycle()
+    val changedLoading by vm.changedLoading.collectAsStateWithLifecycle()
+    val batchNote by vm.batchNote.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
@@ -352,6 +407,13 @@ fun StockScreen(
                     Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
                 }
             }
+        }
+        item {
+            LabelBatchCard(
+                selected, changedLoading, batchNote,
+                onChanged = vm::addChanged, onRemove = vm::unselect,
+                onLabels = { if (vm.sendToLabels()) onLabels() },
+            )
         }
 
         when (val st = s) {
@@ -400,6 +462,10 @@ fun StockScreen(
                 if (net != null) {
                     item { NetworkStockCard(net) }
                     st.siteAvailable?.let { have -> item { SiteLine(have) } }
+                    item {
+                        val chosen = selected.any { it.barcode == net.barcode }
+                        MineButton(if (chosen) "Прибрати з цінників" else "Додати до цінників", { vm.toggleSelected(net) }, Modifier.fillMaxWidth())
+                    }
                 } else {
                     item { MyShopCard(employee, st, info != null) }
                 }
@@ -591,3 +657,39 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
         )
     }
 }
+
+/**
+ * Пакетний друк: «Змінені з минулого завантаження» і вибрані товари → «Цінники»
+ * (один документ на кілька аркушів у «Друк цінників»).
+ */
+@Composable
+private fun LabelBatchCard(
+    selected: List<NetAvailability>, loading: Boolean, note: String?,
+    onChanged: () -> Unit, onRemove: (String) -> Unit, onLabels: () -> Unit,
+) {
+    val m = Mine.colors
+    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            Text("Цінники", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(
+                if (selected.isEmpty()) "Додай товари кнопкою «Додати до цінників» або візьми змінені з минулого завантаження."
+                else "Вибрано: ${selected.size}",
+                Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 19.sp, color = m.textSecondary,
+            )
+            selected.take(MAX_SHOWN).forEach { av ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(av.item.name.ifBlank { av.barcode }, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    IconButton(onClick = { onRemove(av.barcode) }) { Icon(Icons.Rounded.Close, "Прибрати", tint = m.textSecondary) }
+                }
+            }
+            if (selected.size > MAX_SHOWN) Text("… і ще ${selected.size - MAX_SHOWN}", fontSize = 14.sp, color = m.textSecondary)
+            note?.let { Text(it, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary) }
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MineButton("Змінені з минулого завантаження", onChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
+                MineButton("Цінники", onLabels, Modifier.weight(0.6f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
+            }
+        }
+    }
+}
+
+private const val MAX_SHOWN = 5

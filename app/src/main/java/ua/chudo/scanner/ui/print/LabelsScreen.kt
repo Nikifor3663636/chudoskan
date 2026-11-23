@@ -91,18 +91,25 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.LookupResult
+import ua.chudo.scanner.data.NetAvailability
+import ua.chudo.scanner.data.NetworkAvailability
+import ua.chudo.scanner.data.NetworkStockLookup
 import ua.chudo.scanner.print.LabelKind
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.PrintService
@@ -110,6 +117,7 @@ import ua.chudo.scanner.print.LabelFormat
 import ua.chudo.scanner.print.LabelRenderer
 import ua.chudo.scanner.print.PrintException
 import ua.chudo.scanner.print.QueueItem
+import ua.chudo.scanner.print.TagData
 import ua.chudo.scanner.print.Template
 import ua.chudo.scanner.print.expand
 import ua.chudo.scanner.print.formatPrice
@@ -136,6 +144,11 @@ sealed interface PrintStatus {
 class LabelsViewModel(
     private val repo: ChudoRepository,
     private val svc: PrintService,
+    /** Залишки мережі: штрихкод, код і артикул з 1С. */
+    private val net: NetworkStockLookup? = null,
+    private val shopId: String = "",
+    /** Пакет із «Залишків»: забираємо в чергу. */
+    private val batch: MutableStateFlow<List<NetAvailability>>? = null,
 ) : ViewModel() {
     private val _find = MutableStateFlow<FindState>(FindState.Idle)
     val find = _find.asStateFlow()
@@ -155,12 +168,17 @@ class LabelsViewModel(
     val status = _status.asStateFlow()
     private var findJob: Job? = null
 
+    /** «Книжна / Альбомна» поточного шаблону. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val landscape = _template.flatMapLatest { svc.store.landscape(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Template.TAG_68x38.defaultLandscape)
+
     init {
         viewModelScope.launch {
             svc.store.lastTemplate.first()?.let { _template.value = it }
         }
         viewModelScope.launch {
-            combine(_current, _queue, _template, _promo) { _, _, t, p -> t to p }.collectLatest { (t, p) ->
+            combine(_current, _queue, _template, _promo, landscape) { _, _, t, p, l -> Triple(t, p, l) }.collectLatest { (t, p, l) ->
                 val items = jobItems()
                 _preview.value = if (items.isEmpty()) null else withContext(Dispatchers.Default) {
                     if (t == Template.LABEL_40x24) {
@@ -168,11 +186,72 @@ class LabelsViewModel(
                         svc.renderer.mono(items.first().tag.toItem(), LabelFormat.Label40x24, LabelRenderer.GODEX_DPI).toBitmap()
                     } else {
                         val cells = expand(items.map { it.tag.toItem() to it.copies })
-                        svc.renderer.sheetPreview(cells, t, p && promoAvailable(), LabelRenderer.SHEET_DPI * PREVIEW_SCALE)
+                        svc.renderer.sheetPreview(cells, t, p && promoAvailable(), LabelRenderer.SHEET_DPI * PREVIEW_SCALE, l)
                     }.asImageBitmap()
                 }
             }
         }
+        batch?.let { b ->
+            viewModelScope.launch {
+                b.collect { list -> if (list.isNotEmpty()) { b.value = emptyList(); addBatch(list) } }
+            }
+        }
+    }
+
+    fun setLandscape(v: Boolean) {
+        val t = _template.value
+        viewModelScope.launch { svc.store.setLandscape(t, v) }
+    }
+
+    /** Товари з «Залишків»: ціни й назви з сайту (по 4 одночасно), штрихкод, код і артикул — з 1С. */
+    private suspend fun addBatch(list: List<NetAvailability>) {
+        findJob?.cancel()
+        var done = 0
+        _find.value = FindState.Loading("Ціни з сайту: 0 з ${list.size}…")
+        val tags = coroutineScope {
+            list.chunked(4).flatMap { chunk ->
+                chunk.map { av ->
+                    async {
+                        val site = runCatching { siteData(av.barcode) }.getOrNull()
+                        TagData.merge(site, av.oneC(), av.barcode).also {
+                            done++
+                            _find.value = FindState.Loading("Ціни з сайту: $done з ${list.size}…")
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+        _queue.value = _queue.value + tags.map { QueueItem(it, 1) }
+        _status.value = PrintStatus.Idle
+        val noPrice = tags.count { it.price.isBlank() }
+        _find.value = if (noPrice == 0) FindState.Idle
+        else FindState.Failed("Без ціни на сайті: $noPrice. Без ціни цінник не друкується — прибери їх із черги або знайди товар на сайті.")
+    }
+
+    /** Ціна й назва з сайту за штрихкодом; кілька збігів або немає — `null`. */
+    private suspend fun siteData(barcode: String): TagData.Site? {
+        val r = (repo.lookup(barcode) {}) as? LookupResult.Single ?: return null
+        return repo.details(r.urlKey).toSite()
+    }
+
+    private suspend fun oneC(barcode: String?, article: String?): TagData.OneC? {
+        val n = net ?: return null
+        return try {
+            (barcode?.let { n.byBarcode(shopId, it) } ?: article?.ifBlank { null }?.let { n.byArticle(shopId, it).firstOrNull() })?.oneC()
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+    }
+
+    /** Товару немає на сайті — шукаємо в залишках мережі: штрихкод, код 1С або артикул. */
+    private suspend fun oneCByQuery(q: String, barcode: String?): NetAvailability? {
+        val n = net ?: return null
+        return try {
+            val digits = (barcode ?: q).filter(Char::isDigit)
+            when {
+                digits.length >= 8 && digits.length == (barcode ?: q).trim().length -> n.byBarcode(shopId, digits)
+                NetworkAvailability.isCode(q) -> n.byCode(shopId, q).firstOrNull()
+                else -> n.byArticle(shopId, q).firstOrNull()
+            }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
 
     fun search(raw: String) {
@@ -184,7 +263,11 @@ class LabelsViewModel(
                 when (val r = repo.lookup(q) { _find.value = FindState.Loading(it) }) {
                     is LookupResult.Single -> { setProduct(repo.details(r.urlKey), r.barcode); FindState.Idle }
                     is LookupResult.Many -> FindState.Pick(r.items, r.barcode)
-                    is LookupResult.NotFound -> FindState.NotFound(q)
+                    // На сайті немає — дані з 1С (назва, штрихкод, код, артикул); ціну треба вписати.
+                    is LookupResult.NotFound -> oneCByQuery(q, r.barcode)?.let { av ->
+                        setTag(TagData.merge(null, av.oneC(), av.barcode))
+                        FindState.Failed("На сайті товару немає — дані з 1С. Впиши ціну: без неї цінник не друкується.")
+                    } ?: FindState.NotFound(q)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -216,15 +299,13 @@ class LabelsViewModel(
         _find.value = FindState.Idle
     }
 
-    private fun setProduct(p: ProductDetails, barcode: String?) {
-        val price = p.price
-        _current.value = PriceTag(
-            name = p.name,
-            price = price?.finalPrice?.let(::formatPrice).orEmpty(),
-            oldPrice = price?.takeIf { it.regularPrice > it.finalPrice + 0.001 }?.regularPrice?.let(::formatPrice).orEmpty(),
-            article = p.article.orEmpty(),
-            barcode = barcode.orEmpty(),
-        )
+    /** Назва й ціни — з сайту; штрихкод, код і артикул — з 1С (stock/{штрихкод}), якщо є. */
+    private suspend fun setProduct(p: ProductDetails, barcode: String?) {
+        setTag(TagData.merge(p.toSite(), oneC(barcode, p.article), barcode))
+    }
+
+    private fun setTag(tag: PriceTag) {
+        _current.value = tag
         _copies.value = 1
         _status.value = PrintStatus.Idle
     }
@@ -292,9 +373,11 @@ fun LabelsScreen(
     onPrinters: (() -> Unit)?,
     scanned: String?,
     onScannedConsumed: () -> Unit,
+    /** Магазин співробітника — для даних 1С (свій код у залишках мережі). */
+    shopId: String = "",
 ) {
     val app = LocalContext.current.chudoApp
-    val vm: LabelsViewModel = viewModel(factory = viewModelFactory { initializer { LabelsViewModel(app.repository, app.printing) } })
+    val vm: LabelsViewModel = viewModel(factory = viewModelFactory { initializer { LabelsViewModel(app.repository, app.printing, app.networkLookup, shopId, app.labelBatch) } })
     val find by vm.find.collectAsStateWithLifecycle()
     val current by vm.current.collectAsStateWithLifecycle()
     val copies by vm.copies.collectAsStateWithLifecycle()
@@ -303,6 +386,7 @@ fun LabelsScreen(
     val preview by vm.preview.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val promo by vm.promo.collectAsStateWithLifecycle()
+    val landscape by vm.landscape.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var askPaper by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -394,7 +478,10 @@ fun LabelsScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(q.tag.name.ifEmpty { q.tag.barcode }, fontSize = 16.sp, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${q.tag.price} ₴, ${q.copies} шт", fontSize = 14.sp, color = m.textSecondary)
+                            Text(
+                                (if (q.tag.price.isBlank()) "немає ціни" else "${q.tag.price} ₴") + ", ${q.copies} шт", fontSize = 14.sp,
+                                color = if (q.tag.price.isBlank()) m.warningText else m.textSecondary,
+                            )
                         }
                         IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, "Прибрати з черги", tint = m.textSecondary) }
                     }
@@ -404,6 +491,7 @@ fun LabelsScreen(
 
         if (current != null || queue.isNotEmpty()) {
             item { FormatPicker(template, promo, vm) }
+            if (template.kind == LabelKind.PLAIN) item { OrientationPicker(template, landscape, vm::setLandscape) }
             preview?.let { img ->
                 item {
                     Image(
@@ -511,3 +599,9 @@ private fun FormatPicker(template: Template, promo: Boolean, vm: LabelsViewModel
 /** Предпросмотр листа A4 — четверть от 300 dpi. */
 private const val PREVIEW_SCALE = 0.25f
 
+
+/** Дані з 1С для цінника. */
+fun NetAvailability.oneC() = TagData.OneC(barcode, item.name, item.code, item.article)
+
+/** Дані з сайту для цінника. */
+fun ProductDetails.toSite() = TagData.Site(name, article, price?.finalPrice, price?.regularPrice)

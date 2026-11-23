@@ -3,6 +3,7 @@ package ua.chudo.scanner.print
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -27,6 +28,11 @@ class PrinterStore internal constructor(private val ds: DataStore<Preferences>) 
     val lastTemplate: Flow<Template?> = ds.data.map { p -> Template.entries.firstOrNull { it.name == p[TEMPLATE] } }
 
     suspend fun setLastTemplate(t: Template) = ds.edit { it[TEMPLATE] = t.name }
+
+    /** «Книжна / Альбомна» — окремо для кожного A4-шаблону; за замовчуванням [Template.defaultLandscape]. */
+    fun landscape(t: Template): Flow<Boolean> = ds.data.map { it[landscapeKey(t)] ?: t.defaultLandscape }
+    suspend fun setLandscape(t: Template, v: Boolean) = ds.edit { it[landscapeKey(t)] = v }
+    private fun landscapeKey(t: Template) = booleanPreferencesKey("landscape_${t.name}")
 
     suspend fun lastSync(): Long = ds.data.first()[SYNC] ?: 0L
     suspend fun setLastSync(at: Long) = ds.edit { it[SYNC] = at }

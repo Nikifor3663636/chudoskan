@@ -65,6 +65,9 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
         val total = plan.writes
         var done = 0
         onProgress(0, total)
+        // Серверний час кінця попереднього завантаження: усе, що запишемо зараз, матиме updatedAt пізніше.
+        // Так «змінені з минулого завантаження» не залежать від годинника телефону.
+        val previousEnd = if (total > 0) runCatching { db.collection(META).document(STOCK).get().await().getTimestamp("updatedAt") }.getOrNull() else null
 
         if (storeWrites.isNotEmpty()) {
             val b = db.batch()
@@ -87,12 +90,13 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
         val storeCount = plan.items.values.flatMap { it.q.keys }.toSet().size
         val seconds = (System.currentTimeMillis() - startedAt) / 1000
         if (total > 0) {
-            db.collection(META).document(STOCK).set(
-                mapOf(
-                    "updatedAt" to FieldValue.serverTimestamp(), "updatedBy" to employee.name.take(100),
-                    "items" to plan.items.size, "stores" to storeCount,
-                ),
-            ).await()
+            val meta = mutableMapOf<String, Any>(
+                "updatedAt" to FieldValue.serverTimestamp(), "updatedBy" to employee.name.take(100),
+                "items" to plan.items.size, "stores" to storeCount,
+            )
+            // Товари з updatedAt > changedAfter — «змінені з минулого завантаження» (пакетний друк цінників).
+            previousEnd?.let { meta["changedAfter"] = it }
+            db.collection(META).document(STOCK).set(meta).await()
             db.collection(ADMIN_LOG).add(
                 mapOf(
                     "by" to employee.uid, "at" to FieldValue.serverTimestamp(), "action" to ACTION,
