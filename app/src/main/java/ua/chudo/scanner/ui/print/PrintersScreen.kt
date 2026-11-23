@@ -78,6 +78,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.data.PcCard
+import ua.chudo.scanner.data.PcPairingException
+import ua.chudo.scanner.data.PcRepository
+import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.print.Cidr
 import ua.chudo.scanner.print.Discovered
 import ua.chudo.scanner.print.LabelKind
@@ -99,7 +103,70 @@ import ua.chudo.scanner.ui.common.StatusDot
 import ua.chudo.scanner.ui.theme.Mine
 
 /** «Профіль → Принтери» — только администратор: реестр магазина, проверка, тест, настройки Godex. */
-class PrintersViewModel(private val svc: PrintService, private val shop: String) : ViewModel() {
+class PrintersViewModel(
+    private val svc: PrintService,
+    private val shop: String,
+    private val employee: Employee? = null,
+    private val pcRepo: PcRepository? = null,
+) : ViewModel() {
+    /** Комп'ютери магазину з «ЧудоСкан Друк». */
+    private val _pcs = MutableStateFlow<List<PcCard>>(emptyList())
+    val pcs = _pcs.asStateFlow()
+    private val _pairing = MutableStateFlow(false)
+    val pairing = _pairing.asStateFlow()
+    private val _pairError = MutableStateFlow<String?>(null)
+    val pairError = _pairError.asStateFlow()
+
+    fun refreshPcs() {
+        val r = pcRepo ?: return
+        val e = employee ?: return
+        viewModelScope.launch { _pcs.value = runCatching { r.pcs(e.shopId) }.getOrDefault(_pcs.value) }
+    }
+
+    /** Код із вікна програми → devices/{uid}. true — підключено. */
+    fun pairPc(code: String, onDone: () -> Unit) {
+        val r = pcRepo ?: return
+        val e = employee ?: return
+        if (_pairing.value) return
+        _pairing.value = true
+        _pairError.value = null
+        viewModelScope.launch {
+            try {
+                val name = r.pair(e, code)
+                _snack.emit("Комп'ютер ${name} підключено")
+                onDone()
+                refreshPcs()
+                scan()
+            } catch (ex: CancellationException) {
+                throw ex
+            } catch (ex: PcPairingException) {
+                _pairError.value = ex.message
+            } catch (ex: Exception) {
+                _pairError.value = ex.authMessage()
+            } finally {
+                _pairing.value = false
+            }
+        }
+    }
+
+    fun clearPairError() { _pairError.value = null }
+
+    fun unpairPc(pc: PcCard) {
+        val r = pcRepo ?: return
+        val e = employee ?: return
+        viewModelScope.launch {
+            try {
+                r.unpair(e, pc)
+                _snack.emit("Комп'ютер ${pc.pcName} відключено")
+            } catch (ex: CancellationException) {
+                throw ex
+            } catch (ex: Exception) {
+                _snack.emit(ex.authMessage())
+            }
+            refreshPcs()
+        }
+    }
+
     val records = svc.records
     private val _status = MutableStateFlow<Map<String, PrinterStatus?>>(emptyMap())
     val status = _status.asStateFlow()
@@ -123,6 +190,7 @@ class PrintersViewModel(private val svc: PrintService, private val shop: String)
     init {
         viewModelScope.launch {
             refreshStatus(withTimeoutOrNull(5_000) { svc.records.filterNotNull().first() }.orEmpty())
+            refreshPcs()
             scan()
         }
     }
@@ -214,7 +282,7 @@ fun kindShort(k: LabelKind) = if (k == LabelKind.STICKY) "40×24" else "A4"
 fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val app = ctx.chudoApp
-    val vm: PrintersViewModel = viewModel(factory = viewModelFactory { initializer { PrintersViewModel(app.printing, employee.shop) } })
+    val vm: PrintersViewModel = viewModel(factory = viewModelFactory { initializer { PrintersViewModel(app.printing, employee.shop, employee, PcRepository(com.google.firebase.firestore.FirebaseFirestore.getInstance())) } })
     val records by vm.records.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val scanning by vm.scanning.collectAsStateWithLifecycle()
@@ -222,6 +290,11 @@ fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
     val usb by vm.usb.collectAsStateWithLifecycle()
     val agents by vm.agents.collectAsStateWithLifecycle()
     val testing by vm.testing.collectAsStateWithLifecycle()
+    val pcs by vm.pcs.collectAsStateWithLifecycle()
+    val pairBusy by vm.pairing.collectAsStateWithLifecycle()
+    val pairError by vm.pairError.collectAsStateWithLifecycle()
+    var pairOpen by rememberSaveable { mutableStateOf(false) }
+    var unpair by remember { mutableStateOf<PcCard?>(null) }
     val snackbar = remember { SnackbarHostState() }
     var manual by rememberSaveable { mutableStateOf(false) }
     var guide by rememberSaveable { mutableStateOf(false) }
@@ -249,16 +322,27 @@ fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
     }
     Box(Modifier.fillMaxSize()) {
         PrintersContent(
-            PrintersUi(list, usb, agents, unknown, status, main, scanning, testing),
+            PrintersUi(list, usb, agents, unknown, status, main, scanning, testing, pcs),
             PrintersActions(
                 onBack = onBack, onHelp = { guide = true }, onRefresh = vm::scan,
                 onTest = vm::test, onFindAgain = { vm.scan() }, onEdit = { editing = it.id },
                 onAddUnknown = vm::addUnknown, onManual = { manual = true },
+                onPairPc = { vm.clearPairError(); pairOpen = true }, onUnpairPc = { unpair = it },
             ),
         )
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
     }
 
+    if (pairOpen) PairDialog(pairBusy, pairError, onDismiss = { pairOpen = false }) { code -> vm.pairPc(code) { pairOpen = false } }
+    unpair?.let { pc ->
+        AlertDialog(
+            onDismissRequest = { unpair = null },
+            title = { Text("Відключити ${pc.pcName}?") },
+            text = { Text("Друк з телефонів на Godex цього комп'ютера зупиниться. На комп'ютері з'явиться новий код підключення.") },
+            confirmButton = { TextButton(onClick = { vm.unpairPc(pc); unpair = null }) { Text("Відключити") } },
+            dismissButton = { TextButton(onClick = { unpair = null }) { Text("Скасувати") } },
+        )
+    }
     if (guide) PrinterGuide(onClose = { guide = false })
     if (manual) ManualDialog(onDismiss = { manual = false }) { ip, kind -> vm.addManual(ip, kind) { manual = false } }
     editing?.let { id ->
@@ -278,6 +362,8 @@ data class PrintersUi(
     val main: Map<LabelKind, String?>,
     val scanning: Boolean,
     val testing: String?,
+    /** Комп'ютери магазину з «ЧудоСкан Друк» (devices + agents). */
+    val pcs: List<PcCard> = emptyList(),
 )
 
 class PrintersActions(
@@ -289,6 +375,8 @@ class PrintersActions(
     val onEdit: (PrinterRecord) -> Unit = {},
     val onAddUnknown: (Discovered, LabelKind) -> Unit = { _, _ -> },
     val onManual: () -> Unit = {},
+    val onPairPc: () -> Unit = {},
+    val onUnpairPc: (PcCard) -> Unit = {},
 )
 
 @Composable
@@ -327,9 +415,11 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
         items(ui.usb, key = { it.id }) { r -> RecordCard(r, ui, a) }
         if (ui.usb.isEmpty()) item(key = "e-usb") { Empty("Підключи принтер кабелем USB OTG — він з'явиться тут.") }
 
-        item(key = "h-pc") { SectionTitle("Через комп'ютер") }
+        item(key = "h-pc") { SectionTitle("Через комп'ютер (Godex)") }
+        items(ui.pcs, key = { "card" + it.uid }) { pc -> PcCardView(pc, a.onUnpairPc) }
         items(viaPc, key = { "pc" + it.id }) { r -> RecordCard(r, ui, a) }
-        if (viaPc.isEmpty()) item(key = "e-pc") { Empty("Немає комп'ютерів магазину з агентом друку на зв'язку.") }
+        if (viaPc.isEmpty() && ui.pcs.isEmpty()) item(key = "e-pc") { Empty("Встанови на комп'ютер з Godex програму «ЧудоСкан Друк» і підключи його кодом.") }
+        item(key = "pair") { MineButton("Підключити комп'ютер", a.onPairPc, Modifier.fillMaxWidth()) }
 
         item {
             Spacer(Modifier.height(10.dp))
@@ -537,6 +627,50 @@ private fun ManualDialog(onDismiss: () -> Unit, onAdd: (String, LabelKind) -> Un
             }
         },
         confirmButton = { TextButton(enabled = valid, onClick = { onAdd(ip.trim(), kind) }) { Text("Додати") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
+    )
+}
+
+/** Картка ПК: на зв'язку, Godex і стан, черга, остання помилка, версія; «Відключити». */
+@Composable
+private fun PcCardView(pc: PcCard, onUnpair: (PcCard) -> Unit) {
+    val m = Mine.colors
+    MineCard(padding = 16.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusDot(if (pc.online && pc.printerOk && pc.printer != null) m.success else m.warning)
+            Spacer(Modifier.width(8.dp))
+            Text(pc.pcName, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(if (pc.online) "на зв'язку" else "немає зв'язку", fontSize = 14.sp, color = if (pc.online) m.success else m.warningText)
+        }
+        Text(
+            pc.printer?.let { "$it — ${(pc.printerText ?: "готовий").lowercase()}" } ?: "Godex не знайдено",
+            Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 20.sp, color = if (pc.printerOk && pc.printer != null) m.text else m.warningText,
+        )
+        Text("У черзі: ${pc.queue}" + (if (pc.version.isNotBlank()) " · версія ${pc.version}" else ""), fontSize = 14.sp, color = m.textSecondary)
+        if (pc.lastError.isNotBlank()) Text("Остання помилка: ${pc.lastError}", fontSize = 14.sp, lineHeight = 19.sp, color = m.warningText)
+        MineButton("Відключити", { onUnpair(pc) }, Modifier.padding(top = 10.dp).fillMaxWidth(), tone = MineTone.DANGER)
+    }
+}
+
+/** «Підключити комп'ютер»: 6 цифр з вікна програми «ЧудоСкан Друк». */
+@Composable
+private fun PairDialog(busy: Boolean, error: String?, onDismiss: () -> Unit, onPair: (String) -> Unit) {
+    var code by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Підключити комп'ютер") },
+        text = {
+            Column {
+                Text("Відкрий на комп'ютері з Godex програму «ЧудоСкан Друк» і введи код із синьої смуги.", fontSize = 15.sp, lineHeight = 20.sp)
+                OutlinedTextField(
+                    code, { v -> code = v.filter(Char::isDigit).take(6) }, Modifier.padding(top = 12.dp).fillMaxWidth(),
+                    label = { Text("Код, 6 цифр") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                )
+                error?.let { Text(it, Modifier.padding(top = 8.dp), fontSize = 14.sp, color = Mine.colors.warningText) }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPair(code) }, enabled = !busy && code.length == 6) { Text(if (busy) "Підключаю…" else "Підключити") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
     )
 }

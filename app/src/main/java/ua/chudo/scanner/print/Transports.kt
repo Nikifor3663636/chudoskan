@@ -270,10 +270,13 @@ class AgentDirectory(private val db: () -> FirebaseFirestore?) {
     suspend fun printers(shopId: String, includeOffline: Boolean = false, strict: Boolean = false): List<PrinterRecord> {
         val fs = db() ?: return emptyList()
         if (shopId.isEmpty()) return emptyList()
-        val docs = try { fs.collection("agents").whereEqualTo("shopId", shopId).get().await().documents }
-            catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Exception) { if (strict) throw e else emptyList() }
-        return docs.filter { includeOffline || (online(it.getTimestamp("lastSeen")) && it.getBoolean("online") != false) }.flatMap { d ->
+        // Лише ПК, підключені до магазину (devices/{uid}): задання іншим агентам правила не приймуть.
+        val (docs, paired) = try {
+            fs.collection("agents").whereEqualTo("shopId", shopId).get().await().documents to
+                fs.collection("devices").whereEqualTo("shopId", shopId).get().await().documents.map { it.id }.toSet()
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (strict) throw e else emptyList<com.google.firebase.firestore.DocumentSnapshot>() to emptySet() }
+        return docs.filter { it.id in paired }.filter { includeOffline || (online(it.getTimestamp("lastSeen")) && it.getBoolean("online") != false) }.flatMap { d ->
             @Suppress("UNCHECKED_CAST")
             val list = d.get("printers") as? List<Map<String, Any?>> ?: emptyList()
             list.mapNotNull { m ->

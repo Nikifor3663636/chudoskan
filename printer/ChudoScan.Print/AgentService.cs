@@ -211,11 +211,14 @@ public sealed class AgentService : IDisposable
 
     private async Task HeartbeatAsync(bool online, CancellationToken ct)
     {
-        var printers = Printers.PrinterList(_godex).Select(p => FirestoreGateway.M(new JsonObject
+        // Стан Godex для картки ПК у застосунку: state (ok / offline / error) і текст українською.
+        var printers = _godex.Select(p => FirestoreGateway.M(new JsonObject
         {
             ["name"] = FirestoreGateway.S(p.Name),
             ["isDefault"] = FirestoreGateway.B(p.IsDefault),
-            ["kind"] = FirestoreGateway.S(p.Kind),
+            ["kind"] = FirestoreGateway.S("label_40x24"),
+            ["state"] = FirestoreGateway.S(p.State.ToString().ToLowerInvariant()),
+            ["text"] = FirestoreGateway.S(p.Text),
         }));
         var fields = new JsonObject
         {
