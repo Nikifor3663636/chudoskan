@@ -1,6 +1,7 @@
 package ua.chudo.scanner.ui.stock
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
@@ -85,6 +86,9 @@ import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.ImportResult
 import ua.chudo.scanner.data.LookupResult
+import ua.chudo.scanner.data.NetAvailability
+import ua.chudo.scanner.data.NetworkAvailability
+import ua.chudo.scanner.data.NetworkStockLookup
 import ua.chudo.scanner.data.ParsedStock
 import ua.chudo.scanner.data.ShopStockInfo
 import ua.chudo.scanner.data.ShopStockRepository
@@ -94,6 +98,7 @@ import ua.chudo.scanner.data.StockItem
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.Avatar
 import ua.chudo.scanner.ui.common.ErrorState
+import ua.chudo.scanner.ui.common.MineCard
 import ua.chudo.scanner.ui.common.MessageState
 import ua.chudo.scanner.ui.common.ProductCard
 import ua.chudo.scanner.ui.common.ProductImage
@@ -123,7 +128,12 @@ sealed interface StockState {
         val item: StockItem?,
         /** Не удалось прочитать остатки (нет сети, нет доступа). */
         val stockError: String?,
+        /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, показуємо як раніше. */
+        val net: NetAvailability? = null,
     ) : StockState
+
+    /** Кілька товарів мережі з тим самим кодом 1С або артикулом. */
+    data class NetPick(val query: String, val items: List<NetAvailability>) : StockState
 }
 
 sealed interface ImportState {
@@ -140,6 +150,7 @@ class StockViewModel(
     private val repo: ChudoRepository,
     private val stock: ShopStockRepository,
     private val prefs: AppPrefs,
+    private val net: NetworkStockLookup? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow<StockState>(StockState.Idle)
     val state = _state.asStateFlow()
@@ -163,23 +174,46 @@ class StockViewModel(
         val q = raw.trim().ifEmpty { return }
         launchState {
             _state.value = StockState.Loading("Шукаємо…")
+            // Код 1С (BOC022446) — одразу в залишках мережі: на сайті його немає.
+            if (NetworkAvailability.isCode(q)) netResult(q, netTry { it.byCode(employee.shopId, q) }.orEmpty())?.let { return@launchState it }
             when (val r = repo.lookup(q) { _state.value = StockState.Loading(it) }) {
                 is LookupResult.Single -> load(r.urlKey, r.barcode)
                 is LookupResult.Many -> { last = null; StockState.Pick(q, r.items) }
                 is LookupResult.NotFound -> {
                     last = null
-                    // На сайте нет — может, есть в выгрузке магазина (по артикулу или штрихкоду).
-                    val item = runCatching { stock.find(employee.shopId, q, listOfNotNull(r.barcode)) }.getOrNull()
-                    if (item != null) StockState.Ready(null, null, item, null) else StockState.NotFound(q)
+                    // На сайті немає — шукаємо в залишках мережі (штрихкод або артикул), потім у вивантаженні магазину.
+                    val found = netTry { n ->
+                        val bc = r.barcode ?: q.takeIf { it.all(Char::isDigit) }
+                        bc?.let { n.byBarcode(employee.shopId, it) }?.let(::listOf) ?: n.byArticle(employee.shopId, q)
+                    }.orEmpty()
+                    netResult(q, found) ?: run {
+                        val item = runCatching { stock.find(employee.shopId, q, listOfNotNull(r.barcode)) }.getOrNull()
+                        if (item != null) StockState.Ready(null, null, item, null) else StockState.NotFound(q)
+                    }
                 }
             }
         }
     }
 
-    /** Скан: одно чтение stock/bc_{код}, без сайта. */
+    private fun netResult(q: String, found: List<NetAvailability>): StockState? = when (found.size) {
+        0 -> null
+        1 -> StockState.Ready(null, null, null, null, found.single())
+        else -> StockState.NetPick(q, found)
+    }
+
+    fun openNet(av: NetAvailability) { job?.cancel(); last = null; _state.value = StockState.Ready(null, null, null, null, av) }
+
+    /** Помилка читання залишків мережі не заважає показати старі дані. */
+    private suspend fun <T> netTry(block: suspend (NetworkStockLookup) -> T?): T? {
+        val n = net ?: return null
+        return try { block(n) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+    }
+
+    /** Скан: ОДНЕ читання stock/{штрихкод}; немає там — як раніше, stock/bc_{код} свого магазину. */
     fun scanned(code: String) = launchState {
         last = null
-        _state.value = StockState.Loading("Перевіряємо твій магазин…")
+        _state.value = StockState.Loading("Перевіряємо залишки…")
+        netTry { it.byBarcode(employee.shopId, code) }?.let { return@launchState StockState.Ready(null, null, null, null, it) }
         try {
             stock.byBarcode(employee.shopId, code)?.let { StockState.Ready(null, null, it, null) }
                 ?: StockState.NotInExport(code)
@@ -202,6 +236,8 @@ class StockViewModel(
         val p = repo.details(key)
         val site = runCatching { repo.shops(p.id, employee.region) }.getOrNull()
         val mine = site?.firstOrNull { same(it.address, employee.shop) }?.available
+        val n = netTry { l -> barcode?.let { l.byBarcode(employee.shopId, it) } ?: p.article?.let { l.byArticle(employee.shopId, it).firstOrNull() } }
+        if (n != null) return StockState.Ready(p, mine, null, null, n)
         var err: String? = null
         val item = try {
             stock.find(employee.shopId, p.article, listOfNotNull(barcode))
@@ -285,7 +321,7 @@ fun StockScreen(
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
         key = "stock-${employee.uid}",
-        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs) } },
+        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
@@ -349,9 +385,24 @@ fun StockScreen(
                 item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
                 items(st.items, key = { it.id }) { ProductCard(it, onClick = { vm.open(it.urlKey) }) }
             }
+            is StockState.NetPick -> {
+                item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
+                items(st.items, key = { it.barcode }) { av ->
+                    MineCard(Modifier.clickable { vm.openNet(av) }, padding = 16.dp) {
+                        Text(av.item.name.ifBlank { av.barcode }, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold)
+                        Text(netIds(av.item.code, av.item.article, av.barcode), fontSize = 14.sp, color = Mine.colors.textSecondary)
+                    }
+                }
+            }
             is StockState.Ready -> {
-                item { ProductHeader(st.product, st.item) }
-                item { MyShopCard(employee, st, info != null) }
+                val net = st.net
+                item { ProductHeader(st.product, st.item, net) }
+                if (net != null) {
+                    item { NetworkStockCard(net) }
+                    st.siteAvailable?.let { have -> item { SiteLine(have) } }
+                } else {
+                    item { MyShopCard(employee, st, info != null) }
+                }
             }
         }
     }
@@ -407,16 +458,31 @@ private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
     }
 }
 
+/** «Код BOC022446 · Арт. 39217 · 4823077601234». */
+private fun netIds(code: String, article: String, barcode: String) =
+    listOfNotNull(code.ifBlank { null }?.let { "Код $it" }, article.ifBlank { null }?.let { "Арт. $it" }, barcode).joinToString(" · ")
+
 @Composable
-private fun ProductHeader(p: ProductDetails?, item: StockItem?) {
+private fun ProductHeader(p: ProductDetails?, item: StockItem?, net: NetAvailability? = null) {
     val m = Mine.colors
     Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         ProductImage(p?.images?.firstOrNull(), Modifier.size(64.dp))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(p?.name ?: item?.name ?: "—", fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
-            (p?.article ?: item?.article)?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
+            Text(p?.name ?: net?.item?.name?.ifBlank { null } ?: item?.name ?: "—", fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
+            if (net != null) Text(netIds(net.item.code, net.item.article.ifBlank { p?.article.orEmpty() }, net.barcode), fontSize = 14.sp, color = m.textSecondary)
+            else (p?.article ?: item?.article)?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
         }
+    }
+}
+
+@Composable
+private fun SiteLine(have: Boolean) {
+    val m = Mine.colors
+    Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        StatusDot(if (have) m.success else m.outline)
+        Spacer(Modifier.width(8.dp))
+        Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
     }
 }
 

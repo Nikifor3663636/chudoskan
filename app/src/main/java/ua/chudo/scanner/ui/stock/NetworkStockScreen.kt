@@ -78,7 +78,12 @@ sealed interface NetState {
     data class Failed(val message: String) : NetState
 }
 
-class NetworkStockViewModel(private val employee: Employee, private val repo: NetworkStockRepository) : ViewModel() {
+class NetworkStockViewModel(
+    private val employee: Employee,
+    private val repo: NetworkStockRepository,
+    /** Після завантаження: показ залишків перечитає склади й дату. */
+    private val onImported: suspend () -> Unit = {},
+) : ViewModel() {
     private val _state = MutableStateFlow<NetState>(NetState.Idle)
     val state: StateFlow<NetState> = _state.asStateFlow()
     private val _info = MutableStateFlow<NetworkStockInfo?>(null)
@@ -145,6 +150,7 @@ class NetworkStockViewModel(private val employee: Employee, private val repo: Ne
                 _state.value = NetState.Uploading(done, total)
             }
             _state.value = NetState.Done(r)
+            runCatching { onImported() }
             refreshInfo()
         }
     }
@@ -176,7 +182,7 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
     val app = LocalContext.current.chudoApp
     val vm: NetworkStockViewModel = viewModel(
         key = "network-stock-${employee.uid}",
-        factory = viewModelFactory { initializer { NetworkStockViewModel(employee, app.networkStock) } },
+        factory = viewModelFactory { initializer { NetworkStockViewModel(employee, app.networkStock) { app.networkLookup.invalidate() } } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()

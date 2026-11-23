@@ -74,7 +74,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.StockItem
+import ua.chudo.scanner.ui.stock.NetworkStockCard
 import ua.chudo.scanner.print.PriceFormat
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.formatPrice
@@ -126,10 +128,17 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
     val p = s.product
     val url = productUrl(Lang.UA, p?.urlKey ?: vm.urlKey, p?.urlSuffix ?: ".html")
 
-    // Остаток своего магазина из выгрузки 1С — показываем у своего магазина в списке наличия.
+    var net by remember { mutableStateOf<NetAvailability?>(null) }
+    // Залишки мережі: ОДНЕ читання stock/{штрихкод} (без штрихкоду — за артикулом).
+    // Немає даних — як раніше: залишок свого магазину з shops/{shopId}/stock у списку наявності сайту.
     LaunchedEffect(p?.id) {
         if (p == null) return@LaunchedEffect
-        own = runCatching { app.shopStock.find(employee.shopId, p.article, listOfNotNull(vm.barcode)) }.getOrNull()
+        net = runCatching {
+            val bc = vm.barcode
+            if (bc != null) app.networkLookup.byBarcode(employee.shopId, bc)
+            else p.article?.let { app.networkLookup.byArticle(employee.shopId, it).firstOrNull() }
+        }.getOrNull()
+        if (net == null) own = runCatching { app.shopStock.find(employee.shopId, p.article, listOfNotNull(vm.barcode)) }.getOrNull()
     }
 
     Box(Modifier.fillMaxSize().background(pageBg())) {
@@ -143,7 +152,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
                         p, s.shops, employee.shop, own, region.name, vm.barcode, s.barcodeToRemember,
                         onPrint = { printSheet = true }, onScan = onScan, onCity = { showRegions = true },
                         onRetryShops = vm::loadShops, onMap = ctx::openMap, onSite = { ctx.openUrl(url) },
-                        onRemember = vm::rememberBarcode, onForget = vm::dismissRemember,
+                        onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net,
                     )
                 }
             }
@@ -195,6 +204,8 @@ fun ProductPage(
     onSite: () -> Unit = {},
     onRemember: () -> Unit = {},
     onForget: () -> Unit = {},
+    /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, лише наявність із сайту. */
+    net: NetAvailability? = null,
 ) {
     LazyColumn(Modifier.background(pageBg()), contentPadding = PaddingValues(bottom = 32.dp)) {
         item { Breadcrumbs(p.categories) }
@@ -203,6 +214,11 @@ fun ProductPage(
         item { Availability(p.stock) }
         item { PriceBox(p, onPrint = onPrint, onScan = onScan) }
         toRemember?.let { bc -> item { RememberCard(bc, onRemember, onForget) } }
+        net?.let { av ->
+            item { SectionDivider() }
+            item { SectionTitle("Залишки за даними 1С") }
+            item { NetworkStockCard(av, Modifier.padding(horizontal = H)) }
+        }
         item { SectionDivider() }
         item { SectionTitle("Наявність в магазинах") }
         item { CityField(city, onCity) }
