@@ -94,7 +94,7 @@ public sealed record StoredAuth(string Uid, string RefreshToken)
     }
 }
 
-/// <summary>Вхід без ключа сервісного акаунта: анонімний користувач Firebase Auth (REST).</summary>
+/// <summary>Вхід: анонімний користувач Firebase Auth (REST), без жодних ключів у програмі.</summary>
 public sealed class FirebaseAuthClient(HttpClient http, AppSettings settings)
 {
     private StoredAuth? _auth = StoredAuth.Load();

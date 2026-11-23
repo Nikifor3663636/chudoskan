@@ -85,7 +85,7 @@ public static partial class Printers
         return new GodexPrinter(r.Name, r.Default, shared, state, paper, text);
     }
 
-    // ---------- Перенесено з Node-агента (agent/lib.js) ----------
+    // ---------- Вид принтера за ім'ям і підмережі ----------
 
     [GeneratedRegex(@"brother|mfc-|hl-|dcp-|laserjet|kyocera|xerox|ricoh|canon|epson|pantum|samsung", RegexOptions.IgnoreCase)]
     private static partial Regex OfficeName();

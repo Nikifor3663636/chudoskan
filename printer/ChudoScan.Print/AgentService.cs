@@ -19,7 +19,7 @@ public sealed record AgentStatus(
 
 /// <summary>
 /// Підключення ПК до магазину (devicePairing → devices/{uid}), пульс agents/{uid} кожні 60 с, друк printJobs
-/// по одному (опитування кожні 5 с), обслуговування черги кожні 5 хв. Без ключа сервісного акаунта.
+/// по одному (опитування кожні 5 с), обслуговування черги кожні 5 хв. Вхід — анонімний користувач Firebase.
 /// </summary>
 public sealed class AgentService : IDisposable
 {

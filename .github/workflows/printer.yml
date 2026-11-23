@@ -44,7 +44,7 @@ jobs:
           "VERSION=$v" | Out-File -Append $env:GITHUB_ENV
 
       # Публічний Web API key і projectId — з того самого секрету, що й для застосунку (google-services.json).
-      # Ключ сервісного акаунта не потрібен і в збірку не потрапляє.
+      # Приватних ключів програма не має й не потребує.
       - name: Firebase config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
@@ -94,5 +94,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create $env:GITHUB_REF_NAME printer/installer/Output/*.exe --title "ЧудоСкан Друк $env:VERSION" `
+          gh release create $env:GITHUB_REF_NAME printer/installer/Output/*.exe --latest=false --title "ЧудоСкан Друк $env:VERSION" `
             --notes "Програма для друку етикеток на Godex з комп'ютера магазину. Встановлення без прав адміністратора: x64 — для 64-бітної Windows 10/11, x86 — для 32-бітної."

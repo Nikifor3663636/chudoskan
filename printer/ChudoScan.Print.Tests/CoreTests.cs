@@ -68,7 +68,7 @@ public class PrinterTests
         Assert.Equal(text, p.Text);
     }
 
-    // ---------- Перенесено з agent/lib.test.js ----------
+    // ---------- Вид принтера за ім'ям і підмережі ----------
 
     [Fact]
     public void KindByName()

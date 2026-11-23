@@ -205,7 +205,7 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // ПК-агент друку: пише себе сам, поки пристрій підключений (devices/{uid}).
+    // «ЧудоСкан Друк» на ПК: пише себе сам, поки пристрій підключений (devices/{uid}).
     match /agents/{agentId} {
       allow read: if (signedIn() && request.auth.uid == agentId) || canSee(resource.data.shopId);
       allow create, update: if signedIn() && request.auth.uid == agentId

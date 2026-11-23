@@ -16,10 +16,6 @@ iosApp/iosApp/GoogleService-Info.plist
 proxy/node_modules/
 proxy/.wrangler/
 
-# ПК-агент друку: залежності та ключі сервісного акаунта не комітимо.
-agent/node_modules/
-agent/*.json.key
-agent/service-account*.json
 
 # Тести правил Firestore.
 rules-tests/node_modules/

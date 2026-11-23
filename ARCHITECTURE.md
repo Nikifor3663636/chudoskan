@@ -255,7 +255,7 @@ flowchart LR
     pick --> c[кеш сессии] & reg[реестр магазина<br/>первый ответивший] & disc[поиск ≤ 6 с] & agent[ПК-агент]
     c & reg & disc --> tcp[TCP 9100]
     pick --> usb[USB OTG]
-    agent --> jobs[(Firestore printJobs)] --> pc[agent/ на ПК<br/>RAW в спулер Windows]
+    agent --> jobs[(Firestore printJobs)] --> pc[«ЧудоСкан Друк» на ПК<br/>RAW в спулер Windows]
 ```
 
 - **Реестр** `shops/{shopId}/printers/{id}`: id — MAC (SNMP `ifPhysAddress`), иначе модель+имя, поэтому смена IP
@@ -299,7 +299,7 @@ Lint Android настроен строго: предупреждения счи�
 | SHA-1 | `shared/src/androidUnitTest/Sha1Test.kt` | Отпечаток для `shopId` |
 | Печать | `app/src/test/.../print/*Test.kt` | EAN-13 (ZXing), байты EZPL / PCL / ZPL / TSPL, SNMP, mDNS, CIDR, автовыбор принтера |
 | Дизайн | `app/src/test/.../design/DesignSnapshots.kt` | Снимки Paparazzi экранов «Mine» и ценников; штрихкод из Bitmap печати читается ZXing |
-| ПК-агент | `agent/lib.test.js` | Вид принтера по имени, список принтеров ПК |
+| «ЧудоСкан Друк» | `printer/ChudoScan.Print.Tests` | Godex из WMI и дедупликация, код подключения, зависшие задания, общий статус, тестовая этикетка |
 
 Если сайт поменяет разметку, первыми упадут тесты на `fixtures`: видно, что сломалось, до того, как
 это заметят продавцы.

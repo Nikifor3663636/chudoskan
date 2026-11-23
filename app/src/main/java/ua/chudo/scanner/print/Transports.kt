@@ -229,7 +229,7 @@ class AgentTransport(
     override suspend fun send(bytes: ByteArray) {
         if (shopId.isEmpty() || uid.isEmpty()) throw PrintException("Друк через комп'ютер доступний після входу співробітника.")
         if (bytes.size > MAX_BYTES) throw PrintException("Завдання завелике для друку через комп'ютер (${bytes.size / 1024} КБ). Друкуй меншими частинами.")
-        if (!isAlive()) throw PrintException("Комп'ютер магазину не на зв'язку понад 3 хв. Перевір, що він увімкнений і агент друку запущений.")
+        if (!isAlive()) throw PrintException("Комп'ютер магазину не на зв'язку понад 3 хв. Перевір, що він увімкнений і програма «ЧудоСкан Друк» запущена.")
         val ref = db.collection("printJobs").add(
             mapOf(
                 "agentId" to agentId, "printer" to printer, "shopId" to shopId, "by" to uid,
@@ -251,7 +251,7 @@ class AgentTransport(
         when (status) {
             "done" -> Unit
             "error" -> throw PrintException(error ?: "Комп'ютер не зміг надрукувати завдання.")
-            else -> throw PrintException("Комп'ютер не взяв завдання за ${AGENT_WAIT_MS / 1000} с. Перевір агент друку на ПК.")
+            else -> throw PrintException("Комп'ютер не взяв завдання за ${AGENT_WAIT_MS / 1000} с. Перевір програму «ЧудоСкан Друк» на ПК.")
         }
     }
 

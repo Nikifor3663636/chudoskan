@@ -4,9 +4,13 @@ name: Android
 on:
   push:
     branches: [main]
-    paths-ignore: [docs/**, "*.md", iosApp/**, proxy/**, .github/workflows/ios.yml, .github/workflows/pages.yml]
+    tags: ["v*"]
+    paths-ignore: [docs/**, "*.md", iosApp/**, proxy/**, printer/**, rules-tests/**, .github/workflows/ios.yml, .github/workflows/pages.yml, .github/workflows/printer.yml, .github/workflows/rules.yml]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   core:
@@ -69,3 +73,15 @@ jobs:
         with:
           name: ChudoSkan-Android
           path: app/build/outputs/apk/release/*.apk
+
+      # Тег vX.Y — реліз з APK (його бере сторінка встановлення).
+      - name: Реліз
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$apk" "ChudoSkan-$v.apk"
+          gh release create "$GITHUB_REF_NAME" "ChudoSkan-$v.apk" --latest --title "ЧудоСкан $v" \
+            --notes "Android 8.0+. Нова версія ставиться поверх старої."
