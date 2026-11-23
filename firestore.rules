@@ -1,30 +1,47 @@
 rules_version = '2';
 
-// ЧудоСкан: сотрудник видит и загружает остатки только своего магазина.
-// Публикация: firebase deploy --only firestore:rules
+// ЧудоСкан. Ролі: співробітник (approved), адмін магазину (admin), адмін мережі (superAdmin).
+// superAdmin і stockAdmin ставляться тільки в консолі Firebase — з клієнта їх не змінює ніхто.
+// Публікація: firebase deploy --only firestore:rules. Тести: rules-tests (npm test).
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
 
-    function me() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+
+    function hasMe() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+
+    // Підтверджений співробітник (будь-якого магазину).
+    function isApproved() { return hasMe() && me().get('approved', false) == true; }
+
+    // Підтверджений співробітник саме цього магазину.
+    function worksAt(shopId) { return isApproved() && me().get('shopId', '') == shopId; }
+
+    // Адмін свого магазину (users/{uid}.admin).
+    function isAdmin() { return isApproved() && me().get('admin', false) == true; }
+
+    // Адмін мережі.
+    function isSuperAdmin() { return isApproved() && me().get('superAdmin', false) == true; }
+
+    // Завантажує залишки мережі.
+    function isStockAdmin() { return (isApproved() && me().get('stockAdmin', false) == true) || isSuperAdmin(); }
+
+    // ПК магазину, підключений адміном: devices/{auth.uid}.shopId.
+    function isDevice(shopId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/devices/$(request.auth.uid))
+        && get(/databases/$(database)/documents/devices/$(request.auth.uid)).data.shopId == shopId;
     }
 
-    // Подтверждённый администратором сотрудник именно этого магазина.
-    function worksAt(shopId) {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && me().approved == true
-        && me().shopId == shopId;
-    }
+    function canManage(shopId) { return (isAdmin() && worksAt(shopId)) || isSuperAdmin(); }
 
-    // Администратор магазина: поле admin = true в users/{uid}, ставится только в консоли.
-    function isAdmin() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && me().admin == true;
-    }
+    function canSee(shopId) { return worksAt(shopId) || isSuperAdmin(); }
+
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // Поле не змінилося (або його не було й немає).
+    function same(field) { return request.resource.data.get(field, null) == resource.data.get(field, null); }
 
     // Телефон в анкете — номер, под которым вошли: логин «380XXXXXXXXX@tel.chudoostriv.app»
     // (вход по номеру и паролю) или привязанный телефон из токена.
@@ -35,47 +52,80 @@ service cloud.firestore {
         || request.auth.token.get('email', '') == request.resource.data.phone.replace('[+]', '') + '@tel.chudoostriv.app';
     }
 
+    // Код магазину — число з «ЧО NN»: "22".
+    function isShopCode(c) { return c is string && c.matches('^[0-9]{1,4}$'); }
+
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      // Анкету создаёт сам сотрудник при регистрации, всегда неподтверждённой.
+      // Сам; адмін — лише співробітників свого магазину (запит list має фільтрувати shopId); адмін мережі — усіх.
+      allow get, list: if (signedIn() && request.auth.uid == uid)
+        || (isAdmin() && worksAt(resource.data.shopId))
+        || isSuperAdmin();
+
+      // Анкету створює сам співробітник під час реєстрації, завжди непідтвердженою.
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.approved == false
         && phoneOk()
         && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt']);
-      // Менять магазин и подтверждение может только администратор (в консоли правила не действуют).
-      // Сам сотрудник может: до подтверждения — переписать анкету, после — только имя и привязанный телефон.
-      // Поле admin сотрудник не меняет никогда (ни до, ни после подтверждения).
-      allow update: if signedIn() && request.auth.uid == uid && phoneOk()
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'approved', 'createdAt', 'admin'])
-        && request.resource.data.get('admin', false) == resource.data.get('admin', false) && (
-        (resource.data.approved == false && request.resource.data.approved == false)
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone'])
+
+      // Сам: до підтвердження — переписати анкету, після — лише ім'я й телефон.
+      // Ролі (approved, admin, superAdmin, stockAdmin) сам не змінює ніколи.
+      allow update: if signedIn() && request.auth.uid == uid && phoneOk() && (
+        (resource.data.approved == false && request.resource.data.approved == false
+          && changed().hasOnly(['name', 'phone', 'region', 'shop', 'shopId', 'createdAt']))
+        || changed().hasOnly(['name', 'phone'])
       );
+
+      // Чужу анкету: адмін свого магазину або адмін мережі, лише поля підтвердження й магазину.
+      // Адмін магазину не переводить в інший магазин (і тому не робить адміном в іншому).
+      allow update: if signedIn() && request.auth.uid != uid
+        && canManage(resource.data.shopId)
+        && changed().hasOnly(['approved', 'admin', 'shopId', 'region', 'shop', 'approvedBy', 'changedAt'])
+        && (isSuperAdmin() || same('shopId'))
+        && request.resource.data.approved is bool
+        && request.resource.data.get('admin', false) is bool
+        && request.resource.data.shopId is string && request.resource.data.shopId.size() <= 40
+        && (!('approvedBy' in changed()) || request.resource.data.approvedBy == request.auth.uid)
+        && (!('changedAt' in changed()) || request.resource.data.changedAt == request.time);
+
       allow delete: if false;
     }
 
     match /shops/{shopId} {
-      allow read: if worksAt(shopId);
-      // Сводка последней выгрузки остатков; удалить магазин из приложения нельзя.
-      allow create, update: if worksAt(shopId)
-        && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy', 'printerSubnets'])
+      allow read: if canSee(shopId);
+
+      // Зведення останнього вивантаження залишків магазину; printerSubnets і code1C тут не змінюються.
+      allow create: if worksAt(shopId)
+        && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
         && request.resource.data.rows is int
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.get('printerSubnets', []) == (resource == null ? [] : resource.data.get('printerSubnets', []));
-      // Подсети, где искать принтеры: телефон дописывает подсеть найденного принтера (только это поле).
+        && request.resource.data.updatedAt == request.time;
+      allow update: if worksAt(shopId)
+        && changed().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
+        && request.resource.data.rows is int
+        && request.resource.data.updatedAt == request.time;
+
+      // Підмережі, де шукати принтери: телефон дописує підмережу знайденого принтера (лише це поле).
       allow create: if worksAt(shopId)
         && request.resource.data.keys().hasOnly(['printerSubnets'])
         && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
       allow update: if worksAt(shopId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['printerSubnets'])
+        && changed().hasOnly(['printerSubnets'])
         && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
+
+      // Код магазину в 1С — адмін магазину або мережі.
+      allow create: if canManage(shopId)
+        && request.resource.data.keys().hasOnly(['code1C'])
+        && request.resource.data.code1C is string && request.resource.data.code1C.size() <= 40;
+      allow update: if canManage(shopId)
+        && changed().hasOnly(['code1C'])
+        && request.resource.data.code1C is string && request.resource.data.code1C.size() <= 40;
+
       allow delete: if false;
 
-      // Общий реестр принтеров магазина. Найденный или напечатавший телефон делает upsert;
-      // плотность и скорость Godex меняет только администратор; удаляет только администратор.
+      // Спільний реєстр принтерів магазину. Знайдений або той, що надрукував, телефон робить upsert;
+      // щільність, швидкість і назву Godex змінює лише адмін; видаляє лише адмін.
       match /printers/{printerId} {
-        allow read: if worksAt(shopId);
-        allow create, update: if worksAt(shopId)
+        allow read: if canSee(shopId);
+        allow create, update: if (worksAt(shopId) || canManage(shopId))
           && request.resource.data.keys().hasOnly(['model', 'kind', 'ip', 'port', 'transport', 'agentId', 'printerName', 'lastSeen', 'lastOkBy', 'density', 'speed', 'name'])
           && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 40))
           && request.resource.data.kind in ['label_40x24', 'a4']
@@ -85,15 +135,15 @@ service cloud.firestore {
           && request.resource.data.port is int
           && request.resource.data.lastSeen == request.time
           && (!('lastOkBy' in request.resource.data) || request.resource.data.lastOkBy is string)
-          && (isAdmin() || (
+          && (canManage(shopId) || (
             request.resource.data.get('density', null) == (resource == null ? null : resource.data.get('density', null))
             && request.resource.data.get('speed', null) == (resource == null ? null : resource.data.get('speed', null))
             && request.resource.data.get('name', null) == (resource == null ? null : resource.data.get('name', null))
           ));
-        allow delete: if worksAt(shopId) && isAdmin();
+        allow delete: if canManage(shopId);
       }
 
-      // Строка остатков: только известные поля, количество — число.
+      // Старі залишки магазину (до залишків мережі). Лишаються як були.
       match /stock/{item} {
         allow read, delete: if worksAt(shopId);
         allow create, update: if worksAt(shopId)
@@ -102,7 +152,7 @@ service cloud.firestore {
           && item.size() <= 200;
       }
 
-      // Уточнения «де лежить товар» на плане магазина. Менять нельзя — только удалить и поставить заново.
+      // Уточнення «де лежить товар» на плані магазину. Змінювати не можна — лише видалити й поставити знову.
       match /layoutPins/{pin} {
         allow read, delete: if worksAt(shopId);
         allow create: if worksAt(shopId)
@@ -117,24 +167,149 @@ service cloud.firestore {
       }
     }
 
-    // ПК-агент магазина: компьютер с принтером (Godex по USB). Пишет себя сам сервисным ключом
-    // (правила его не касаются): shopId, pcName, online, lastSeen, printers: [{name, isDefault, kind}].
-    match /agents/{agentId} {
-      allow read: if worksAt(resource.data.shopId);
-      allow write: if false;
+    // ---------- Підключення ПК магазину ----------
+
+    // ПК показує шестизначний код; адмін вводить його в застосунку. Код живе до 16 хв.
+    match /devicePairing/{code} {
+      allow create: if signedIn()
+        && code.matches('^[1-9][0-9]{5}$')
+        && request.resource.data.keys().hasOnly(['uid', 'pcName', 'expires'])
+        && request.resource.data.keys().hasAll(['uid', 'pcName', 'expires'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.pcName is string && request.resource.data.pcName.size() <= 100
+        && request.resource.data.expires is timestamp
+        && request.resource.data.expires > request.time
+        && request.resource.data.expires <= request.time + duration.value(16, 'm');
+      allow get: if isAdmin() || isSuperAdmin();
+      allow list, update: if false;
+      allow delete: if (signedIn() && resource.data.uid == request.auth.uid) || isAdmin() || isSuperAdmin();
     }
 
-    // Задания для ПК-агента: сотрудник создаёт задание своего магазина и читает только свои.
-    // Статус printing → done / error ставит агент.
+    // Підключений ПК: id = uid його входу. Створює адмін за чинним кодом із devicePairing.
+    match /devices/{uid} {
+      allow create: if signedIn()
+        && canManage(request.resource.data.shopId)
+        && request.resource.data.keys().hasOnly(['shopId', 'pcName', 'code', 'approvedBy', 'approvedAt'])
+        && request.resource.data.keys().hasAll(['shopId', 'pcName', 'code', 'approvedBy', 'approvedAt'])
+        && request.resource.data.shopId is string
+        && request.resource.data.pcName is string && request.resource.data.pcName.size() <= 100
+        && request.resource.data.approvedBy == request.auth.uid
+        && request.resource.data.approvedAt == request.time
+        && request.resource.data.code is string
+        && exists(/databases/$(database)/documents/devicePairing/$(request.resource.data.code))
+        && get(/databases/$(database)/documents/devicePairing/$(request.resource.data.code)).data.uid == uid
+        && get(/databases/$(database)/documents/devicePairing/$(request.resource.data.code)).data.expires > request.time;
+      allow read: if (signedIn() && request.auth.uid == uid) || canSee(resource.data.shopId);
+      allow delete: if (signedIn() && request.auth.uid == uid) || canManage(resource.data.shopId);
+      allow update: if false;
+    }
+
+    // ПК-агент друку: пише себе сам, поки пристрій підключений (devices/{uid}).
+    match /agents/{agentId} {
+      allow read: if (signedIn() && request.auth.uid == agentId) || canSee(resource.data.shopId);
+      allow create, update: if signedIn() && request.auth.uid == agentId
+        && isDevice(request.resource.data.shopId)
+        && request.resource.data.keys().hasOnly(['shopId', 'pcName', 'online', 'lastSeen', 'version', 'queue', 'lastError', 'printers']);
+      allow delete: if signedIn() && request.auth.uid == agentId && isDevice(resource.data.shopId);
+    }
+
+    // Завдання для ПК-агента. agentId — підключений пристрій цього магазину.
+    // Статус printing → done / error ставить пристрій-адресат.
     match /printJobs/{job} {
-      allow create: if worksAt(request.resource.data.shopId)
+      allow create: if canSee(request.resource.data.shopId)
         && request.resource.data.keys().hasOnly(['agentId', 'printer', 'shopId', 'by', 'at', 'status', 'lang', 'data', 'size'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.at == request.time
         && request.resource.data.status == 'queued'
         && request.resource.data.agentId is string && request.resource.data.printer is string
+        && exists(/databases/$(database)/documents/devices/$(request.resource.data.agentId))
+        && get(/databases/$(database)/documents/devices/$(request.resource.data.agentId)).data.shopId == request.resource.data.shopId
         && request.resource.data.data is bytes && request.resource.data.data.size() <= 900000;
-      allow read: if signedIn() && resource.data.by == request.auth.uid;
+      allow read: if signedIn()
+        && (resource.data.by == request.auth.uid || resource.data.agentId == request.auth.uid);
+      allow update: if signedIn() && resource.data.agentId == request.auth.uid
+        && isDevice(resource.data.shopId)
+        && changed().hasOnly(['status', 'startedAt', 'attempts', 'doneAt', 'error'])
+        && request.resource.data.status in ['queued', 'printing', 'done', 'error']
+        && (!('attempts' in request.resource.data) || request.resource.data.attempts is int)
+        && (!('error' in request.resource.data) || (request.resource.data.error is string && request.resource.data.error.size() <= 500));
+      allow delete: if signedIn() && resource.data.agentId == request.auth.uid
+        && isDevice(resource.data.shopId)
+        && resource.data.status in ['done', 'error'];
+    }
+
+    // ---------- Залишки мережі ----------
+    // stock/{штрихкод} = {q: {"<код магазину>": кількість}, name, code, article, updatedAt}.
+
+    match /stock/{bc} {
+      allow read: if isApproved();
+      allow create, update: if isStockAdmin()
+        && bc.size() <= 64
+        && request.resource.data.keys().hasOnly(['q', 'name', 'code', 'article', 'updatedAt'])
+        && request.resource.data.q is map && qOk(request.resource.data.q)
+        && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 300))
+        && (!('code' in request.resource.data) || (request.resource.data.code is string && request.resource.data.code.size() <= 40))
+        && (!('article' in request.resource.data) || (request.resource.data.article is string && request.resource.data.article.size() <= 100))
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp);
+      allow delete: if isStockAdmin();
+    }
+
+    match /stores/{code} {
+      allow read: if isApproved();
+      allow create, update: if isStockAdmin()
+        && isShopCode(code)
+        && request.resource.data.keys().hasOnly(['name', 'address', 'city', 'region', 'updatedAt'])
+        && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 200))
+        && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
+        && (!('city' in request.resource.data) || (request.resource.data.city is string && request.resource.data.city.size() <= 100))
+        && (!('region' in request.resource.data) || (request.resource.data.region is string && request.resource.data.region.size() <= 100))
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp);
+      allow delete: if isStockAdmin();
+    }
+
+    // Зведення останнього завантаження залишків мережі.
+    match /meta/{id} {
+      allow read: if isApproved() && id == 'stock';
+      allow create, update: if isStockAdmin() && id == 'stock'
+        && request.resource.data.keys().hasOnly(['updatedAt', 'by', 'rows', 'stores', 'file'])
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
+        && (!('by' in request.resource.data) || request.resource.data.by == request.auth.uid)
+        && (!('rows' in request.resource.data) || request.resource.data.rows is int)
+        && (!('stores' in request.resource.data) || request.resource.data.stores is int)
+        && (!('file' in request.resource.data) || (request.resource.data.file is string && request.resource.data.file.size() <= 200));
+      allow delete: if false;
+    }
+
+    // q: map «код магазину → кількість», до 100 магазинів (коди «ЧО NN»; більше не вміщається в ліміт 1000 виразів на документ), кожне значення — число ≥ 0.
+    // У правилах немає циклів, тому перевірка розгорнута блоками по 10. Список доповнено нулями,
+    // щоб не перевіряти межі для кожного індексу; не число (рядок, bool, null, map) у порівнянні
+    // «>= 0» дає помилку, а помилка в правилах — відмова.
+    function qOk(q) {
+      return q.size() <= 100 && (q.size() == 0 || q0(q.values().concat([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), q.size()));
+    }
+    function q0(p, n) { return p[0] >= 0 && p[1] >= 0 && p[2] >= 0 && p[3] >= 0 && p[4] >= 0 && p[5] >= 0 && p[6] >= 0 && p[7] >= 0 && p[8] >= 0 && p[9] >= 0 && (n <= 10 || q10(p, n)); }
+    function q10(p, n) { return p[10] >= 0 && p[11] >= 0 && p[12] >= 0 && p[13] >= 0 && p[14] >= 0 && p[15] >= 0 && p[16] >= 0 && p[17] >= 0 && p[18] >= 0 && p[19] >= 0 && (n <= 20 || q20(p, n)); }
+    function q20(p, n) { return p[20] >= 0 && p[21] >= 0 && p[22] >= 0 && p[23] >= 0 && p[24] >= 0 && p[25] >= 0 && p[26] >= 0 && p[27] >= 0 && p[28] >= 0 && p[29] >= 0 && (n <= 30 || q30(p, n)); }
+    function q30(p, n) { return p[30] >= 0 && p[31] >= 0 && p[32] >= 0 && p[33] >= 0 && p[34] >= 0 && p[35] >= 0 && p[36] >= 0 && p[37] >= 0 && p[38] >= 0 && p[39] >= 0 && (n <= 40 || q40(p, n)); }
+    function q40(p, n) { return p[40] >= 0 && p[41] >= 0 && p[42] >= 0 && p[43] >= 0 && p[44] >= 0 && p[45] >= 0 && p[46] >= 0 && p[47] >= 0 && p[48] >= 0 && p[49] >= 0 && (n <= 50 || q50(p, n)); }
+    function q50(p, n) { return p[50] >= 0 && p[51] >= 0 && p[52] >= 0 && p[53] >= 0 && p[54] >= 0 && p[55] >= 0 && p[56] >= 0 && p[57] >= 0 && p[58] >= 0 && p[59] >= 0 && (n <= 60 || q60(p, n)); }
+    function q60(p, n) { return p[60] >= 0 && p[61] >= 0 && p[62] >= 0 && p[63] >= 0 && p[64] >= 0 && p[65] >= 0 && p[66] >= 0 && p[67] >= 0 && p[68] >= 0 && p[69] >= 0 && (n <= 70 || q70(p, n)); }
+    function q70(p, n) { return p[70] >= 0 && p[71] >= 0 && p[72] >= 0 && p[73] >= 0 && p[74] >= 0 && p[75] >= 0 && p[76] >= 0 && p[77] >= 0 && p[78] >= 0 && p[79] >= 0 && (n <= 80 || q80(p, n)); }
+    function q80(p, n) { return p[80] >= 0 && p[81] >= 0 && p[82] >= 0 && p[83] >= 0 && p[84] >= 0 && p[85] >= 0 && p[86] >= 0 && p[87] >= 0 && p[88] >= 0 && p[89] >= 0 && (n <= 90 || q90(p, n)); }
+    function q90(p, n) { return p[90] >= 0 && p[91] >= 0 && p[92] >= 0 && p[93] >= 0 && p[94] >= 0 && p[95] >= 0 && p[96] >= 0 && p[97] >= 0 && p[98] >= 0 && p[99] >= 0; }
+
+    // ---------- Журнал дій адмінів ----------
+
+    match /adminLog/{id} {
+      allow create: if (isAdmin() || isSuperAdmin())
+        && request.resource.data.keys().hasOnly(['by', 'at', 'action', 'target', 'shopId', 'details'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.action is string && request.resource.data.action.size() <= 100
+        && (!('target' in request.resource.data) || (request.resource.data.target is string && request.resource.data.target.size() <= 200))
+        && (!('shopId' in request.resource.data) || request.resource.data.shopId is string)
+        && (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 1000));
+      allow read: if isSuperAdmin();
       allow update, delete: if false;
     }
   }

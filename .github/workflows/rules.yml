@@ -1,0 +1,40 @@
+name: Firestore rules
+
+# Тести firestore.rules на емуляторі Firestore (rules-tests, npm test).
+on:
+  push:
+    branches: [main]
+    paths: [firestore.rules, firebase.json, rules-tests/**, .github/workflows/rules.yml]
+  pull_request:
+    paths: [firestore.rules, firebase.json, rules-tests/**, .github/workflows/rules.yml]
+  workflow_dispatch:
+
+jobs:
+  rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: rules-tests
+    steps:
+      - uses: actions/checkout@v7
+
+      # Емулятор Firestore — Java.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ hashFiles('rules-tests/package-lock.json') }}
+
+      - run: npm ci
+      - run: npm test

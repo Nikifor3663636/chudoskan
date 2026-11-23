@@ -1,0 +1,17 @@
+{
+  "name": "chudoscan-rules-tests",
+  "private": true,
+  "description": "Тести firestore.rules на емуляторі Firestore",
+  "type": "module",
+  "scripts": {
+    "test": "firebase --config ../firebase.json emulators:exec --only firestore --project demo-chudoskan \"node --test --test-concurrency=1 rules.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.4.0",
+    "firebase-tools": "^15.37.0"
+  }
+}
