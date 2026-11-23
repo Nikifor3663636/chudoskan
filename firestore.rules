@@ -95,20 +95,20 @@ service cloud.firestore {
       allow read: if canSee(shopId) || isStockAdmin();
 
       // Зведення останнього вивантаження залишків магазину; printerSubnets і code1C тут не змінюються.
-      allow create: if worksAt(shopId)
+      allow create: if canSee(shopId)
         && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
         && request.resource.data.rows is int
         && request.resource.data.updatedAt == request.time;
-      allow update: if worksAt(shopId)
+      allow update: if canSee(shopId)
         && changed().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
         && request.resource.data.rows is int
         && request.resource.data.updatedAt == request.time;
 
       // Підмережі, де шукати принтери: телефон дописує підмережу знайденого принтера (лише це поле).
-      allow create: if worksAt(shopId)
+      allow create: if canSee(shopId)
         && request.resource.data.keys().hasOnly(['printerSubnets'])
         && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
-      allow update: if worksAt(shopId)
+      allow update: if canSee(shopId)
         && changed().hasOnly(['printerSubnets'])
         && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
 
@@ -144,10 +144,10 @@ service cloud.firestore {
         allow delete: if canManage(shopId);
       }
 
-      // Старі залишки магазину (до залишків мережі). Лишаються як були.
+      // Старі залишки магазину (до залишків мережі). Адмін мережі — теж («Працювати як у магазині»).
       match /stock/{item} {
-        allow read, delete: if worksAt(shopId);
-        allow create, update: if worksAt(shopId)
+        allow read, delete: if canSee(shopId);
+        allow create, update: if canSee(shopId)
           && request.resource.data.keys().hasOnly(['article', 'barcode', 'name', 'qty'])
           && request.resource.data.qty is number
           && item.size() <= 200;
@@ -155,8 +155,8 @@ service cloud.firestore {
 
       // Уточнення «де лежить товар» на плані магазину. Змінювати не можна — лише видалити й поставити знову.
       match /layoutPins/{pin} {
-        allow read, delete: if worksAt(shopId);
-        allow create: if worksAt(shopId)
+        allow read, delete: if canSee(shopId);
+        allow create: if canSee(shopId)
           && request.resource.data.keys().hasOnly(['key', 'x', 'y', 'label', 'by', 'at'])
           && request.resource.data.by == request.auth.uid
           && request.resource.data.at == request.time

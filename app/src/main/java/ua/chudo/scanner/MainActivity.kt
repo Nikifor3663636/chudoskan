@@ -6,7 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -29,6 +32,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -48,6 +52,13 @@ import ua.chudo.scanner.ui.orders.OrdersScreen
 import ua.chudo.scanner.ui.print.LabelsScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
 import ua.chudo.scanner.ui.stock.NetworkStockScreen
+import ua.chudo.scanner.ui.admin.AdminHistoryScreen
+import ua.chudo.scanner.ui.admin.NetworkAdminScreen
+import ua.chudo.scanner.ui.admin.ShopsAdminScreen
+import ua.chudo.scanner.ui.admin.StaffAdminScreen
+import ua.chudo.scanner.data.ShopEntry
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.profile.ProfileScreen
 import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
@@ -100,6 +111,13 @@ private object Routes {
     const val LABELS = "labels"
     const val PRINTERS = "printers"
     const val NETWORK_STOCK = "network-stock"
+    const val ADMIN = "admin"
+    const val ADMIN_SHOPS = "admin-shops"
+    const val ADMIN_STAFF = "admin-staff?shop={shop}"
+    const val ADMIN_HISTORY = "admin-history"
+    const val MY_SHOP = "my-shop"
+
+    fun adminStaff(shop: String? = null) = "admin-staff" + (shop?.let { "?shop=" + Uri.encode(it) } ?: "")
 
     fun scan() = "scan?mode=barcode"
     fun results(q: String) = "results/${Uri.encode(q)}"
@@ -111,8 +129,15 @@ private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT)
 
 
 @Composable
-private fun AppNav(employee: Employee) {
+private fun AppNav(home: Employee) {
     val nav = rememberNavController()
+    // «Працювати як у магазині ЧО NN» (лише superAdmin): лише в пам'яті, після виходу не зберігається.
+    var acting by remember(home.uid) { mutableStateOf<Employee?>(null) }
+    val employee = acting ?: home
+    fun switchShop(e: Employee?) {
+        acting = e
+        nav.navigate(Routes.HOME) { popUpTo(Routes.HOME) { inclusive = true } }
+    }
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
@@ -139,6 +164,8 @@ private fun AppNav(employee: Employee) {
         // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
+            Column {
+            acting?.let { a -> ActingBanner(a, withInsets = route in FULLSCREEN) { switchShop(null) } }
             // Сканер и настройки принтеров — без нижней навигации.
             if (route != null && route !in FULLSCREEN) MineBottomBar(
                 tab = tab,
@@ -153,14 +180,18 @@ private fun AppNav(employee: Employee) {
                 },
                 onScan = { nav.navigate(Routes.scan()) },
             )
+            }
         },
     ) { inner ->
-        AppNavHost(nav, employee, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner))
+        AppNavHost(
+            nav, employee, home, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner),
+            onActAs = { e -> e.shopId?.let { id -> switchShop(home.actingIn(id, e.address, e.region, e.code)) } },
+        )
     }
 }
 
 @Composable
-private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Modifier) {
+private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employee, modifier: Modifier, onActAs: (ShopEntry) -> Unit) {
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
@@ -176,23 +207,45 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
         composable(Routes.PROFILE) {
             ProfileScreen(
                 employee, onBack = { nav.popBackStack() },
-                onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
+                onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 onStock = { nav.navigate(Routes.STOCK) },
                 onNetworkStock = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
+                // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
+                onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
+                onMyShop = if (home.admin && !home.superAdmin) ({ nav.navigate(Routes.MY_SHOP) }) else null,
             )
+        }
+        composable(Routes.ADMIN) {
+            if (home.superAdmin) NetworkAdminScreen(
+                home, onBack = { nav.popBackStack() },
+                onShops = { nav.navigate(Routes.ADMIN_SHOPS) }, onStaff = { nav.navigate(Routes.adminStaff()) },
+                onNetworkStock = { nav.navigate(Routes.NETWORK_STOCK) }, onHistory = { nav.navigate(Routes.ADMIN_HISTORY) },
+            ) else nav.popBackStack()
+        }
+        composable(Routes.ADMIN_SHOPS) {
+            if (home.superAdmin) ShopsAdminScreen(home, onBack = { nav.popBackStack() }, onActAs = onActAs, onStaffOf = { nav.navigate(Routes.adminStaff(it)) })
+            else nav.popBackStack()
+        }
+        composable(Routes.ADMIN_STAFF, arguments = listOf(navArgument("shop") { type = NavType.StringType; nullable = true; defaultValue = null })) { entry ->
+            if (home.superAdmin) StaffAdminScreen(home, onBack = { nav.popBackStack() }, shopFilter = entry.arguments?.getString("shop"))
+            else nav.popBackStack()
+        }
+        composable(Routes.ADMIN_HISTORY) { if (home.superAdmin) AdminHistoryScreen(home, onBack = { nav.popBackStack() }) else nav.popBackStack() }
+        composable(Routes.MY_SHOP) {
+            if (home.admin) StaffAdminScreen(home, onBack = { nav.popBackStack() }, ownShopOnly = true) else nav.popBackStack()
         }
         // «Залишки мережі» — лише stockAdmin / superAdmin (те саме перевіряють правила).
         composable(Routes.NETWORK_STOCK) {
             if (employee.stockAdmin) NetworkStockScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack()
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
-        composable(Routes.PRINTERS) { if (employee.admin) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
+        composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
         composable(Routes.LABELS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(LABEL_CODE, null).collectAsStateWithLifecycle()
             LabelsScreen(
                 onBack = { nav.popBackStack() },
                 onScan = { nav.navigate(Routes.SCAN_LABEL) },
-                onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
+                onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
                 shopId = employee.shopId,
@@ -263,6 +316,27 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
             ),
         ) {
             ProductScreen(employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) })
+        }
+    }
+}
+
+/** «Ви в магазині ЧО NN · Повернутися» — поки адмін мережі працює як у іншому магазині. */
+@Composable
+private fun ActingBanner(e: Employee, withInsets: Boolean, onReturn: () -> Unit) {
+    val m = ua.chudo.scanner.ui.theme.Mine.colors
+    androidx.compose.material3.Surface(color = m.accent, contentColor = m.onAccent) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().then(if (withInsets) Modifier.navigationBarsPadding() else Modifier).padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Text(
+                "Ви в магазині ЧО ${e.actingCode}" + (e.shop.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                Modifier.weight(1f), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            androidx.compose.material3.TextButton(onClick = onReturn) {
+                androidx.compose.material3.Text("Повернутися", color = m.onAccent, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
         }
     }
 }

@@ -70,6 +70,10 @@ import androidx.compose.ui.unit.sp
 fun ProfileScreen(
     employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {},
     onNetworkStock: (() -> Unit)? = null,
+    /** «Адміністрування мережі» — лише superAdmin. */
+    onNetworkAdmin: (() -> Unit)? = null,
+    /** «Мій магазин» — адмін магазину (співробітники свого магазину). */
+    onMyShop: (() -> Unit)? = null,
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
@@ -88,9 +92,11 @@ fun ProfileScreen(
             name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
             shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
             theme = theme, admin = onPrinters != null, message = message, networkStock = onNetworkStock != null,
+            networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
         ),
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
-        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
+        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() },
+        onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
     )
 
     if (changePassword) {
@@ -149,6 +155,8 @@ data class ProfileUi(
     val message: String? = null,
     /** «Залишки мережі» — лише stockAdmin / superAdmin. */
     val networkStock: Boolean = false,
+    val networkAdmin: Boolean = false,
+    val myShop: Boolean = false,
 )
 
 /** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
@@ -161,6 +169,8 @@ fun ProfileContent(
     onStock: () -> Unit = {},
     onPrinters: () -> Unit = {},
     onNetworkStock: () -> Unit = {},
+    onNetworkAdmin: () -> Unit = {},
+    onMyShop: () -> Unit = {},
     onPassword: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
@@ -182,6 +192,14 @@ fun ProfileContent(
 
         Surface(shape = RoundedCornerShape(20.dp), color = m.surface, contentColor = m.text) {
             Column {
+                if (ui.networkAdmin) {
+                    ProfileRow("Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
+                    RowDivider()
+                }
+                if (ui.myShop) {
+                    ProfileRow("Мій магазин", "Співробітники", onClick = onMyShop)
+                    RowDivider()
+                }
                 if (ui.admin) {
                     ProfileRow("Принтери", "Налаштування", onClick = onPrinters)
                     RowDivider()

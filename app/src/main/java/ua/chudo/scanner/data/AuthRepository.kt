@@ -33,7 +33,22 @@ data class Employee(
      * бачить «Профіль → Залишки мережі». Те саме перевіряють правила (isStockAdmin).
      */
     val stockAdmin: Boolean = false,
-)
+    /** Адмін мережі (`superAdmin` у users/{uid}, лише в консолі): «Профіль → Адміністрування мережі». */
+    val superAdmin: Boolean = false,
+    /**
+     * Тимчасово «працює як у магазині ЧО NN» (лише superAdmin, лише на цю сесію): shopId/shop/region —
+     * того магазину; [homeShopId] — свій магазин з анкети. Анкету не змінює.
+     */
+    val actingCode: String? = null,
+    val homeShopId: String = shopId,
+) {
+    /** Налаштовує принтери магазину: адмін магазину або адмін мережі. */
+    val managesShop: Boolean get() = admin || superAdmin
+
+    /** «Працювати як у магазині»: той самий співробітник, інший поточний магазин. */
+    fun actingIn(shopId: String, shop: String, region: String, code: String?): Employee =
+        copy(shopId = shopId, shop = shop, region = region, actingCode = code ?: shopId, homeShopId = homeShopId)
+}
 
 sealed interface AuthState {
     /** В сборке нет google-services.json. */
@@ -151,6 +166,7 @@ class AuthRepository(context: Context) {
         approved = getBoolean("approved") == true,
         admin = getBoolean("admin") == true,
         stockAdmin = getBoolean("approved") == true && (getBoolean("stockAdmin") == true || getBoolean("superAdmin") == true),
+        superAdmin = getBoolean("approved") == true && getBoolean("superAdmin") == true,
     )
 
     companion object {

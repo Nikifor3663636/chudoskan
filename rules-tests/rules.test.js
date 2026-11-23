@@ -421,3 +421,34 @@ describe('імпорт залишків мережі (етап 3)', () => {
     await assertFails(setDoc(doc(as('adm22'), 'shops', '62'), { code1C: '62' }, { merge: true }));
   });
 });
+
+describe('адміністрування мережі (етап 6)', () => {
+  test('superAdmin працює як у ЧО 62: залишки, зведення, принтери', async () => {
+    const db = as('sup');
+    await assertSucceeds(getDocs(collection(db, 'shops', '62', 'stock')));
+    await assertSucceeds(setDoc(doc(db, 'shops', '62', 'stock', 'bc_1'), { article: '1', barcode: '1', name: 'x', qty: 2 }));
+    await assertSucceeds(setDoc(doc(db, 'shops', '62'), { region: 'Одеса', address: 'вул. Інша, 2', rows: 1, updatedAt: serverTimestamp(), updatedBy: 'Мережа' }, { merge: true }));
+    await assertSucceeds(getDoc(doc(db, 'shops', '62', 'printers', 'g')));
+    await assertSucceeds(getDocs(collection(db, 'agents')));
+    // Співробітник ЧО 22 у чужий магазин — ні.
+    await assertFails(getDocs(collection(as('emp22'), 'shops', '62', 'stock')));
+  });
+
+  test('дії з анкетами з approvedBy і changedAt, кожна — в adminLog', async () => {
+    const sup = as('sup');
+    // Відхилити: непідтверджений без магазину.
+    await assertSucceeds(updateDoc(doc(sup, 'users', 'new62'), { approved: false, admin: false, shopId: '', approvedBy: 'sup', changedAt: serverTimestamp() }));
+    // Перевести з ЧО 22 у ЧО 62.
+    await assertSucceeds(updateDoc(doc(sup, 'users', 'emp22'), { shopId: '62', shop: 'вул. Інша, 2', region: 'Одеса', admin: false, approvedBy: 'sup', changedAt: serverTimestamp() }));
+    await assertSucceeds(addDoc(collection(sup, 'adminLog'), { by: 'sup', action: 'transfer', target: 'emp22', shopId: '62', at: serverTimestamp() }));
+    await assertSucceeds(addDoc(collection(sup, 'adminLog'), { by: 'sup', action: 'actAs', target: '62', shopId: '62', at: serverTimestamp() }));
+    // «Мій магазин»: адмін ЧО 22 вимикає доступ своєму співробітнику, але не переводить.
+    await assertSucceeds(updateDoc(doc(as('adm22'), 'users', 'new22'), { approved: true, approvedBy: 'adm22', changedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(doc(as('adm22'), 'users', 'new22'), { approved: false, admin: false, approvedBy: 'adm22', changedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(as('adm22'), 'users', 'new22'), { shopId: '', approvedBy: 'adm22' }));
+    await assertSucceeds(addDoc(collection(as('adm22'), 'adminLog'), { by: 'adm22', action: 'disable', target: 'new22', shopId: '22', at: serverTimestamp() }));
+    // Журнал читає лише адмін мережі.
+    await assertSucceeds(getDocs(collection(sup, 'adminLog')));
+    await assertFails(getDocs(collection(as('adm22'), 'adminLog')));
+  });
+});
