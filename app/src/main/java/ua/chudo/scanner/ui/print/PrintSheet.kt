@@ -79,8 +79,8 @@ fun formatTitle(t: Template) = when (t) {
     Template.BIG -> "Крупногабарит"
 }
 
-/** Назва та стан обраного принтера. */
-data class PrinterLine(val model: String?, val online: Boolean?)
+/** Назва та стан обраного принтера. [missing] — обраного немає серед доступних, [model] — «Обраний принтер не підключено». */
+data class PrinterLine(val model: String?, val online: Boolean?, val missing: Boolean = false)
 
 /** Состояние листа печати (без ViewModel — для превью). */
 data class PrintSheetUi(
@@ -119,7 +119,8 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
     LaunchedEffect(format.kind, preferred, records, statusRevision) {
         line = PrinterLine(null, null)
         try {
-            line = svc.quickStatus(format.kind)?.let { (r, ok) -> PrinterLine(r.displayName, ok) } ?: PrinterLine(null, false)
+            line = svc.quickStatus(format.kind)?.let { (name, ok) -> PrinterLine(name, ok, missing = name == PrintService.MISSING) }
+                ?: PrinterLine(null, false)
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             error = e.message
             line = PrinterLine(null, false)
@@ -144,7 +145,8 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
             } catch (e: CancellationException) { throw e
             } catch (e: PreferredPrinterUnavailable) {
                 error = e.message
-                line = PrinterLine(e.pick.record.displayName, false)
+                line = if (e.pick.missing) PrinterLine(PrintService.MISSING, false, missing = true)
+                    else PrinterLine(e.pick.record.displayName, false)
                 alternative = e.pick.alternative
             } catch (e: Exception) {
                 error = e.message ?: "Не вдалося надрукувати"
@@ -261,6 +263,7 @@ private fun PrinterStatusLine(p: PrinterLine, enabled: Boolean, onClick: () -> U
             when {
                 p.online == null -> "Шукаю принтер… ▾"
                 p.model == null -> "Автоматично · вибрати принтер ▾"
+                p.missing -> "${p.model} ▾"
                 p.online -> "${p.model} · онлайн ▾"
                 else -> "${p.model} · не відповідає ▾"
             },

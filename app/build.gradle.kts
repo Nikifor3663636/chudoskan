@@ -89,6 +89,8 @@ dependencies {
     testImplementation(libs.junit)
     // Тест: штрихкод из LabelRenderer читается как тот же EAN-13.
     testImplementation(libs.zxing.core)
+    // Тест імпорту xlsx: той самий XmlPullParser (kXML), що й android.util.Xml, але без Android.
+    testImplementation(libs.kxml2)
 
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)

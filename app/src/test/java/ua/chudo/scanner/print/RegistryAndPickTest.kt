@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -100,10 +101,79 @@ class RegistryAndPickTest {
         }
     }
 
-    @Test fun removedPreferredResetsToAuto() = runBlocking {
+    @Test fun removedByAdminAsksOnceThenAuto() = runBlocking {
         val src = Fake(reg = listOf(hl), alive = mapOf("hl" to 0), preference = mfc.id)
-        assertEquals(Pick(hl, Via.REGISTRY), PrinterResolver(src).resolve(LabelKind.PLAIN))
+        val resolver = PrinterResolver(src)
+        val asked = resolver.resolve(LabelKind.PLAIN)!!
+        assertEquals(Pick(missingPreferred(mfc.id, LabelKind.PLAIN), Via.PREFERRED, true, hl, missing = true), asked)
         assertEquals("auto", src.preference)
+        // Питання було один раз — далі звичайний автовибір.
+        assertEquals(Pick(hl, Via.REGISTRY), resolver.resolve(LabelKind.PLAIN))
+    }
+
+    private val usbGodex = PrinterRecord("usb-195f-0001", "Godex G500", LabelKind.STICKY, transport = Link.USB, usbVendor = 0x195F, usbProduct = 1)
+    private val agentGodex = PrinterRecord(PrinterIds.agent("pc-kasa", "Godex G500"), "Godex G500", LabelKind.STICKY,
+        transport = Link.AGENT, agentId = "pc-kasa", printerName = "Godex G500")
+
+    @Test fun usbUnpluggedAsksAndKeepsChoice() = runBlocking {
+        // Обрано USB-принтер, кабель вийняли; Godex у мережі живий — але мовчки на нього не друкуємо.
+        val src = Fake(reg = listOf(godex), alive = mapOf("g" to 0), preference = usbGodex.id)
+        val resolver = PrinterResolver(src)
+        repeat(2) {
+            val pick = resolver.resolve(LabelKind.STICKY)!!
+            assertEquals(Pick(missingPreferred(usbGodex.id, LabelKind.STICKY), Via.PREFERRED, true, godex, missing = true), pick)
+            assertEquals(PrinterResolver.MISSING_NAME, pick.record.displayName)
+            assertEquals(usbGodex.id, src.preference)
+            assertNull(resolver.chosen(LabelKind.STICKY))
+        }
+        // Кабель повернули — друкуємо на обраному.
+        src.usb = usbGodex
+        src.alive = mapOf("g" to 0, usbGodex.id to 0)
+        assertEquals(Pick(usbGodex, Via.PREFERRED), resolver.resolve(LabelKind.STICKY))
+    }
+
+    @Test fun pcOfflineAsksWithAlternative() = runBlocking {
+        // Агент відомий (lastSeen старий), але не відповідає.
+        val src = Fake(reg = listOf(godex), extra = listOf(agentGodex), alive = mapOf("g" to 0), preference = agentGodex.id)
+        assertEquals(Pick(agentGodex, Via.PREFERRED, true, godex), PrinterResolver(src).resolve(LabelKind.STICKY))
+        assertEquals(agentGodex.id, src.preference)
+    }
+
+    @Test fun pcGoneAsksAndKeepsChoice() = runBlocking {
+        // Агента взагалі немає в списку (ПК вимкнено надовго) — питання, вибір лишається.
+        val src = Fake(reg = listOf(godex), alive = mapOf("g" to 0), preference = agentGodex.id)
+        val pick = PrinterResolver(src).resolve(LabelKind.STICKY)!!
+        assertTrue(pick.missing && pick.confirmationRequired)
+        assertEquals(godex, pick.alternative)
+        assertEquals(agentGodex.id, src.preference)
+    }
+
+    @Test fun missingWithoutAlternative() = runBlocking {
+        val src = Fake(preference = usbGodex.id)
+        assertEquals(Pick(missingPreferred(usbGodex.id, LabelKind.STICKY), Via.PREFERRED, true, null, missing = true),
+            PrinterResolver(src).resolve(LabelKind.STICKY))
+    }
+
+    @Test fun unavailableMessages() {
+        assertEquals("Обраний принтер не підключено",
+            PreferredPrinterUnavailable(Pick(missingPreferred("usb-1", LabelKind.STICKY), Via.PREFERRED, true, missing = true)).message)
+        assertEquals("Brother MFC-L2700DW · 192.0.2.250 не відповідає",
+            PreferredPrinterUnavailable(Pick(mfc, Via.PREFERRED, true)).message)
+    }
+
+    @Test fun registryIds() {
+        assertTrue(isRegistryId("mac-00005e0053aa"))
+        assertTrue(isRegistryId("m-brother-mfc-l2700dw"))
+        assertTrue(!isRegistryId(usbGodex.id))
+        assertTrue(!isRegistryId(agentGodex.id))
+    }
+
+    @Test fun renameTrimsBeforeLengthCheck() {
+        val forty = "Г".repeat(40)
+        assertEquals(forty, PrinterRegistry.cleanName("  $forty  "))
+        assertEquals("Каса", PrinterRegistry.cleanName(" Каса "))
+        val e = assertThrows(PrintException::class.java) { PrinterRegistry.cleanName("Г".repeat(41)) }
+        assertEquals("Назва принтера має бути не довше 40 символів", e.message)
     }
 
     @Test fun preferredAgentOutsideRegistryAndWithoutAlternative() = runBlocking {

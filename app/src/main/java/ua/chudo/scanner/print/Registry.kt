@@ -93,11 +93,19 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
     }
 
     suspend fun rename(id: String, name: String) {
-        require(name.length <= 40)
-        printers.document(id).update(mapOf("name" to name.trim(), "lastSeen" to FieldValue.serverTimestamp())).await()
+        printers.document(id).update(mapOf("name" to cleanName(name), "lastSeen" to FieldValue.serverTimestamp())).await()
     }
 
     companion object {
+        const val NAME_MAX = 40
+
+        /** Назва принтера: пробіли по краях не рахуються; довша за [NAME_MAX] — помилка. */
+        fun cleanName(name: String): String {
+            val t = name.trim()
+            if (t.length > NAME_MAX) throw PrintException("Назва принтера має бути не довше $NAME_MAX символів")
+            return t
+        }
+
         fun DocumentSnapshot.toRecord(): PrinterRecord? {
             val kind = LabelKind.ofWire(getString("kind")) ?: return null
             return PrinterRecord(

@@ -3,6 +3,7 @@ package ua.chudo.scanner.data
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -172,34 +173,51 @@ object StockFileParser {
     private fun isOldExcel(b: ByteArray) =
         b.size > 8 && b[0] == 0xD0.toByte() && b[1] == 0xCF.toByte() && b[2] == 0x11.toByte() && b[3] == 0xE0.toByte()
 
+    /**
+     * Части zip сравниваем без учёта регистра: 1С пишет `xl/SharedStrings.xml`.
+     * XML читаем потоком прямо из [ZipInputStream] (лист 1С бывает ~100 МБ), без readBytes().
+     * Порядок частей в zip любой, поэтому два прохода: сначала строки и номер первого листа, затем сам лист.
+     */
     private fun readXlsx(bytes: ByteArray): List<List<String>> {
-        var shared: ByteArray? = null
-        val sheets = sortedMapOf<Int, ByteArray>()
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-            while (true) {
-                val e = zip.nextEntry ?: break
-                val name = e.name
-                when {
-                    name == "xl/sharedStrings.xml" -> shared = zip.readBytes()
-                    name.startsWith("xl/worksheets/sheet") && name.endsWith(".xml") ->
-                        sheets[name.removePrefix("xl/worksheets/sheet").removeSuffix(".xml").toIntOrNull() ?: 999] = zip.readBytes()
+        var strings: List<String> = emptyList()
+        var sheetName: String? = null
+        var sheetNo = Int.MAX_VALUE
+        eachEntry(bytes) { name, zip ->
+            val lower = name.lowercase()
+            when {
+                lower == SHARED_STRINGS -> strings = readSharedStrings(parser(zip))
+                lower.startsWith(SHEET_PREFIX) && lower.endsWith(".xml") -> {
+                    val n = lower.removePrefix(SHEET_PREFIX).removeSuffix(".xml").toIntOrNull() ?: 999
+                    if (sheetName == null || n < sheetNo) { sheetName = name; sheetNo = n }
                 }
             }
         }
-        val sheet = sheets.values.firstOrNull() ?: throw StockFileException("В файле Excel нет листов.")
-        val strings = shared?.let(::readSharedStrings) ?: emptyList()
-        return readSheet(sheet, strings)
+        val target = sheetName ?: throw StockFileException("В файле Excel нет листов.")
+        var rows: List<List<String>> = emptyList()
+        eachEntry(bytes) { name, zip -> if (name == target) rows = readSheet(parser(zip), strings) }
+        return rows
     }
 
-    private fun parser(bytes: ByteArray): XmlPullParser =
-        Xml.newPullParser().apply {
+    private inline fun eachEntry(bytes: ByteArray, block: (String, ZipInputStream) -> Unit) {
+        ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                if (!e.isDirectory) block(e.name, zip)
+            }
+        }
+    }
+
+    /** Звідки брати XmlPullParser; у JVM-тестах android.util.Xml недоступний — підставляють kXML. */
+    internal var newParser: () -> XmlPullParser = { Xml.newPullParser() }
+
+    private fun parser(input: InputStream): XmlPullParser =
+        newParser().apply {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            setInput(ByteArrayInputStream(bytes), "UTF-8")
+            setInput(input, "UTF-8")
         }
 
-    private fun readSharedStrings(bytes: ByteArray): List<String> {
+    private fun readSharedStrings(p: XmlPullParser): List<String> {
         val out = mutableListOf<String>()
-        val p = parser(bytes)
         val sb = StringBuilder()
         var inT = false
         var inRph = false // фонетические подсказки — не текст ячейки
@@ -221,9 +239,8 @@ object StockFileParser {
         return out
     }
 
-    private fun readSheet(bytes: ByteArray, strings: List<String>): List<List<String>> {
+    private fun readSheet(p: XmlPullParser, strings: List<String>): List<List<String>> {
         val rows = mutableListOf<List<String>>()
-        val p = parser(bytes)
         var row: MutableList<String>? = null
         var col = 0
         var type: String? = null
@@ -266,6 +283,8 @@ object StockFileParser {
     }
 
     private const val HEADER_SCAN_ROWS = 40
+    private const val SHARED_STRINGS = "xl/sharedstrings.xml"
+    private const val SHEET_PREFIX = "xl/worksheets/sheet"
     private val BARCODE = listOf("штрих", "barcode", "ean")
     private val ARTICLE = listOf("артикул", "арт.", "article", "sku")
     private val NAME = listOf("наимен", "найменув", "номенклатур", "назва", "товар", "name")

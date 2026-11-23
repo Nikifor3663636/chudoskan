@@ -467,12 +467,14 @@ private fun EditSheet(r: PrinterRecord, vm: PrintersViewModel, onDismiss: () -> 
                 Text(r.displayName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 Text("${r.kind.title} · ${r.address}", fontSize = 14.sp, color = m.textSecondary)
             }
-            if (renaming) {
+            // Назва зберігається в реєстрі магазину; USB-принтер цього телефону туди не потрапляє.
+            val canRename = r.transport != Link.USB
+            if (canRename && renaming) {
                 OutlinedTextField(name, { if (it.length <= 40) name = it },
                     label = { Text("Назва принтера") }, supportingText = { Text("${name.length}/40 · порожня назва — модель та адреса") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 MineButton("Зберегти назву", { vm.rename(r, name) { renaming = false } }, Modifier.fillMaxWidth())
-            } else {
+            } else if (canRename) {
                 MineButton("Перейменувати", { renaming = true }, Modifier.fillMaxWidth())
             }
             if (r.lang == PrintLang.EZPL) {

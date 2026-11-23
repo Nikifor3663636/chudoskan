@@ -36,10 +36,21 @@ data class Pick(
     val via: Via,
     val confirmationRequired: Boolean = false,
     val alternative: PrinterRecord? = null,
+    /** Обраного принтера немає серед доступних (USB вийняли, ПК вимкнено, адмін видалив): [record] — заглушка. */
+    val missing: Boolean = false,
 )
+
+/** Заглушка для обраного принтера, якого зараз немає серед доступних: друкувати на неї не можна. */
+fun missingPreferred(id: String, kind: LabelKind) =
+    PrinterRecord(id = id, model = "", name = PrinterResolver.MISSING_NAME, kind = kind)
+
+/** Вибір із реєстру магазину — не USB цього телефону і не принтер ПК-агента (ті можуть повернутися). */
+fun isRegistryId(id: String) = !id.startsWith("usb-") && !id.startsWith("m-agent-")
 
 /**
  * Автовыбор принтера по виду (этикетка 40×24 → `label_40x24`, ценники и A4 → `a4`), без участия сотрудника:
+ * 0. выбран конкретный принтер: отвечает → он; не отвечает или его нет → вопрос сотруднику
+ *    ([Pick.confirmationRequired]) с альтернативой — молча на другом не печатаем;
  * 1. принтер, выбранный в этой сессии, отвечает → он;
  * 2. принтер вида на USB этого телефона;
  * 3. из реестра магазина — тот, кто первым ответил на isAlive();
@@ -61,8 +72,12 @@ class PrinterResolver(private val src: PrinterSource) {
                 return Pick(selected, Via.PREFERRED, confirmationRequired = true,
                     alternative = firstAlive(candidates.filter { it.id != preferred }))
             }
-            src.clearPreferred(kind)
+            // Обраного немає. Вибір скидаємо лише для запису реєстру, який видалив адмін, —
+            // тоді питання буде один раз, а далі авто. USB і ПК можуть повернутися: вибір лишаємо.
+            if (isRegistryId(preferred)) src.clearPreferred(kind)
             forget(kind)
+            return Pick(missingPreferred(preferred, kind), Via.PREFERRED, confirmationRequired = true,
+                alternative = firstAlive(candidates), missing = true)
         }
         val network = src.registry().filter { it.kind == kind && it.transport == Link.TCP && it.ip.isNotEmpty() }
         val cached = cache[kind]?.let { id -> network.firstOrNull { it.id == id } }
@@ -82,6 +97,10 @@ class PrinterResolver(private val src: PrinterSource) {
 
     /** Текущий выбор сессии (бейдж «Основний для …» у администратора). */
     fun chosen(kind: LabelKind): String? = cache[kind]
+
+    companion object {
+        const val MISSING_NAME = "Обраний принтер"
+    }
 
     private fun remember(kind: LabelKind, p: Pick): Pick {
         cache[kind] = p.record.id

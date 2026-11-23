@@ -27,7 +27,9 @@ import java.util.Locale
 /** Состояние принтера: [ok] = null — ещё проверяем. */
 data class PrinterStatus(val ok: Boolean?, val text: String)
 
-class PreferredPrinterUnavailable(val pick: Pick) : PrintException("${pick.record.displayName} не відповідає")
+class PreferredPrinterUnavailable(val pick: Pick) : PrintException(
+    if (pick.missing) PrintService.MISSING else "${pick.record.displayName} не відповідає",
+)
 
 /** Ни реестр, ни сеть, ни компьютер магазина не дали принтер нужного вида. */
 class PrinterNotFoundException(val kind: LabelKind) : PrintException(
@@ -205,23 +207,25 @@ class PrintService(context: Context) {
         else PrinterStatus(false, "Недоступний — комп'ютер магазину не на зв'язку")
     }
 
-    /** Для листа печати: какой принтер возьмём и отвечает ли он («Godex G500 · онлайн»). Без поиска в сети. */
-    suspend fun quickStatus(kind: LabelKind): Pair<PrinterRecord, Boolean>? {
+    /**
+     * Для листа печати: имя принтера, который возьмём, и отвечает ли он («Godex G500 · онлайн»). Без поиска в сети.
+     * Выбранного нет — «Обраний принтер не підключено», выбор не сбрасываем (решает вопрос при «Друк»).
+     */
+    suspend fun quickStatus(kind: LabelKind): Pair<String, Boolean>? {
         val preferred = store.preferred(kind).first()
         if (preferred != "auto") {
             val selected = availablePrinters(kind, includeOfflineAgents = true).firstOrNull { it.id == preferred }
-            if (selected != null) return selected to isAlive(selected)
-            store.setPreferred(kind, "auto")
-            resolver.forget(kind)
+                ?: return MISSING to false
+            return selected.displayName to isAlive(selected)
         }
         withTimeoutOrNull(5_000) { records.filterNotNull().first() }
         val list = _records.value.orEmpty().filter { it.kind == kind }
         val chosen = list.firstOrNull { it.id == resolver.chosen(kind) }
         val ordered = listOfNotNull(chosen) + list.filter { it != chosen && it.transport == Link.TCP }
-        for (r in ordered) if (transport(r, 1000).isAlive()) return r to true
-        usb.list().firstOrNull { it.kind == kind }?.let { return it to true }
-        agents.printers(shopId).firstOrNull { it.kind == kind }?.let { return it to true }
-        return list.firstOrNull()?.let { it to false }
+        for (r in ordered) if (transport(r, 1000).isAlive()) return r.displayName to true
+        usb.list().firstOrNull { it.kind == kind }?.let { return it.displayName to true }
+        agents.printers(shopId).firstOrNull { it.kind == kind }?.let { return it.displayName to true }
+        return list.firstOrNull()?.let { it.displayName to false }
     }
 
     /**
@@ -281,7 +285,8 @@ class PrintService(context: Context) {
 
     companion object {
         const val ONLINE = "Онлайн — готовий до друку"
-        const val OFFLINE = "Не відповідає. Перевір, що принтер увімкнений, і натисни «Знайти знову»."
+        const val MISSING = "Обраний принтер не підключено"
+        const val OFFLINE ="Не відповідає. Перевір, що принтер увімкнений, і натисни «Знайти знову»."
         const val SYNC_EVERY_MS = 10 * 60 * 1000L
 
         /** Тестовый код: префикс Украины 482 + 9 цифр; контрольную допишет [Ean13.normalize]. */
