@@ -82,6 +82,8 @@ jobs:
           }
           git grep -n -I -e 'BEGIN PRIVATE KEY' -e '"private_key"' -- . ':!.github/workflows/printer.yml'
           if ($LASTEXITCODE -eq 0) { Write-Error 'У репозиторії є приватний ключ'; exit 1 }
+          # git grep без збігів повертає 1 — це успіх; інакше Actions завершить крок із цим кодом.
+          $global:LASTEXITCODE = 0
           "Перевірено файлів: $($files.Count)"
 
       - uses: actions/upload-artifact@v7
