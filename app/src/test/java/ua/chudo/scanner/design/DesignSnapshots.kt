@@ -173,6 +173,22 @@ class DesignSnapshots {
 
     @Test fun homeDark() = home(true)
 
+    private fun todayAt930(): java.util.Date = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 9); set(java.util.Calendar.MINUTE, 30); set(java.util.Calendar.SECOND, 0)
+    }.time
+
+    /** Пакет цінників із «Залишків»: кількість — для кожного товару. */
+    @Test fun printSheetBatch() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.sheet) {
+                PrintSheetContent(PrintSheetUi(
+                    subtitle = "Товарів: 12 · кількість — для кожного", format = Template.TAG_68x38, promo = false, oldPrice = null,
+                    qty = 1, printer = PrinterLine("Brother MFC-L2700DW", true), items = 12,
+                ))
+            }
+        }
+    }
+
     private fun home(dark: Boolean) = paparazzi.snapshot {
         ChudoTheme(dark = dark) {
             androidx.compose.material3.Scaffold(
@@ -181,7 +197,8 @@ class DesignSnapshots {
             ) { inner ->
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
-                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Вакаренко Микита", java.util.Date(), "", recent, 3),
+                        // Сьогодні о 09:30 — щоб знімок не залежав від часу запуску.
+                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Вакаренко Микита", todayAt930(), "", recent, 3),
                     )
                 }
             }

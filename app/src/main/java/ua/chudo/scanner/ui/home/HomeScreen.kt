@@ -80,7 +80,9 @@ fun HomeScreen(
     val keyboard = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(employee.shopId) {
-        stockAt = runCatching { app.shopStock.info(employee.shopId)?.updatedAt }.getOrNull()
+        // Залишки мережі (meta/stock), якщо їх ще не завантажували — старі залишки магазину.
+        stockAt = runCatching { app.networkLookup.lastUpdated() }.getOrNull()
+            ?: runCatching { app.shopStock.info(employee.shopId)?.updatedAt }.getOrNull()
     }
 
     HomeContent(

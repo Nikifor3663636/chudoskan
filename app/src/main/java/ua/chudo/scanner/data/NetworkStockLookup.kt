@@ -80,6 +80,9 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
 
     private suspend fun updatedAt(): Date? { loadMeta(); return updatedAt }
 
+    /** Коли востаннє завантажували залишки мережі (meta/stock.updatedAt); `null` — ще ні. */
+    suspend fun lastUpdated(): Date? = updatedAt()
+
     /**
      * «Змінені з минулого завантаження», які є у своєму магазині: `stock where updatedAt > changedAfter`
      * (до [limit] читань). Першого завантаження ще не порівнювали — порожньо.

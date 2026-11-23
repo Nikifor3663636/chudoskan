@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.HorizontalDivider
@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.theme.Mine
 
 /** Вкладки нижней панели (макет Orders): Пошук · Замовлення · [сканер] · Друк · Профіль. */
-enum class MainTab { SEARCH, ORDERS, PRINT, PROFILE }
+enum class MainTab { SEARCH, ORDERS, STOCK, PROFILE }
 
 /** Штрихкод в рамке — иконка сканера из макета (24×24, обводка). */
 val BarcodeScanIcon: ImageVector by lazy {
@@ -72,7 +72,7 @@ fun MineBottomBar(tab: MainTab?, newOrders: Int, onTab: (MainTab) -> Unit, onSca
                 TabItem(MainTab.ORDERS, tab, Icons.Outlined.ShoppingBag, "Замовлення", newOrders, onTab)
                 // Место под круглую кнопку: фиксированное, чтобы подписи вкладок («Замовлення») не обрезались.
                 Spacer(Modifier.width(84.dp))
-                TabItem(MainTab.PRINT, tab, Icons.Outlined.Print, "Друк", 0, onTab)
+                TabItem(MainTab.STOCK, tab, Icons.Outlined.Inventory2, "Залишки", 0, onTab)
                 TabItem(MainTab.PROFILE, tab, Icons.Outlined.Person, "Профіль", 0, onTab)
             }
         }

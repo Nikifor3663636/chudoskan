@@ -100,6 +100,8 @@ data class PrintSheetUi(
     /** Принтер не нашли / ошибка печати: одно сообщение, кнопка становится «Спробувати ще». */
     val error: String? = null,
     val alternative: String? = null,
+    /** Скільки різних товарів у пакеті (1 — один цінник). */
+    val items: Int = 1,
     /** Альбомний аркуш для A4-шаблону (для етикетки 40×24 не показуємо). */
     val landscape: Boolean = Template.TAG_68x38.defaultLandscape,
 )
@@ -107,7 +109,13 @@ data class PrintSheetUi(
 /** Друк цінника: формат, кількість і локальний вибір принтера. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) = PrintSheet(listOf(tag), onDismiss, onDone)
+
+/** Пакет цінників (із «Залишків»): один документ на кілька аркушів; кількість — для кожного товару. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PrintSheet(tags: List<PriceTag>, onDismiss: () -> Unit, onDone: (String) -> Unit) {
+    val tag = tags.first()
     val svc = LocalContext.current.chudoApp.printing
     val scope = rememberCoroutineScope()
     var format by rememberSaveable { mutableStateOf(Template.TAG_68x38) }
@@ -135,14 +143,17 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
         }
     }
     val item = tag.toItem()
+    val items = tags.map { it.toItem() }
+    val single = tags.size == 1
+    val canPromo = items.any { it.canPromo }
     fun print(override: PrinterRecord? = null) {
         if (busy) return
         busy = true
         error = null
         alternative = null
         val template = format
-        val queue = listOf(QueueItem(tag, qty))
-        val withPromo = promo && item.canPromo && template.kind == LabelKind.PLAIN
+        val queue = tags.map { QueueItem(it, qty) }
+        val withPromo = promo && canPromo && template.kind == LabelKind.PLAIN
         scope.launch {
             try {
                 val r = if (override == null) svc.print(queue, template, withPromo)
@@ -165,10 +176,12 @@ fun PrintSheet(tag: PriceTag, onDismiss: () -> Unit, onDone: (String) -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Mine.colors.sheet, contentColor = Mine.colors.text) {
         PrintSheetContent(
             PrintSheetUi(
-                subtitle = listOfNotNull(tag.name.ifBlank { null }, item.price?.let { "${PriceFormat.tag(it).first} ₴" }).joinToString(", "),
+                subtitle = if (single) listOfNotNull(tag.name.ifBlank { null }, item.price?.let { "${PriceFormat.tag(it).first} ₴" }).joinToString(", ")
+                    else "Товарів: ${tags.size} · кількість — для кожного",
+                items = tags.size,
                 format = format,
-                promo = promo && item.canPromo,
-                oldPrice = if (item.canPromo) PriceFormat.tag(item.oldPrice!!).first else null,
+                promo = promo && canPromo,
+                oldPrice = when { single && item.canPromo -> PriceFormat.tag(item.oldPrice!!).first; !single && canPromo -> ""; else -> null },
                 qty = qty, printer = line, busy = busy, error = error, alternative = alternative?.displayName,
                 landscape = landscape,
             ),
@@ -221,7 +234,7 @@ fun PrintSheetContent(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Акційний цінник", fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        Text("Стара ціна ${ui.oldPrice} ₴ буде закреслена. Встав жовтий папір.", fontSize = 13.sp, lineHeight = 17.sp, color = m.textSecondary)
+                        Text(if (ui.oldPrice.isBlank()) "Стара ціна буде закреслена там, де вона більша за нову. Встав жовтий папір." else "Стара ціна ${ui.oldPrice} ₴ буде закреслена. Встав жовтий папір.", fontSize = 13.sp, lineHeight = 17.sp, color = m.textSecondary)
                     }
                     Spacer(Modifier.width(12.dp))
                     Switch(
@@ -251,7 +264,7 @@ fun PrintSheetContent(
             when {
                 ui.busy -> "Друкую…"
                 ui.error != null -> "Спробувати ще"
-                else -> printButtonText(ui.format, ui.qty)
+                else -> printButtonText(ui.format, ui.qty * ui.items)
             },
             onPrint, height = 58.dp, enabled = !ui.busy,
         )

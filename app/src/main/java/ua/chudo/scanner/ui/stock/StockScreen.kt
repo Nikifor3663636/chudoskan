@@ -76,6 +76,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -86,6 +89,9 @@ import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.ImportResult
 import ua.chudo.scanner.data.LookupResult
+import ua.chudo.scanner.print.PriceTag
+import ua.chudo.scanner.print.TagData
+import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.NetworkAvailability
 import ua.chudo.scanner.data.NetworkStockLookup
@@ -151,8 +157,6 @@ class StockViewModel(
     private val stock: ShopStockRepository,
     private val prefs: AppPrefs,
     private val net: NetworkStockLookup? = null,
-    /** Спільний пакет для «Друк цінників». */
-    private val batch: MutableStateFlow<List<NetAvailability>>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow<StockState>(StockState.Idle)
     val state = _state.asStateFlow()
@@ -195,14 +199,56 @@ class StockViewModel(
         }
     }
 
-    /** «Цінники»: вибране — у чергу «Друк цінників» (ціни підтягнуться з сайту там). */
-    fun sendToLabels(): Boolean {
-        val b = batch ?: return false
-        if (_selected.value.isEmpty()) return false
-        b.value = b.value + _selected.value.filter { s -> b.value.none { it.barcode == s.barcode } }
+    /** Цінники до друку (вікно друку відкрите), поки не надруковано або не закрито. */
+    private val _printTags = MutableStateFlow<List<PriceTag>?>(null)
+    val printTags = _printTags.asStateFlow()
+    private val _labelsProgress = MutableStateFlow<String?>(null)
+    val labelsProgress = _labelsProgress.asStateFlow()
+
+    /**
+     * «Цінники»: ціни й назви з сайту (по 4 одночасно), штрихкод, код і артикул — з 1С → вікно друку.
+     * Без ціни на сайті цінник не друкується — такі товари пропускаємо й кажемо скільки.
+     */
+    fun prepareLabels() {
+        val list = _selected.value
+        if (list.isEmpty() || _labelsProgress.value != null) return
+        viewModelScope.launch {
+            var done = 0
+            _labelsProgress.value = "Ціни з сайту: 0 з ${list.size}…"
+            val tags = coroutineScope {
+                list.chunked(4).flatMap { chunk ->
+                    chunk.map { av ->
+                        async {
+                            val site = try { siteData(av.barcode) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                            TagData.merge(site, TagData.OneC(av.barcode, av.item.name, av.item.code, av.item.article), av.barcode).also {
+                                done++
+                                _labelsProgress.value = "Ціни з сайту: $done з ${list.size}…"
+                            }
+                        }
+                    }.awaitAll()
+                }
+            }
+            _labelsProgress.value = null
+            val ok = tags.filter { it.price.isNotBlank() }
+            val missing = tags.size - ok.size
+            _batchNote.value = if (missing > 0) "Без ціни на сайті: $missing — їх пропущено (без ціни цінник не друкується)." else null
+            if (ok.isNotEmpty()) _printTags.value = ok
+        }
+    }
+
+    /** Ціна й назва з сайту за штрихкодом; кілька збігів або немає — null. */
+    private suspend fun siteData(barcode: String): TagData.Site? {
+        val r = (repo.lookup(barcode) {}) as? LookupResult.Single ?: return null
+        val p = repo.details(r.urlKey)
+        return TagData.Site(p.name, p.article, p.price?.finalPrice, p.price?.regularPrice)
+    }
+
+    fun closePrint() { _printTags.value = null }
+
+    fun printed(message: String) {
+        _printTags.value = null
         _selected.value = emptyList()
-        _batchNote.value = null
-        return true
+        _batchNote.value = message
     }
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
     val import = _import.asStateFlow()
@@ -367,19 +413,19 @@ fun StockScreen(
     /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
     scanned: String?,
     onScannedConsumed: () -> Unit,
-    /** «Цінники»: вибрані товари вже в черзі «Друк цінників». */
-    onLabels: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
         key = "stock-${employee.uid}",
-        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, app.labelBatch) } },
+        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val changedLoading by vm.changedLoading.collectAsStateWithLifecycle()
     val batchNote by vm.batchNote.collectAsStateWithLifecycle()
+    val printTags by vm.printTags.collectAsStateWithLifecycle()
+    val labelsProgress by vm.labelsProgress.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
@@ -410,9 +456,8 @@ fun StockScreen(
         }
         item {
             LabelBatchCard(
-                selected, changedLoading, batchNote,
-                onChanged = vm::addChanged, onRemove = vm::unselect,
-                onLabels = { if (vm.sendToLabels()) onLabels() },
+                selected, changedLoading, labelsProgress ?: batchNote,
+                onChanged = vm::addChanged, onRemove = vm::unselect, onLabels = vm::prepareLabels,
             )
         }
 
@@ -474,6 +519,7 @@ fun StockScreen(
     }
 
     ImportDialog(vm, employee)
+    printTags?.let { tags -> PrintSheet(tags, onDismiss = vm::closePrint, onDone = vm::printed) }
 }
 
 private val FILE_TYPES = arrayOf(
@@ -686,7 +732,9 @@ private fun LabelBatchCard(
             note?.let { Text(it, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary) }
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MineButton("Змінені з минулого завантаження", onChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
-                MineButton("Цінники", onLabels, Modifier.weight(0.6f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
+            }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MineButton("Цінники для вибраних", onLabels, Modifier.weight(1f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
             }
         }
     }

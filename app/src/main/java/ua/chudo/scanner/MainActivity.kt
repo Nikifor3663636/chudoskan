@@ -49,7 +49,6 @@ import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
-import ua.chudo.scanner.ui.print.LabelsScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
 import ua.chudo.scanner.ui.stock.NetworkStockScreen
 import ua.chudo.scanner.ui.admin.AdminHistoryScreen
@@ -91,8 +90,6 @@ class MainActivity : ComponentActivity() {
 
 private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
-private const val LABEL_MODE = "label"
-private const val LABEL_CODE = "label_code"
 private const val ORDERS_MODE = "orders"
 private const val ORDERS_CODE = "orders_code"
 
@@ -106,7 +103,6 @@ private object Routes {
     const val PROFILE = "profile"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
-    const val SCAN_LABEL = "scan?mode=$LABEL_MODE"
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
@@ -152,7 +148,7 @@ private fun AppNav(home: Employee) {
     // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS
-        Routes.LABELS -> MainTab.PRINT
+        Routes.STOCK -> MainTab.STOCK
         Routes.PROFILE -> MainTab.PROFILE
         else -> MainTab.SEARCH
     }
@@ -174,7 +170,7 @@ private fun AppNav(home: Employee) {
                     when (t) {
                         MainTab.SEARCH -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
                         MainTab.ORDERS -> openTab(Routes.ORDERS)
-                        MainTab.PRINT -> openTab(Routes.LABELS)
+                        MainTab.STOCK -> openTab(Routes.STOCK)
                         MainTab.PROFILE -> openTab(Routes.PROFILE)
                     }
                 },
@@ -201,7 +197,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
-                onLabels = { nav.navigate(Routes.LABELS) { launchSingleTop = true } },
             )
         }
         composable(Routes.PROFILE) {
@@ -240,16 +235,9 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
-        composable(Routes.LABELS) { entry ->
-            val scanned by entry.savedStateHandle.getStateFlow<String?>(LABEL_CODE, null).collectAsStateWithLifecycle()
-            LabelsScreen(
-                onBack = { nav.popBackStack() },
-                onScan = { nav.navigate(Routes.SCAN_LABEL) },
-                onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
-                scanned = scanned,
-                onScannedConsumed = { entry.savedStateHandle[LABEL_CODE] = null },
-                shopId = employee.shopId,
-            )
+        // Старий екран «Друк» прибрано: цінник — з картки товару, пакет — із «Залишків». Старі посилання ведуть туди.
+        composable(Routes.LABELS) {
+            LaunchedEffect(Unit) { nav.navigate(Routes.STOCK) { popUpTo(Routes.LABELS) { inclusive = true } } }
         }
         composable(Routes.ORDERS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(ORDERS_CODE, null).collectAsStateWithLifecycle()
@@ -266,7 +254,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onProfile = { nav.navigate(Routes.PROFILE) },
-                onLabels = { nav.navigate(Routes.LABELS) },
+                onLabels = { nav.navigate(Routes.STOCK) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
                 onStock = { nav.navigate(Routes.STOCK) },
             )
@@ -276,10 +264,9 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "barcode" }),
         ) { entry ->
             val arg = entry.arguments?.getString("mode").orEmpty()
-            // mode=stock / mode=label — код возвращаем на предыдущий экран («Залишки» / «Друк цінників»).
+            // mode=stock / mode=orders — код повертаємо на попередній екран («Залишки» / «Замовлення»).
             val returnKey = when (arg) {
                 STOCK_MODE -> STOCK_CODE
-                LABEL_MODE -> LABEL_CODE
                 ORDERS_MODE -> ORDERS_CODE
                 else -> null
             }
