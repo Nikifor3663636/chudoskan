@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChudoScan.Print.Core", "Chu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChudoScan.Print.Tests", "ChudoScan.Print.Tests\ChudoScan.Print.Tests.csproj", "{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChudoScan.Print", "ChudoScan.Print\ChudoScan.Print.csproj", "{6AD1EAB7-432A-4A4F-B54A-6B8CE1586FC3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6AD1EAB7-432A-4A4F-B54A-6B8CE1586FC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6AD1EAB7-432A-4A4F-B54A-6B8CE1586FC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6AD1EAB7-432A-4A4F-B54A-6B8CE1586FC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6AD1EAB7-432A-4A4F-B54A-6B8CE1586FC3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

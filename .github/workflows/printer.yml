@@ -1,13 +1,18 @@
 name: ChudoScan Print
 
-# «ЧудоСкан Друк» (Windows, .NET 8): тести ядра.
+# «ЧудоСкан Друк» (Windows, .NET 8): тести ядра → збірка x64/x86 → установники Inno Setup.
+# Тег printer-v* — реліз з установниками.
 on:
   push:
     branches: [main]
+    tags: ["printer-v*"]
     paths: [printer/**, .github/workflows/printer.yml]
   pull_request:
     paths: [printer/**, .github/workflows/printer.yml]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   test:
@@ -19,3 +24,75 @@ jobs:
         with:
           dotnet-version: "8.0.x"
       - run: dotnet test printer/ChudoScan.Print.Tests/ChudoScan.Print.Tests.csproj
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Версія
+        run: |
+          $v = if ($env:GITHUB_REF -like 'refs/tags/printer-v*') { $env:GITHUB_REF -replace '^refs/tags/printer-v', '' } else { '1.0.0' }
+          "VERSION=$v" | Out-File -Append $env:GITHUB_ENV
+
+      # Публічний Web API key і projectId — з того самого секрету, що й для застосунку (google-services.json).
+      # Ключ сервісного акаунта не потрібен і в збірку не потрапляє.
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if (-not $env:GOOGLE_SERVICES_JSON) { Write-Warning "Немає GOOGLE_SERVICES_JSON — програма не зможе увійти"; exit 0 }
+          $g = $env:GOOGLE_SERVICES_JSON | ConvertFrom-Json
+          @{ firebaseApiKey = $g.client[0].api_key[0].current_key; projectId = $g.project_info.project_id } |
+            ConvertTo-Json | Set-Content -Encoding utf8 printer/ChudoScan.Print/appsettings.json
+
+      - name: Збірка x64 і x86
+        run: |
+          foreach ($rid in 'win-x64', 'win-x86') {
+            dotnet publish printer/ChudoScan.Print/ChudoScan.Print.csproj -c Release -r $rid --self-contained true `
+              -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+              -p:Version=$env:VERSION -p:DebugType=none -o printer/publish/$rid
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+
+      - name: Установники
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          foreach ($arch in 'x64', 'x86') {
+            & $iscc "/DArch=$arch" "/DAppVersion=$env:VERSION" "/DSourceDir=..\publish\win-$arch" printer/installer/ChudoScanPrint.iss
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+
+      - name: Без приватних ключів
+        run: |
+          $bad = @('BEGIN PRIVATE KEY', 'private_key')
+          $files = @(Get-ChildItem printer/publish, printer/installer/Output -Recurse -File)
+          foreach ($f in $files) {
+            $text = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($f.FullName))
+            foreach ($b in $bad) { if ($text.Contains($b)) { Write-Error "$($f.Name) містить «$b»"; exit 1 } }
+          }
+          git grep -n -I -e 'BEGIN PRIVATE KEY' -e '"private_key"' -- . ':!.github/workflows/printer.yml'
+          if ($LASTEXITCODE -eq 0) { Write-Error 'У репозиторії є приватний ключ'; exit 1 }
+          "Перевірено файлів: $($files.Count)"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ChudoScanPrint-${{ env.VERSION }}
+          path: printer/installer/Output/*.exe
+
+      - name: Реліз
+        if: startsWith(github.ref, 'refs/tags/printer-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME printer/installer/Output/*.exe --title "ЧудоСкан Друк $env:VERSION" `
+            --notes "Програма для друку етикеток на Godex з комп'ютера магазину. Встановлення без прав адміністратора: x64 — для 64-бітної Windows 10/11, x86 — для 32-бітної."
