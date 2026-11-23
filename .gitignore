@@ -24,3 +24,9 @@ agent/service-account*.json
 # Тести правил Firestore.
 rules-tests/node_modules/
 rules-tests/*.log
+
+# «ЧудоСкан Друк» (.NET).
+printer/**/bin/
+printer/**/obj/
+printer/publish/
+printer/installer/Output/

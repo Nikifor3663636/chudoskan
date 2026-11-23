@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChudoScan.Print.Core", "ChudoScan.Print.Core\ChudoScan.Print.Core.csproj", "{BF3B2019-CBD3-4B37-90E4-4D3D2579956E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ChudoScan.Print.Tests", "ChudoScan.Print.Tests\ChudoScan.Print.Tests.csproj", "{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BF3B2019-CBD3-4B37-90E4-4D3D2579956E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF3B2019-CBD3-4B37-90E4-4D3D2579956E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF3B2019-CBD3-4B37-90E4-4D3D2579956E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF3B2019-CBD3-4B37-90E4-4D3D2579956E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F117F9F-86B8-44ED-8BE6-1AADAA4C8E68}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

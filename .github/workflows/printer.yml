@@ -1,0 +1,21 @@
+name: ChudoScan Print
+
+# «ЧудоСкан Друк» (Windows, .NET 8): тести ядра.
+on:
+  push:
+    branches: [main]
+    paths: [printer/**, .github/workflows/printer.yml]
+  pull_request:
+    paths: [printer/**, .github/workflows/printer.yml]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet test printer/ChudoScan.Print.Tests/ChudoScan.Print.Tests.csproj
