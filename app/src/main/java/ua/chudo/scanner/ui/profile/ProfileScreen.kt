@@ -67,7 +67,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {}) {
+fun ProfileScreen(
+    employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {},
+    onNetworkStock: (() -> Unit)? = null,
+) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
     var info by remember { mutableStateOf<ShopStockInfo?>(null) }
@@ -84,10 +87,10 @@ fun ProfileScreen(employee: Employee, onBack: () -> Unit, onPrinters: (() -> Uni
         ProfileUi(
             name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
             shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
-            theme = theme, admin = onPrinters != null, message = message,
+            theme = theme, admin = onPrinters != null, message = message, networkStock = onNetworkStock != null,
         ),
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
-        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
+        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
     )
 
     if (changePassword) {
@@ -144,6 +147,8 @@ data class ProfileUi(
     val theme: ThemeMode,
     val admin: Boolean,
     val message: String? = null,
+    /** «Залишки мережі» — лише stockAdmin / superAdmin. */
+    val networkStock: Boolean = false,
 )
 
 /** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
@@ -155,6 +160,7 @@ fun ProfileContent(
     onTheme: (ThemeMode) -> Unit = {},
     onStock: () -> Unit = {},
     onPrinters: () -> Unit = {},
+    onNetworkStock: () -> Unit = {},
     onPassword: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
@@ -182,6 +188,10 @@ fun ProfileContent(
                 }
                 ProfileRow("Залишки магазину", ui.stock, onClick = onStock)
                 RowDivider()
+                if (ui.networkStock) {
+                    ProfileRow("Залишки мережі", "Завантажити з 1С", onClick = onNetworkStock)
+                    RowDivider()
+                }
                 ProfileRow("Магазин", ui.shop)
                 RowDivider()
                 ProfileRow("Місто", ui.city)

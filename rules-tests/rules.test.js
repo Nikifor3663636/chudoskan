@@ -6,7 +6,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   Bytes, Timestamp, addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp,
-  setDoc, updateDoc, where,
+  setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 
 let env;
@@ -312,7 +312,7 @@ describe('залишки мережі', () => {
     await assertSucceeds(setDoc(doc(as('sup'), 'stock', '2'), row({ 22: 2.5 })));
     await assertSucceeds(deleteDoc(doc(as('stocker'), 'stock', '1')));
     await assertSucceeds(setDoc(doc(as('stocker'), 'stores', '22'), { name: 'ЧО 22', address: 'вул. Тестова, 1', city: 'Київ', updatedAt: serverTimestamp() }));
-    await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stock'), { updatedAt: serverTimestamp(), by: 'stocker', rows: 2, stores: 1, file: 'залишки.xlsx' }));
+    await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stock'), { updatedAt: serverTimestamp(), updatedBy: 'Залишки', items: 2, stores: 1 }));
   });
 
   test('q — map чисел ≥ 0, поля за білим списком', async () => {
@@ -331,7 +331,8 @@ describe('залишки мережі', () => {
     await assertFails(setDoc(doc(db, 'stores', 'ЧО 22'), { name: 'ЧО 22' }));
     await assertFails(setDoc(doc(db, 'stores', '22'), { name: 'ЧО 22', secret: 1 }));
     await assertFails(setDoc(doc(db, 'meta', 'other'), { rows: 1 }));
-    await assertFails(setDoc(doc(db, 'meta', 'stock'), { by: 'sup' }));
+    await assertFails(setDoc(doc(db, 'meta', 'stock'), { items: 1, file: 'x.xlsx' }));
+    await assertFails(setDoc(doc(db, 'meta', 'stock'), { items: '1' }));
     // Від'ємне значення далеко в map теж ловиться.
     const stores = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i + 1), 1]));
     await assertSucceeds(setDoc(doc(db, 'stock', '4'), row(stores(100))));
@@ -377,5 +378,45 @@ describe('adminLog', () => {
     await assertSucceeds(getDoc(doc(as('sup'), 'adminLog', 'a')));
     await assertFails(updateDoc(doc(as('sup'), 'adminLog', 'a'), { action: 'x' }));
     await assertFails(deleteDoc(doc(as('sup'), 'adminLog', 'a')));
+  });
+});
+
+describe('імпорт залишків мережі (етап 3)', () => {
+  test('stockAdmin: список магазинів, прив\'язка складу, склад, підсумок, журнал — як робить застосунок', async () => {
+    const db = as('stocker');
+    await assertSucceeds(getDocs(collection(db, 'shops')));
+    await assertSucceeds(setDoc(doc(db, 'stores', '09'), { name: 'ЧО 09 Біла Церква (ТЦ Гермес)', city: 'Біла Церква' }, { merge: true }));
+    // «Який це магазин?»: stores/{код}.shopId і shops/{shopId}.code1C одним пакетом.
+    const b = writeBatch(db);
+    b.set(doc(db, 'stores', '22'), { shopId: '22' }, { merge: true });
+    b.set(doc(db, 'shops', '22'), { code1C: '22' }, { merge: true });
+    await assertSucceeds(b.commit());
+    await assertSucceeds(setDoc(doc(db, 'meta', 'stock'), { updatedAt: serverTimestamp(), updatedBy: 'Залишки', items: 23780, stores: 46 }));
+    await assertSucceeds(addDoc(collection(db, 'adminLog'),
+      { by: 'stocker', at: serverTimestamp(), action: 'stockImport', details: 'магазинів 46 · товарів 23780' }));
+    // Інші дії в журнал stockAdmin не пише.
+    await assertFails(addDoc(collection(db, 'adminLog'), { by: 'stocker', at: serverTimestamp(), action: 'approve' }));
+  });
+
+  test('пачка 450 товарів по 46 магазинів проходить правила', async () => {
+    const db = as('stocker');
+    const q = Object.fromEntries(Array.from({ length: 46 }, (_, i) => [String(i + 1).padStart(2, '0'), (i % 5) + 1]));
+    const b = writeBatch(db);
+    for (let i = 0; i < 450; i++) {
+      b.set(doc(db, 'stock', String(4820000000000 + i)), { q, name: `Товар ${i}, з комою`, code: 'BOC022446', article: '', updatedAt: serverTimestamp() });
+    }
+    await assertSucceeds(b.commit());
+  });
+
+  test('звичайний співробітник і адмін магазину не імпортують', async () => {
+    for (const who of ['emp22', 'adm22']) {
+      const db = as(who);
+      await assertFails(getDocs(collection(db, 'shops')));
+      await assertFails(setDoc(doc(db, 'stores', '22'), { shopId: '22' }, { merge: true }));
+      await assertFails(setDoc(doc(db, 'meta', 'stock'), { items: 1 }));
+      await assertFails(setDoc(doc(db, 'stock', '1'), { q: { 22: 1 }, name: 'x', code: '', article: '' }));
+    }
+    // Адмін ЧО 22 не ставить code1C чужому магазину.
+    await assertFails(setDoc(doc(as('adm22'), 'shops', '62'), { code1C: '62' }, { merge: true }));
   });
 });

@@ -12,7 +12,7 @@ import java.util.zip.ZipOutputStream
 class StockFileParserTest {
 
     @Before fun jvmParser() {
-        StockFileParser.newParser = { KXmlParser() }
+        Xlsx.newParser = { KXmlParser() }
     }
 
     private fun xlsx(vararg parts: Pair<String, String>): ByteArray {

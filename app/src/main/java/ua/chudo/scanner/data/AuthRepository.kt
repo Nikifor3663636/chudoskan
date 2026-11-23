@@ -28,6 +28,11 @@ data class Employee(
     val approved: Boolean,
     /** Администратор магазина (поле `admin` в users/{uid}, ставится только в консоли): видит «Профіль → Принтери». */
     val admin: Boolean = false,
+    /**
+     * Завантажує залишки мережі (`stockAdmin` або `superAdmin` у users/{uid}, лише в консолі Firebase):
+     * бачить «Профіль → Залишки мережі». Те саме перевіряють правила (isStockAdmin).
+     */
+    val stockAdmin: Boolean = false,
 )
 
 sealed interface AuthState {
@@ -145,6 +150,7 @@ class AuthRepository(context: Context) {
         shopId = getString("shopId").orEmpty(),
         approved = getBoolean("approved") == true,
         admin = getBoolean("admin") == true,
+        stockAdmin = getBoolean("approved") == true && (getBoolean("stockAdmin") == true || getBoolean("superAdmin") == true),
     )
 
     companion object {

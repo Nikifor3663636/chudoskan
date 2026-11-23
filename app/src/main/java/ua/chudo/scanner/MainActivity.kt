@@ -47,6 +47,7 @@ import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
 import ua.chudo.scanner.ui.print.LabelsScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
+import ua.chudo.scanner.ui.stock.NetworkStockScreen
 import ua.chudo.scanner.ui.profile.ProfileScreen
 import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
@@ -98,6 +99,7 @@ private object Routes {
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
+    const val NETWORK_STOCK = "network-stock"
 
     fun scan() = "scan?mode=barcode"
     fun results(q: String) = "results/${Uri.encode(q)}"
@@ -175,7 +177,12 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, modifier: Mod
                 employee, onBack = { nav.popBackStack() },
                 onPrinters = if (employee.admin) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 onStock = { nav.navigate(Routes.STOCK) },
+                onNetworkStock = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
+        }
+        // «Залишки мережі» — лише stockAdmin / superAdmin (те саме перевіряють правила).
+        composable(Routes.NETWORK_STOCK) {
+            if (employee.stockAdmin) NetworkStockScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack()
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.admin) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }

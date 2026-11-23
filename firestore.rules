@@ -91,7 +91,8 @@ service cloud.firestore {
     }
 
     match /shops/{shopId} {
-      allow read: if canSee(shopId);
+      // stockAdmin бачить список магазинів, щоб прив'язати склад 1С («Який це магазин?»).
+      allow read: if canSee(shopId) || isStockAdmin();
 
       // Зведення останнього вивантаження залишків магазину; printerSubnets і code1C тут не змінюються.
       allow create: if worksAt(shopId)
@@ -111,11 +112,11 @@ service cloud.firestore {
         && changed().hasOnly(['printerSubnets'])
         && request.resource.data.printerSubnets is list && request.resource.data.printerSubnets.size() <= 32;
 
-      // Код магазину в 1С — адмін магазину або мережі.
-      allow create: if canManage(shopId)
+      // Код магазину в 1С — адмін магазину або мережі, а також stockAdmin під час завантаження залишків.
+      allow create: if (canManage(shopId) || isStockAdmin())
         && request.resource.data.keys().hasOnly(['code1C'])
         && request.resource.data.code1C is string && request.resource.data.code1C.size() <= 40;
-      allow update: if canManage(shopId)
+      allow update: if (canManage(shopId) || isStockAdmin())
         && changed().hasOnly(['code1C'])
         && request.resource.data.code1C is string && request.resource.data.code1C.size() <= 40;
 
@@ -258,8 +259,9 @@ service cloud.firestore {
       allow read: if isApproved();
       allow create, update: if isStockAdmin()
         && isShopCode(code)
-        && request.resource.data.keys().hasOnly(['name', 'address', 'city', 'region', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'address', 'city', 'region', 'shopId', 'updatedAt'])
         && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 200))
+        && (!('shopId' in request.resource.data) || (request.resource.data.shopId is string && request.resource.data.shopId.size() <= 100))
         && (!('address' in request.resource.data) || (request.resource.data.address is string && request.resource.data.address.size() <= 300))
         && (!('city' in request.resource.data) || (request.resource.data.city is string && request.resource.data.city.size() <= 100))
         && (!('region' in request.resource.data) || (request.resource.data.region is string && request.resource.data.region.size() <= 100))
@@ -271,12 +273,11 @@ service cloud.firestore {
     match /meta/{id} {
       allow read: if isApproved() && id == 'stock';
       allow create, update: if isStockAdmin() && id == 'stock'
-        && request.resource.data.keys().hasOnly(['updatedAt', 'by', 'rows', 'stores', 'file'])
+        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores'])
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
-        && (!('by' in request.resource.data) || request.resource.data.by == request.auth.uid)
-        && (!('rows' in request.resource.data) || request.resource.data.rows is int)
-        && (!('stores' in request.resource.data) || request.resource.data.stores is int)
-        && (!('file' in request.resource.data) || (request.resource.data.file is string && request.resource.data.file.size() <= 200));
+        && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 100))
+        && (!('items' in request.resource.data) || request.resource.data.items is int)
+        && (!('stores' in request.resource.data) || request.resource.data.stores is int);
       allow delete: if false;
     }
 
@@ -301,7 +302,8 @@ service cloud.firestore {
     // ---------- Журнал дій адмінів ----------
 
     match /adminLog/{id} {
-      allow create: if (isAdmin() || isSuperAdmin())
+      // stockAdmin пише лише підсумок завантаження залишків мережі.
+      allow create: if (isAdmin() || isSuperAdmin() || (isStockAdmin() && request.resource.data.action == 'stockImport'))
         && request.resource.data.keys().hasOnly(['by', 'at', 'action', 'target', 'shopId', 'details'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.at == request.time
