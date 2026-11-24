@@ -167,10 +167,6 @@ class NetworkStockViewModel(
     private fun confirmOrUpload(p: NetPending) {
         val plan = p.plan
         val warnings = buildList {
-            if (plan.first) add(
-                "Перше завантаження: ~${fmt(plan.writes)} записів, може перевищити безкоштовний ліміт Firestore " +
-                    "(20 000 записів на добу).",
-            )
             if (plan.shrunk) add(
                 "У файлі ${fmt(plan.items.size)} товарів — менше половини від попереднього (${fmt(plan.previousItems)}). " +
                     "Можливо, це неповний звіт.",
@@ -184,7 +180,7 @@ class NetworkStockViewModel(
     }
 
     private fun upload(p: NetPending) {
-        _state.value = NetState.Uploading(0, p.plan.writes)
+        _state.value = NetState.Uploading(0, 1)
         guard {
             val r = repo.upload(employee, p.fresh, p.plan, p.known, p.startedAt) { done, total ->
                 _state.value = NetState.Uploading(done, total)

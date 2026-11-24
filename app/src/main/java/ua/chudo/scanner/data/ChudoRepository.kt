@@ -22,7 +22,12 @@ sealed interface Via {
     data object Remembered : Via
     data class UpcArticle(val article: String) : Via
     data class UpcTitle(val title: String) : Via
+    /** Артикул узяли із залишків 1С (stock/{штрихкод}). */
+    data class Stock1C(val article: String) : Via
 }
+
+/** Залишки 1С за штрихкодом; `null` — немає або недоступно. */
+fun interface Stock1C { suspend fun find(barcode: String): NetAvailability? }
 
 sealed interface LookupResult {
     val query: String
@@ -48,6 +53,13 @@ sealed interface LookupResult {
         override val barcode: String?,
         val triedArticles: List<String>,
     ) : LookupResult
+
+    /** Є в 1С, на сайті не знайшли. */
+    data class Only1C(
+        override val query: String,
+        override val barcode: String,
+        val stock: NetAvailability,
+    ) : LookupResult
 }
 
 class ChudoRepository(
@@ -66,51 +78,19 @@ class ChudoRepository(
     suspend fun shops(productId: Long, region: String): List<ShopAvailability> =
         parseShops(client.getJson(shopsUrl(lang, productId, region)))
 
-    /**
-     * Цепочка поиска:
-     * 1. штрихкод, который пользователь уже привязал;
-     * 2. поиск по сайту как есть (артикул, название или EAN, если он в названии);
-     * 3. для штрихкода: UPCitemdb → вероятные артикулы → поиск каждого;
-     * 4. для штрихкода: название из UPCitemdb → поиск по тексту.
-     */
-    suspend fun lookup(raw: String, onStep: (String) -> Unit = {}): LookupResult {
+    private val engine = LookupEngine(
+        site = SiteSearch { search(it) },
+        upc = UpcSource { bc ->
+            val raw = client.getExternal(upcLookupUrl(bc))
+            UpcHit(upcCandidates(raw, bc, 4u), upcTitle(raw))
+        },
+        remembered = { prefs.rememberedProduct(it) },
+    )
+
+    /** Рішення — у [LookupEngine]; тут лише розбір запиту ядром. */
+    suspend fun lookup(raw: String, stock: Stock1C? = null, onStep: (String) -> Unit = {}): LookupResult {
         val q = classifyQuery(raw)
         val code = q.normalized
-        val barcode = code.takeIf { isBarcode(q.kind) }
-
-        barcode?.let { bc ->
-            prefs.rememberedProduct(bc)?.let { return LookupResult.Single(code, bc, it, Via.Remembered) }
-        }
-
-        onStep("Шукаємо «$code» на сайті…")
-        pick(code, barcode, search(code), Via.Direct)?.let { return it }
-        if (barcode == null) return LookupResult.NotFound(code, null, emptyList())
-
-        onStep("Сайт не знає штрихкодів — шукаємо у відкритій базі…")
-        val upc = runCatching { client.getExternal(upcLookupUrl(barcode)) }.getOrNull()
-            ?: return LookupResult.NotFound(code, barcode, emptyList())
-
-        val articles = upcCandidates(upc, barcode, 4u)
-        for (article in articles) {
-            onStep("Пробуємо артикул $article…")
-            pick(code, barcode, search(article), Via.UpcArticle(article))?.let { return it }
-        }
-
-        upcTitle(upc)?.let { title ->
-            onStep("Шукаємо за назвою…")
-            val short = title.split(' ').take(6).joinToString(" ")
-            pick(code, barcode, search(short), Via.UpcTitle(title))?.let { return it }
-        }
-        return LookupResult.NotFound(code, barcode, articles)
-    }
-
-    private fun pick(query: String, barcode: String?, list: List<ProductSummary>, via: Via): LookupResult? {
-        if (list.isEmpty()) return null
-        val exact = list.filter { it.exactMatch }
-        return when {
-            exact.size == 1 -> LookupResult.Single(query, barcode, exact.first().urlKey, via)
-            list.size == 1 -> LookupResult.Single(query, barcode, list.first().urlKey, via)
-            else -> LookupResult.Many(query, barcode, list, via)
-        }
+        return engine.lookup(code, code.takeIf { isBarcode(q.kind) }, stock, onStep)
     }
 }

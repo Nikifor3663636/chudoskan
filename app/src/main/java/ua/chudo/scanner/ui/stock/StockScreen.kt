@@ -89,6 +89,7 @@ import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.ImportResult
 import ua.chudo.scanner.data.LookupResult
+import ua.chudo.scanner.data.Stock1C
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.TagData
 import ua.chudo.scanner.ui.print.PrintSheet
@@ -286,7 +287,7 @@ class StockViewModel(
 
     /** Ціна й назва з сайту за штрихкодом; кілька збігів або немає — null. */
     private suspend fun siteData(barcode: String): TagData.Site? {
-        val r = (repo.lookup(barcode) {}) as? LookupResult.Single ?: return null
+        val r = (repo.lookup(barcode, stock1C) {}) as? LookupResult.Single ?: return null
         val p = repo.details(r.urlKey)
         return TagData.Site(p.name, p.article, p.price?.finalPrice, p.price?.regularPrice)
     }
@@ -321,16 +322,14 @@ class StockViewModel(
             _state.value = StockState.Loading("Шукаємо…")
             // Код 1С (BOC022446) — одразу в залишках мережі: на сайті його немає.
             if (NetworkAvailability.isCode(q)) netResult(q, netTry { it.byCode(employee.shopId, q) }.orEmpty())?.let { return@launchState it }
-            when (val r = repo.lookup(q) { _state.value = StockState.Loading(it) }) {
+            when (val r = repo.lookup(q, stock1C) { _state.value = StockState.Loading(it) }) {
                 is LookupResult.Single -> load(r.urlKey, r.barcode)
                 is LookupResult.Many -> { last = null; StockState.Pick(q, r.items) }
+                is LookupResult.Only1C -> { last = null; StockState.Ready(null, null, null, null, r.stock) }
                 is LookupResult.NotFound -> {
                     last = null
-                    // На сайті немає — шукаємо в залишках мережі (штрихкод або артикул), потім у вивантаженні магазину.
-                    val found = netTry { n ->
-                        val bc = r.barcode ?: q.takeIf { it.all(Char::isDigit) }
-                        bc?.let { n.byBarcode(employee.shopId, it) }?.let(::listOf) ?: n.byArticle(employee.shopId, q)
-                    }.orEmpty()
+                    // Штрихкод у 1С уже перевірив lookup; тут — артикул, потім вивантаження магазину.
+                    val found = if (r.barcode != null) emptyList() else netTry { it.byArticle(employee.shopId, q) }.orEmpty()
                     netResult(q, found) ?: run {
                         val item = runCatching { stock.find(employee.shopId, q, listOfNotNull(r.barcode)) }.getOrNull()
                         if (item != null) StockState.Ready(null, null, item, null) else StockState.NotFound(q)
@@ -347,6 +346,8 @@ class StockViewModel(
     }
 
     fun openNet(av: NetAvailability) { job?.cancel(); last = null; _state.value = StockState.Ready(null, null, null, null, av) }
+
+    private val stock1C: Stock1C? = net?.let { n -> Stock1C { bc -> n.byBarcode(employee.shopId, bc) } }
 
     /** Помилка читання залишків мережі не заважає показати старі дані. */
     private suspend fun <T> netTry(block: suspend (NetworkStockLookup) -> T?): T? {

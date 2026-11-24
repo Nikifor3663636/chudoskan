@@ -255,6 +255,17 @@ service cloud.firestore {
       allow delete: if isStockAdmin();
     }
 
+    // Пакет залишків: увесь знімок gzip частинами по ≤ 800 КБ (stockPacks/{версія}_{i}).
+    match /stockPacks/{id} {
+      allow read: if isApproved();
+      allow create: if isStockAdmin()
+        && id.size() <= 64
+        && request.resource.data.keys().hasOnly(['v', 'i', 'n', 'data', 'changed'])
+        && request.resource.data.data is bytes && request.resource.data.data.size() <= 800000
+        && (!('changed' in request.resource.data) || (request.resource.data.changed is bytes && request.resource.data.changed.size() <= 200000));
+      allow delete: if isStockAdmin();
+    }
+
     match /stores/{code} {
       allow read: if isApproved();
       allow create, update: if isStockAdmin()
@@ -273,12 +284,14 @@ service cloud.firestore {
     match /meta/{id} {
       allow read: if isApproved() && id == 'stock';
       allow create, update: if isStockAdmin() && id == 'stock'
-        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores', 'changedAfter'])
+        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores', 'changedAfter', 'pack', 'parts'])
         && (!('changedAfter' in request.resource.data) || request.resource.data.changedAfter is timestamp)
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
         && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 100))
         && (!('items' in request.resource.data) || request.resource.data.items is int)
-        && (!('stores' in request.resource.data) || request.resource.data.stores is int);
+        && (!('stores' in request.resource.data) || request.resource.data.stores is int)
+        && (!('pack' in request.resource.data) || (request.resource.data.pack is string && request.resource.data.pack.size() <= 40))
+        && (!('parts' in request.resource.data) || (request.resource.data.parts is int && request.resource.data.parts <= 20));
       allow delete: if false;
     }
 

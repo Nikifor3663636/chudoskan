@@ -1,5 +1,6 @@
 package ua.chudo.scanner.data
 
+import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -19,9 +20,9 @@ data class NetworkImportResult(val stores: Int, val items: Int, val changed: Int
 
 /**
  * Залишки мережі (тільки stockAdmin — див. firestore.rules):
- * - `stock/{штрихкод}` = {q: {"22": 1, …}, name, code, article, updatedAt} — лише ненульові;
+ * - `stockPacks/{версія}_{i}` — увесь знімок пакетом ([StockPack]); `stock/{штрихкод}` — старий формат, лише читання;
  * - `stores/{код}` = {name, city, shopId?}; `shops/{shopId}.code1C`;
- * - `meta/stock` = {updatedAt, updatedBy, items, stores}.
+ * - `meta/stock` = {updatedAt, updatedBy, items, stores, pack, parts}.
  * Різниця рахується зі знімком попереднього файлу на телефоні — без читань `stock`.
  */
 class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) {
@@ -54,20 +55,20 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
     }
 
     /**
-     * Пише лише змінені товари, видаляє зниклі (пачками по [BATCH]), оновлює склади, `meta/stock` і журнал.
-     * Нічого не змінилося — жодного запису. Знімок зберігаємо лише після успішного запису всього.
+     * Пише пакет залишків ([StockPack]): кілька документів `stockPacks`, потім `meta/stock` (нова версія),
+     * потім видаляє старий пакет. Нічого не змінилося і пакет уже є — жодного запису.
+     * Знімок зберігаємо лише після успішного запису всього.
      */
     suspend fun upload(
         employee: Employee, fresh: NetworkStock, plan: StockPlan, known: Map<String, StoreDoc>, startedAt: Long,
         onProgress: (Int, Int) -> Unit,
     ): NetworkImportResult {
         val storeWrites = storesToWrite(fresh.stores, known)
-        val total = plan.writes
-        var done = 0
-        onProgress(0, total)
-        // Серверний час кінця попереднього завантаження: усе, що запишемо зараз, матиме updatedAt пізніше.
-        // Так «змінені з минулого завантаження» не залежать від годинника телефону.
-        val previousEnd = if (total > 0) runCatching { db.collection(META).document(STOCK).get().await().getTimestamp("updatedAt") }.getOrNull() else null
+        val old = runCatching { db.collection(META).document(STOCK).get().await() }.getOrNull()
+        val oldPack = old?.getString("pack")
+        val oldParts = old?.getLong("parts")?.toInt() ?: 0
+        val storeCount = plan.items.values.flatMap { it.q.keys }.toSet().size
+        val needed = plan.writes > 0 || oldPack == null
 
         if (storeWrites.isNotEmpty()) {
             val b = db.batch()
@@ -75,41 +76,45 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
             b.commit().await()
         }
 
-        val ops: List<Pair<String, NetItem?>> = plan.changed.map { it to plan.items.getValue(it) } + plan.removed.map { it to null }
-        for (chunk in ops.chunked(BATCH)) {
-            val b = db.batch()
-            for ((bc, item) in chunk) {
-                val ref = db.collection(STOCK).document(bc)
-                if (item == null) b.delete(ref) else b.set(ref, toDoc(item))
+        if (needed) {
+            val tmp = File(snapshot.file.parentFile, "upload.pack")
+            StockSnapshot(tmp).write(plan.items)
+            val parts = StockPack.split(tmp.readBytes())
+            tmp.delete()
+            val version = System.currentTimeMillis().toString()
+            onProgress(0, parts.size)
+            parts.forEachIndexed { i, bytes ->
+                val doc = mutableMapOf<String, Any>("v" to version, "i" to i, "n" to parts.size, "data" to Blob.fromBytes(bytes))
+                if (i == 0) doc["changed"] = Blob.fromBytes(StockPack.gzipLines(plan.changed))
+                db.collection(PACKS).document("${version}_$i").set(doc).await()
+                onProgress(i + 1, parts.size)
             }
-            b.commit().await()
-            done += chunk.size
-            onProgress(done, total)
-        }
-
-        val storeCount = plan.items.values.flatMap { it.q.keys }.toSet().size
-        val seconds = (System.currentTimeMillis() - startedAt) / 1000
-        if (total > 0) {
-            val meta = mutableMapOf<String, Any>(
-                "updatedAt" to FieldValue.serverTimestamp(), "updatedBy" to employee.name.take(100),
-                "items" to plan.items.size, "stores" to storeCount,
-            )
-            // Товари з updatedAt > changedAfter — «змінені з минулого завантаження» (пакетний друк цінників).
-            previousEnd?.let { meta["changedAfter"] = it }
-            db.collection(META).document(STOCK).set(meta).await()
+            db.collection(META).document(STOCK).set(
+                mapOf(
+                    "updatedAt" to FieldValue.serverTimestamp(), "updatedBy" to employee.name.take(100),
+                    "items" to plan.items.size, "stores" to storeCount, "pack" to version, "parts" to parts.size,
+                ),
+            ).await()
+            if (oldPack != null) runCatching {
+                val b = db.batch()
+                (0 until oldParts).forEach { b.delete(db.collection(PACKS).document("${oldPack}_$it")) }
+                b.commit().await()
+            }
             db.collection(ADMIN_LOG).add(
                 mapOf(
                     "by" to employee.uid, "at" to FieldValue.serverTimestamp(), "action" to ACTION,
-                    "details" to summary(storeCount, plan.items.size, plan.changed.size, plan.removed.size, seconds),
+                    "details" to summary(storeCount, plan.items.size, plan.changed.size, plan.removed.size, (System.currentTimeMillis() - startedAt) / 1000),
                 ),
             ).await()
         }
         snapshot.write(plan.items)
+        val seconds = (System.currentTimeMillis() - startedAt) / 1000
         return NetworkImportResult(storeCount, plan.items.size, plan.changed.size, plan.removed.size, plan.keptStores, seconds)
     }
 
     companion object {
         const val STOCK = "stock"
+        const val PACKS = "stockPacks"
         const val STORES = "stores"
         const val SHOPS = "shops"
         const val META = "meta"

@@ -315,6 +315,21 @@ describe('залишки мережі', () => {
     await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stock'), { updatedAt: serverTimestamp(), updatedBy: 'Залишки', items: 2, stores: 1 }));
   });
 
+  test('пакет залишків: читає підтверджений, пише stockAdmin, ≤ 800 КБ', async () => {
+    const part = (n, extra = {}) => ({ v: '1732440000000', i: 0, n: 2, data: Bytes.fromUint8Array(new Uint8Array(n)), ...extra });
+    await assertSucceeds(setDoc(doc(as('stocker'), 'stockPacks', '1732440000000_0'), part(800000, { changed: Bytes.fromUint8Array(new Uint8Array(10)) })));
+    await assertSucceeds(getDoc(doc(as('emp22'), 'stockPacks', '1732440000000_0')));
+    await assertFails(getDoc(doc(as('new22'), 'stockPacks', '1732440000000_0')));
+    await assertFails(setDoc(doc(as('emp22'), 'stockPacks', 'x_0'), part(10)));
+    await assertFails(setDoc(doc(as('stocker'), 'stockPacks', 'x_1'), part(800001)));
+    await assertFails(setDoc(doc(as('stocker'), 'stockPacks', 'x_2'), { ...part(10), data: 'base64' }));
+    await assertFails(setDoc(doc(as('stocker'), 'stockPacks', 'x_3'), part(10, { extra: 1 })));
+    await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stock'), { updatedAt: serverTimestamp(), items: 2, stores: 1, pack: '1732440000000', parts: 2 }));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'stock'), { pack: 1, parts: 2 }));
+    await assertSucceeds(deleteDoc(doc(as('stocker'), 'stockPacks', '1732440000000_0')));
+    await assertFails(deleteDoc(doc(as('emp22'), 'stockPacks', '1732440000000_0')));
+  });
+
   test('q — map чисел ≥ 0, поля за білим списком', async () => {
     const db = as('stocker');
     await assertFails(setDoc(doc(db, 'stock', '3'), row({ 22: -1 })));
