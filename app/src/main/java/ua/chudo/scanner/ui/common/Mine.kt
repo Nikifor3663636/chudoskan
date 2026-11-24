@@ -2,6 +2,8 @@ package ua.chudo.scanner.ui.common
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.BasicText
@@ -222,5 +224,30 @@ private fun StepButton(sign: String, label: String, enabled: Boolean, onClick: (
 fun MineRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Mine.colors.surface, contentColor = Mine.colors.text) {
         content()
+    }
+}
+
+/**
+ * Сегменти (дизайн-система → Segment): «таблетки» 48 dp на field; активна — інверсія (текст на фоні тексту).
+ * Прокручуються, якщо не вміщаються.
+ */
+@Composable
+fun <T> MineSegment(items: List<T>, selected: T, title: (T) -> String, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+    val m = Mine.colors
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.forEach { item ->
+            val on = item == selected
+            Surface(
+                onClick = { onSelect(item) }, modifier = Modifier.height(48.dp).semantics { role = Role.Tab; this.selected = on },
+                shape = RoundedCornerShape(999.dp), color = if (on) m.text else m.field, contentColor = if (on) m.bg else m.text,
+            ) {
+                Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                    Text(title(item), fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+        }
     }
 }

@@ -35,6 +35,10 @@ class ScreensLogicTest {
         assertEquals("2,5 шт", pcs(2.5))
     }
 
+    @Test fun stockTabsAsInDesign() {
+        assertEquals(listOf("Свій магазин", "Місто", "Мережа", "Змінені"), ua.chudo.scanner.ui.stock.StockTab.entries.map { it.title })
+    }
+
     @Test fun ukrainianPlurals() {
         mapOf(1 to "1 магазин", 2 to "2 магазини", 4 to "4 магазини", 5 to "5 магазинів", 11 to "11 магазинів",
             12 to "12 магазинів", 21 to "21 магазин", 22 to "22 магазини", 0 to "0 магазинів").forEach { (n, s) -> assertEquals(s, shopsWord(n)) }
