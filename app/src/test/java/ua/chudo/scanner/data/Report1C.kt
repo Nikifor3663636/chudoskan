@@ -21,6 +21,7 @@ object Report1C {
 
             zip.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
             val w = zip.bufferedWriter()
+            w.write("﻿") // 1С пише мітку UTF-8 (BOM) перед XML
             w.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>")
             rows.forEachIndexed { i, row ->
                 val r = i + 1
@@ -44,6 +45,7 @@ object Report1C {
 
             zip.putNextEntry(ZipEntry("xl/SharedStrings.xml"))
             val s = zip.bufferedWriter()
+            s.write("﻿")
             s.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">")
             for (str in strings.keys) s.write("<si><t xml:space=\"preserve\">${esc(str)}</t></si>")
             s.write("</sst>")

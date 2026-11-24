@@ -46,7 +46,41 @@ object NetworkAvailability {
 
     /** «BOC022446» — код 1С (BOC/BUK/DPK/ODR…). */
     fun isCode(q: String) = CODE.matches(q.trim())
+
+    /**
+     * Для адміна: товар у всіх магазинах мережі, де він є, — по містах. Своє місто першим, далі за кількістю
+     * в місті; усередині міста — за спаданням кількості, потім за кодом.
+     */
+    fun byCity(item: NetItem, stores: Map<String, StoreDoc>, ownCode: String?): List<CityStock> {
+        val ownCity = ownCode?.let { stores[it]?.city }?.trim()?.lowercase()
+        return item.q.filter { (_, qty) -> qty > 0 }
+            .map { (code, qty) -> Triple(stores[code]?.city?.trim()?.ifEmpty { null } ?: "Інше", code, qty) }
+            // «Київ» і « київ » — одне місто; назва — з великої літери, як у більшості складів.
+            .groupBy { it.first.lowercase() }
+            .map { (city, list) ->
+                CityStock(
+                    list.map { it.first }.groupingBy { it }.eachCount().entries
+                        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { !it.key.first().isUpperCase() }).first().key,
+                    list.map { (_, code, qty) -> StoreQty(code, stores[code]?.name?.ifBlank { null } ?: "ЧО $code", qty) }
+                        .sortedWith(compareByDescending<StoreQty> { it.qty }.thenBy { it.code }),
+                    own = city.lowercase() == ownCity,
+                )
+            }
+            .sortedWith(compareByDescending<CityStock> { it.own }.thenByDescending { it.total }.thenBy { it.city })
+    }
+
+    /** Склади для вибору «Що в магазині»: за номером ЧО. */
+    fun storeChoices(stores: Map<String, StoreDoc>): List<Pair<String, StoreDoc>> =
+        stores.entries.sortedWith(compareBy({ it.key.toIntOrNull() ?: Int.MAX_VALUE }, { it.key })).map { it.key to it.value }
 }
+
+/** Магазини одного міста з кількістю товару. */
+data class CityStock(val city: String, val stores: List<StoreQty>, val own: Boolean = false) {
+    val total: Double get() = stores.sumOf { it.qty }
+}
+
+/** Товар у вибраному магазині: штрихкод, дані 1С і кількість саме там. */
+data class StoreItem(val barcode: String, val item: NetItem, val qty: Double)
 
 /**
  * Читання залишків мережі: товар — ОДНЕ читання `stock/{штрихкод}`; склади (`stores`), `meta/stock`
@@ -133,6 +167,20 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
         if (value.isEmpty()) return emptyList()
         val docs = db.collection(NetworkStockRepository.STOCK).whereEqualTo(field, value).limit(10).get().await().documents
         return docs.mapNotNull { d -> d.toNetItem()?.let { availability(shopId, d.id, it) } }
+    }
+
+    /** Склади мережі й код свого магазину — для «Залишків» адміна. */
+    suspend fun storesWithOwn(shopId: String): Pair<Map<String, StoreDoc>, String?> = stores() to ownCode(shopId)
+
+    /**
+     * «Що в магазині ЧО NN» (адмін): товари з кількістю > 0 саме там, найбільші залишки першими.
+     * Запит `stock where q.NN > 0 orderBy q.NN desc` — до [limit] читань.
+     */
+    suspend fun storeItems(code: String, limit: Long = 100): List<StoreItem> {
+        val field = com.google.firebase.firestore.FieldPath.of("q", code)
+        return db.collection(NetworkStockRepository.STOCK).whereGreaterThan(field, 0)
+            .orderBy(field, com.google.firebase.firestore.Query.Direction.DESCENDING).limit(limit).get().await().documents
+            .mapNotNull { d -> d.toNetItem()?.let { StoreItem(d.id, it, it.q[code] ?: 0.0) } }
     }
 
     private suspend fun availability(shopId: String, bc: String, item: NetItem) =

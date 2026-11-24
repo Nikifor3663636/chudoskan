@@ -111,7 +111,10 @@ object NetworkStockParser {
     fun store(text: String): NetStore? {
         val m = STORE.find(text.trim()) ?: return null
         val rest = m.groupValues[2].trim()
-        val city = rest.substringBefore('(').trim().trimEnd(',', '.', '-', '–').trim()
+        // «Біла Церква (ТЦ …)» → «Біла Церква»; без дужок: «Малехів ТЦ Обрій» → «Малехів», «Умань LOMO» → «Умань».
+        val words = rest.substringBefore('(').trim().split(Regex("\\s+"))
+            .takeWhile { w -> w.uppercase() !in MALL && !w.all { it in 'A'..'Z' || it in 'a'..'z' || it.isDigit() } }
+        val city = words.joinToString(" ").trimEnd(',', '.', '-', '–').trim()
         return NetStore(m.groupValues[1], text.trim().replace(Regex("\\s+"), " "), city)
     }
 
@@ -140,6 +143,9 @@ object NetworkStockParser {
         (a.keys + b.keys).associateWith { (a[it] ?: 0.0) + (b[it] ?: 0.0) }
 
     private val QTY = listOf("остат", "колич", "кільк", "залиш")
+
+    /** Слова, з яких починається назва торгового центру, а не місто. */
+    private val MALL = setOf("ТЦ", "ТРЦ", "ТД", "ТРК", "ТК", "ТРЦ.", "ТЦ.")
 }
 
 /** Що й навіщо писати у Firestore після порівняння з попереднім файлом. */

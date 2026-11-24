@@ -197,6 +197,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+                onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
         }
         composable(Routes.PROFILE) {

@@ -78,4 +78,21 @@ class NetworkAvailabilityTest {
         assertFalse(NetworkAvailability.isCode("4823077601234"))
         assertFalse(NetworkAvailability.isCode("BOC02244"))
     }
+
+    @Test fun adminSeesEveryStoreByCityOwnCityFirst() {
+        val groups = NetworkAvailability.byCity(
+            item("22" to 2.0, "11" to 1.0, "14" to 5.0, "05" to 0.0, "09" to 9.0, "62" to 7.0, "99" to 1.0), stores, "22",
+        )
+        // Своє місто (Київ) першим, далі за сумою: Біла Церква 9, Одеса 7, невідомий склад — «Інше».
+        assertEquals(listOf("Київ", "Біла Церква", "Одеса", "Інше"), groups.map { it.city })
+        assertTrue(groups.first().own)
+        // У Києві: 14 (5), 22 (2, свій), 11 (1); нуль (05) не показуємо.
+        assertEquals(listOf("14" to 5.0, "22" to 2.0, "11" to 1.0), groups.first().stores.map { it.code to it.qty })
+        assertEquals(8.0, groups.first().total, 0.0)
+        assertEquals("ЧО 99", groups.last().stores.single().name)
+    }
+
+    @Test fun storeChoicesByNumber() {
+        assertEquals(listOf("05", "09", "11", "14", "22", "30", "62"), NetworkAvailability.storeChoices(stores).map { it.first })
+    }
 }

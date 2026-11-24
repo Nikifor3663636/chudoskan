@@ -50,8 +50,27 @@ object Xlsx {
     private fun parser(input: InputStream): XmlPullParser =
         newParser().apply {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            setInput(input, "UTF-8")
+            setInput(skipBom(input), "UTF-8")
         }
+
+    /**
+     * 1С пише частини xlsx з міткою UTF-8 (EF BB BF) перед «<?xml»; kXML (і android.util.Xml) на ній падає:
+     * «PI must not start with xml». Пропускаємо мітку, якщо вона є.
+     */
+    internal fun skipBom(input: InputStream): InputStream {
+        val b = java.io.BufferedInputStream(input, 8192)
+        b.mark(3)
+        val head = ByteArray(3)
+        var n = 0
+        while (n < 3) {
+            val r = b.read(head, n, 3 - n)
+            if (r < 0) break
+            n += r
+        }
+        val bom = n == 3 && head[0] == 0xEF.toByte() && head[1] == 0xBB.toByte() && head[2] == 0xBF.toByte()
+        if (!bom) b.reset()
+        return b
+    }
 
     private fun readSharedStrings(p: XmlPullParser): List<String> {
         val out = ArrayList<String>()

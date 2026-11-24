@@ -107,6 +107,19 @@ class NetworkStockTest {
         assertEquals("05", NetworkStockParser.store("чо05 Львів")?.code)
         assertNull(NetworkStockParser.store("Чорноморськ"))
         assertNull(NetworkStockParser.store("Номенклатура"))
+        // Назви складів зі справжнього звіту.
+        assertEquals("Малехів", NetworkStockParser.store("ЧО 80 Малехів ТЦ Обрій")?.city)
+        assertEquals("Умань", NetworkStockParser.store("ЧО 70 Умань LOMO")?.city)
+        assertEquals("Кам'янець-Подільський", NetworkStockParser.store("ЧО 33 Кам'янець-Подільський")?.city)
+        assertEquals("Біла Церква", NetworkStockParser.store("ЧО 09 Біла Церква (ТЦ Гермес)")?.city)
+        assertEquals("Вінниця", NetworkStockParser.store("ЧО 63 Вінниця (ТРЦ S)mall)")?.city)
+    }
+
+    @Test fun byteOrderMarkSkipped() {
+        val withBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "<a/>".toByteArray()
+        assertEquals("<a/>", Xlsx.skipBom(java.io.ByteArrayInputStream(withBom)).readBytes().decodeToString())
+        assertEquals("<a/>", Xlsx.skipBom(java.io.ByteArrayInputStream("<a/>".toByteArray())).readBytes().decodeToString())
+        assertEquals("", Xlsx.skipBom(java.io.ByteArrayInputStream(ByteArray(0))).readBytes().decodeToString())
     }
 
     // ---------- Різниця з попереднім файлом ----------

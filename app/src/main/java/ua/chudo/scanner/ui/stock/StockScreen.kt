@@ -95,6 +95,8 @@ import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.NetworkAvailability
 import ua.chudo.scanner.data.NetworkStockLookup
+import ua.chudo.scanner.data.StoreDoc
+import ua.chudo.scanner.data.StoreItem
 import ua.chudo.scanner.data.ParsedStock
 import ua.chudo.scanner.data.ShopStockInfo
 import ua.chudo.scanner.data.ShopStockRepository
@@ -157,7 +159,53 @@ class StockViewModel(
     private val stock: ShopStockRepository,
     private val prefs: AppPrefs,
     private val net: NetworkStockLookup? = null,
+    /** Адмін магазину / мережі: «Залишки» по всіх магазинах мережі й «Що в магазині». */
+    val networkView: Boolean = false,
 ) : ViewModel() {
+    // ---------- Адмін: залишки по магазинах мережі ----------
+
+    private val _stores = MutableStateFlow<Map<String, StoreDoc>>(emptyMap())
+    val stores = _stores.asStateFlow()
+    private val _ownCode = MutableStateFlow<String?>(null)
+    val ownCode = _ownCode.asStateFlow()
+    private val _storeCode = MutableStateFlow<String?>(null)
+    val storeCode = _storeCode.asStateFlow()
+    private val _storeItems = MutableStateFlow<List<StoreItem>?>(null)
+    val storeItems = _storeItems.asStateFlow()
+    private val _storeLoading = MutableStateFlow(false)
+    val storeLoading = _storeLoading.asStateFlow()
+
+    private fun loadStores() {
+        val n = net ?: return
+        viewModelScope.launch {
+            runCatching { n.storesWithOwn(employee.shopId) }.getOrNull()?.let { (all, own) ->
+                _stores.value = all
+                _ownCode.value = own
+                if (_storeCode.value == null && own != null) pickStore(own)
+            }
+        }
+    }
+
+    /** «Що в магазині ЧО NN». */
+    fun pickStore(code: String) {
+        val n = net ?: return
+        _storeCode.value = code
+        _storeItems.value = null
+        _storeLoading.value = true
+        viewModelScope.launch {
+            _storeItems.value = try { n.storeItems(code) } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+            _storeLoading.value = false
+        }
+    }
+
+    /** Товар зі списку магазину → картка з розподілом по мережі (одне читання stock/{штрихкод}). */
+    fun openStoreItem(it: StoreItem) = launchState {
+        last = null
+        _state.value = StockState.Loading("Відкриваю товар…")
+        netTry { n -> n.byBarcode(employee.shopId, it.barcode) }?.let { av -> StockState.Ready(null, null, null, null, av) }
+            ?: StockState.NotInExport(it.barcode)
+    }
+
     private val _state = MutableStateFlow<StockState>(StockState.Idle)
     val state = _state.asStateFlow()
 
@@ -260,6 +308,7 @@ class StockViewModel(
 
     init {
         refreshInfo()
+        if (networkView) loadStores()
     }
 
     private fun refreshInfo() {
@@ -413,11 +462,13 @@ fun StockScreen(
     /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
     scanned: String?,
     onScannedConsumed: () -> Unit,
+    /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
+    onNetworkUpload: (() -> Unit)? = null,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
         key = "stock-${employee.uid}",
-        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup) } },
+        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, networkView = employee.managesShop || employee.stockAdmin) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
@@ -425,6 +476,11 @@ fun StockScreen(
     val changedLoading by vm.changedLoading.collectAsStateWithLifecycle()
     val batchNote by vm.batchNote.collectAsStateWithLifecycle()
     val printTags by vm.printTags.collectAsStateWithLifecycle()
+    val stores by vm.stores.collectAsStateWithLifecycle()
+    val ownCode by vm.ownCode.collectAsStateWithLifecycle()
+    val storeCode by vm.storeCode.collectAsStateWithLifecycle()
+    val storeItems by vm.storeItems.collectAsStateWithLifecycle()
+    val storeLoading by vm.storeLoading.collectAsStateWithLifecycle()
     val labelsProgress by vm.labelsProgress.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -442,7 +498,9 @@ fun StockScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ShopHeader(employee, onBack) }
-        item { UploadCard(info) { picker.launch(FILE_TYPES) } }
+        // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
+        if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }
+        else item { UploadCard(info) { picker.launch(FILE_TYPES) } }
         item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MineSearchField(
@@ -506,6 +564,8 @@ fun StockScreen(
                 item { ProductHeader(st.product, st.item, net) }
                 if (net != null) {
                     item { NetworkStockCard(net) }
+                    // Адмін бачить товар одразу в усіх магазинах мережі.
+                    if (vm.networkView) item { NetworkDistributionCard(NetworkAvailability.byCity(net.item, stores, ownCode ?: net.ownCode), ownCode ?: net.ownCode) }
                     st.siteAvailable?.let { have -> item { SiteLine(have) } }
                     item {
                         val chosen = selected.any { it.barcode == net.barcode }
@@ -515,6 +575,13 @@ fun StockScreen(
                     item { MyShopCard(employee, st, info != null) }
                 }
             }
+        }
+        // Адмін: що лежить у будь-якому магазині мережі.
+        if (vm.networkView) item(key = "store-stock") {
+            StoreStockCard(
+                NetworkAvailability.storeChoices(stores), storeCode, storeItems, storeLoading,
+                onPick = vm::pickStore, onOpen = vm::openStoreItem,
+            )
         }
     }
 
