@@ -37,6 +37,8 @@ class ChudoApp : Application() {
     val legacyCleanup by lazy { ua.chudo.scanner.data.LegacyStockCleanup(ua.chudo.scanner.data.FirestoreLegacyStockStore(FirebaseFirestore.getInstance())) }
     /** Показ залишків мережі: склади й дата — раз на сесію. */
     val networkLookup by lazy { ua.chudo.scanner.data.NetworkStockLookup(ua.chudo.scanner.data.FirestoreStockStore(FirebaseFirestore.getInstance()), filesDir) }
+    /** «Термінал»: кошики, передані на касу (sales/{id}). */
+    val sales by lazy { ua.chudo.scanner.terminal.SalesRepository(FirebaseFirestore.getInstance()) }
     /** Интернет-заказы на самовывоз (пока демо-источник). */
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }

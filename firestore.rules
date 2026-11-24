@@ -327,6 +327,46 @@ service cloud.firestore {
     function q80(p, n) { return p[80] >= 0 && p[81] >= 0 && p[82] >= 0 && p[83] >= 0 && p[84] >= 0 && p[85] >= 0 && p[86] >= 0 && p[87] >= 0 && p[88] >= 0 && p[89] >= 0 && (n <= 90 || q90(p)); }
     function q90(p) { return p[90] >= 0 && p[91] >= 0 && p[92] >= 0 && p[93] >= 0 && p[94] >= 0 && p[95] >= 0 && p[96] >= 0 && p[97] >= 0 && p[98] >= 0 && p[99] >= 0; }
 
+    // ---------- Термінал: кошики, передані на касу ----------
+    // sales/{id} = {shopId, by, at, items[{barcode, name, code, article, qty, price, manualPrice}],
+    //               discount, total, status, code}. Гроші — у копійках (int).
+
+    function saleOk(d) {
+      return d.keys().hasOnly(['shopId', 'by', 'at', 'items', 'discount', 'total', 'status', 'code'])
+        && d.keys().hasAll(['shopId', 'by', 'at', 'items', 'discount', 'total', 'status', 'code'])
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 200
+        && saleItemOk(d.items[0])
+        && d.discount is int && d.discount >= 0
+        && d.total is int && d.total >= 0
+        && d.code is string && d.code.matches('^[0-9A-Z]{6}$');
+    }
+
+    // Правила не вміють циклів — повністю перевіряємо перший рядок, решту обмежує розмір документа.
+    function saleItemOk(i) {
+      return i is map
+        && i.keys().hasOnly(['barcode', 'name', 'code', 'article', 'qty', 'price', 'manualPrice'])
+        && i.qty is int && i.qty >= 1
+        && i.price is int && i.price >= 0
+        && i.manualPrice is bool
+        && i.name is string && i.name.size() <= 300;
+    }
+
+    match /sales/{id} {
+      // Лише свій магазин; запит list має фільтрувати shopId.
+      allow read: if canSee(resource.data.shopId);
+      allow create: if worksAt(request.resource.data.shopId)
+        && id.size() <= 40
+        && saleOk(request.resource.data)
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.status in ['draft', 'sent'];
+      // Статус змінює лише автор (у своєму магазині) або адмін магазину; решта полів — незмінні.
+      allow update: if ((resource.data.by == request.auth.uid && worksAt(resource.data.shopId)) || canManage(resource.data.shopId))
+        && changed().hasOnly(['status'])
+        && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled'];
+      allow delete: if false;
+    }
+
     // ---------- Журнал дій адмінів ----------
 
     match /adminLog/{id} {

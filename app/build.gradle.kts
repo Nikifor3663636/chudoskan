@@ -87,8 +87,8 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
-    // Тест: штрихкод из LabelRenderer читается как тот же EAN-13.
-    testImplementation(libs.zxing.core)
+    // QR кошика «Термінал» (і тест: штрихкод из LabelRenderer читается как тот же EAN-13).
+    implementation(libs.zxing.core)
     // Тест імпорту xlsx: той самий XmlPullParser (kXML), що й android.util.Xml, але без Android.
     testImplementation(libs.kxml2)
 

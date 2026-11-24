@@ -92,6 +92,8 @@ private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
 private const val ORDERS_MODE = "orders"
 private const val ORDERS_CODE = "orders_code"
+private const val TERMINAL_MODE = "terminal"
+private const val TERMINAL_CODE = "terminal_code"
 
 private object Routes {
     const val HOME = "home"
@@ -101,9 +103,11 @@ private object Routes {
     const val STOCK = "stock"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
+    const val TERMINAL = "terminal"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
+    const val SCAN_TERMINAL = "scan?mode=$TERMINAL_MODE"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
     const val NETWORK_STOCK = "network-stock"
@@ -152,6 +156,7 @@ private fun AppNav(home: Employee) {
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS
         Routes.STOCK -> MainTab.STOCK
+        Routes.TERMINAL -> MainTab.TERMINAL
         Routes.PROFILE -> MainTab.PROFILE
         else -> MainTab.SEARCH
     }
@@ -174,6 +179,7 @@ private fun AppNav(home: Employee) {
                         MainTab.SEARCH -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
                         MainTab.ORDERS -> openTab(Routes.ORDERS)
                         MainTab.STOCK -> openTab(Routes.STOCK)
+                        MainTab.TERMINAL -> openTab(Routes.TERMINAL)
                         MainTab.PROFILE -> openTab(Routes.PROFILE)
                     }
                 },
@@ -243,6 +249,15 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.LABELS) {
             LaunchedEffect(Unit) { nav.navigate(Routes.STOCK) { popUpTo(Routes.LABELS) { inclusive = true } } }
         }
+        composable(Routes.TERMINAL) { entry ->
+            val scanned by entry.savedStateHandle.getStateFlow<String?>(TERMINAL_CODE, null).collectAsStateWithLifecycle()
+            ua.chudo.scanner.ui.terminal.TerminalScreen(
+                employee,
+                onScan = { nav.navigate(Routes.SCAN_TERMINAL) },
+                scanned = scanned,
+                onScannedConsumed = { entry.savedStateHandle[TERMINAL_CODE] = null },
+            )
+        }
         composable(Routes.ORDERS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(ORDERS_CODE, null).collectAsStateWithLifecycle()
             OrdersScreen(
@@ -272,6 +287,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             val returnKey = when (arg) {
                 STOCK_MODE -> STOCK_CODE
                 ORDERS_MODE -> ORDERS_CODE
+                TERMINAL_MODE -> TERMINAL_CODE
                 else -> null
             }
             ScannerScreen(

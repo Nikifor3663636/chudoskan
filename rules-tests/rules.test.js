@@ -482,3 +482,61 @@ describe('адміністрування мережі (етап 6)', () => {
     await assertFails(getDocs(collection(as('adm22'), 'adminLog')));
   });
 });
+
+describe('Термінал: sales', () => {
+  const item = (over = {}) => ({ barcode: '2000999154010', name: 'Пакет', code: 'BOC022446', article: '', qty: 2, price: 2490, manualPrice: false, ...over });
+  const sale = (by, over = {}) => ({
+    shopId: '22', by, at: serverTimestamp(), items: [item(), item({ barcode: '', qty: 1, price: 12900, manualPrice: true })],
+    discount: 1000, total: 17880, status: 'draft', code: 'AB23CD', ...over,
+  });
+
+  test('створює співробітник свого магазину, читає лише свій магазин', async () => {
+    await assertSucceeds(setDoc(doc(as('emp22'), 'sales', 's1'), sale('emp22')));
+    await assertSucceeds(getDoc(doc(as('emp22'), 'sales', 's1')));
+    await assertSucceeds(getDoc(doc(as('adm22'), 'sales', 's1')));
+    await assertSucceeds(getDoc(doc(as('sup'), 'sales', 's1')));
+    await assertSucceeds(getDocs(query(collection(as('emp22'), 'sales'), where('shopId', '==', '22'))));
+    // Чужий магазин прочитати не може.
+    await assertFails(getDoc(doc(as('emp62'), 'sales', 's1')));
+    await assertFails(getDoc(doc(as('adm62'), 'sales', 's1')));
+    await assertFails(getDocs(collection(as('emp62'), 'sales')));
+    await assertFails(getDoc(doc(as('new22'), 'sales', 's1')));
+    await assertFails(getDoc(doc(anon(), 'sales', 's1')));
+  });
+
+  test('створення: свій магазин, автор — я, білий список, total ≥ 0, items ≤ 200', async () => {
+    const db = as('emp22');
+    await assertFails(setDoc(doc(as('emp62'), 'sales', 'x1'), sale('emp62')));
+    await assertFails(setDoc(doc(as('new22'), 'sales', 'x2'), sale('new22')));
+    await assertFails(setDoc(doc(db, 'sales', 'x3'), sale('adm22')));
+    await assertFails(setDoc(doc(db, 'sales', 'x4'), sale('emp22', { total: -1 })));
+    await assertFails(setDoc(doc(db, 'sales', 'x5'), sale('emp22', { total: 10.5 })));
+    await assertFails(setDoc(doc(db, 'sales', 'x6'), sale('emp22', { items: [] })));
+    await assertFails(setDoc(doc(db, 'sales', 'x7'), sale('emp22', { items: Array.from({ length: 201 }, () => item()) })));
+    await assertSucceeds(setDoc(doc(db, 'sales', 'x8'), sale('emp22', { items: Array.from({ length: 200 }, () => item()) })));
+    await assertFails(setDoc(doc(db, 'sales', 'x9'), sale('emp22', { payment: { rrn: '1' } })));
+    await assertFails(setDoc(doc(db, 'sales', 'x10'), sale('emp22', { status: 'paid' })));
+    await assertFails(setDoc(doc(db, 'sales', 'x11'), sale('emp22', { code: 'abc' })));
+    await assertFails(setDoc(doc(db, 'sales', 'x12'), sale('emp22', { items: [item({ price: -5 })] })));
+    await assertFails(setDoc(doc(db, 'sales', 'x13'), sale('emp22', { items: [item({ secret: 1 })] })));
+    await assertFails(setDoc(doc(db, 'sales', 'x14'), sale('emp22', { at: Timestamp.fromMillis(0) })));
+  });
+
+  test('статус змінює лише автор або адмін магазину, інші поля — ні', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'sales', 's1'), { ...sale('emp22'), at: Timestamp.now() });
+    });
+    await assertSucceeds(updateDoc(doc(as('emp22'), 'sales', 's1'), { status: 'sent' }));
+    await assertSucceeds(updateDoc(doc(as('adm22'), 'sales', 's1'), { status: 'cancelled' }));
+    await assertFails(updateDoc(doc(as('adm62'), 'sales', 's1'), { status: 'draft' }));
+    await assertFails(updateDoc(doc(as('emp62'), 'sales', 's1'), { status: 'draft' }));
+    await assertFails(updateDoc(doc(as('emp22'), 'sales', 's1'), { total: 0 }));
+    await assertFails(updateDoc(doc(as('emp22'), 'sales', 's1'), { status: 'refunded' }));
+    await assertFails(deleteDoc(doc(as('adm22'), 'sales', 's1')));
+    // Інший співробітник того ж магазину — не автор.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'emp22b'), { name: 'Інна', approved: true, shopId: '22' });
+    });
+    await assertFails(updateDoc(doc(as('emp22b'), 'sales', 's1'), { status: 'draft' }));
+  });
+});
