@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.print.LabelKind
@@ -59,6 +60,9 @@ import ua.chudo.scanner.ui.common.MineChip
 import ua.chudo.scanner.ui.common.MinePrimaryButton
 import ua.chudo.scanner.ui.common.MineStepper
 import ua.chudo.scanner.ui.common.StatusDot
+import ua.chudo.scanner.ui.common.SuccessState
+import ua.chudo.scanner.ui.common.Illustration
+import androidx.compose.foundation.layout.navigationBarsPadding
 import ua.chudo.scanner.ui.theme.Mine
 
 /** «Друкувати 2 цінники», «Друкувати 5 етикеток». */
@@ -123,6 +127,8 @@ fun PrintSheet(tags: List<PriceTag>, onDismiss: () -> Unit, onDone: (String) -> 
     var qty by rememberSaveable { mutableIntStateOf(1) }
     var line by remember { mutableStateOf(PrinterLine(null, null)) }
     var busy by remember { mutableStateOf(false) }
+    // Успіх показуємо в самому листі (дизайн-система → 12 Друк), потім лист закривається.
+    var done by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var choosing by remember { mutableStateOf(false) }
     var statusRevision by remember { mutableIntStateOf(0) }
@@ -159,6 +165,8 @@ fun PrintSheet(tags: List<PriceTag>, onDismiss: () -> Unit, onDone: (String) -> 
                 val r = if (override == null) svc.print(queue, template, withPromo)
                     else { svc.printOn(override, queue, template, withPromo); override }
                 line = PrinterLine(r.displayName, true)
+                done = "${tagsWord(tags.size * qty)} на ${r.displayName}"
+                delay(1200)
                 onDone("Надруковано")
                 onDismiss()
             } catch (e: CancellationException) { throw e
@@ -174,7 +182,7 @@ fun PrintSheet(tags: List<PriceTag>, onDismiss: () -> Unit, onDone: (String) -> 
     }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = Mine.colors.sheet, contentColor = Mine.colors.text) {
-        PrintSheetContent(
+        done?.let { SuccessState(Illustration.PRINT, "Надруковано", it, Modifier.navigationBarsPadding()) } ?: PrintSheetContent(
             PrintSheetUi(
                 subtitle = if (single) listOfNotNull(tag.name.ifBlank { null }, item.price?.let { "${PriceFormat.tag(it).first} ₴" }).joinToString(", ")
                     else "Товарів: ${tags.size} · кількість — для кожного",
@@ -354,7 +362,7 @@ private fun PrinterPicker(
             }
             if (printers?.isEmpty() == true) item { Text("Принтерів цього формату не знайдено", color = m.textSecondary) }
             error?.let { message -> item { Text(message, color = m.warningText) } }
-            item { TextButton(onClick = { refresh++ }, enabled = !saving) { Text("Оновити", color = m.accent) } }
+            item { TextButton(onClick = { refresh++ }, enabled = !saving) { Text("Оновити", color = m.accentText) } }
             item { Spacer(Modifier.size(20.dp)) }
         }
     }
@@ -372,5 +380,16 @@ fun OrientationPicker(t: Template, landscape: Boolean, onChange: (Boolean) -> Un
             MineChip("Альбомна", landscape, { onChange(true) })
         }
         Text(orientationNote(t, landscape), Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary)
+    }
+}
+
+/** «1 цінник», «2 цінники», «5 цінників». */
+internal fun tagsWord(n: Int): String {
+    val d = n % 10
+    val dd = n % 100
+    return "$n " + when {
+        d == 1 && dd != 11 -> "цінник"
+        d in 2..4 && dd !in 12..14 -> "цінники"
+        else -> "цінників"
     }
 }

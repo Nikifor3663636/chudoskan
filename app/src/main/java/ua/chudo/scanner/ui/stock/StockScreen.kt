@@ -1,11 +1,17 @@
 package ua.chudo.scanner.ui.stock
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.common.BarcodeScanIcon
+import ua.chudo.scanner.ui.common.EmptyState
+import ua.chudo.scanner.ui.common.Illustration
+import ua.chudo.scanner.ui.common.Skeleton
+import ua.chudo.scanner.ui.common.SkeletonKind
+import ua.chudo.scanner.ui.common.StockBox
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.common.MineSearchField
@@ -224,6 +230,9 @@ class StockViewModel(
     }
 
     fun unselect(barcode: String) { _selected.value = _selected.value.filter { it.barcode != barcode } }
+
+    /** «Скасувати» в нижній панелі вибору. */
+    fun clearSelected() { _selected.value = emptyList() }
 
     /** «Змінені з минулого завантаження» — додати до вибраних ті, що є у своєму магазині. */
     fun addChanged() {
@@ -497,8 +506,9 @@ fun StockScreen(
         scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
     }
 
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
     LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
+        Modifier.weight(1f),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -527,30 +537,20 @@ fun StockScreen(
 
         when (val st = s) {
             StockState.Idle -> {}
-            is StockState.Loading -> item {
-                Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Mine.colors.accent)
-                    Spacer(Modifier.height(16.dp))
-                    Text(st.step, fontSize = 15.sp, color = Mine.colors.textSecondary, textAlign = TextAlign.Center)
-                }
+            is StockState.Loading -> {
+                item { Text(st.step, Modifier.padding(horizontal = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Mine.colors.textSecondary) }
+                item { Skeleton(SkeletonKind.CARD) }
+                items(2) { Skeleton(SkeletonKind.ROW) }
             }
             is StockState.Failed -> item { ErrorState(st.error, null, { vm.search(query) }) }
             is StockState.NotFound -> item {
-                MessageState(
-                    Icons.Rounded.SearchOff,
-                    "Не знайшли «${st.query}»",
-                    "Ні на сайті, ні у вивантаженні твого магазину.",
-                )
+                EmptyState(Illustration.SEARCH, "Не знайшли «${st.query}»", "Ні на сайті, ні у вивантаженні твого магазину.", action = "Сканувати ще" to onScan)
             }
             is StockState.NotInExport -> item {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    MessageState(
-                        Icons.Rounded.SearchOff,
-                        "Немає у вивантаженні 1С",
-                        "Штрихкод ${st.code}",
-                    )
-                    MineButton("Шукати на сайті", { vm.search(st.code) })
-                }
+                EmptyState(
+                    Illustration.SEARCH, "Немає у вивантаженні 1С", "Штрихкод ${st.code} не знайдено в залишках 1С.",
+                    action = "Шукати на сайті" to { vm.search(st.code) }, tone = MineTone.OUTLINE,
+                )
             }
             is StockState.Pick -> {
                 item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
@@ -589,6 +589,17 @@ fun StockScreen(
                 onPick = vm::pickStore, onOpen = vm::openStoreItem,
             )
         }
+    }
+    // Дія вибору — внизу, у зоні великого пальця (дизайн-система → 08 Залишки).
+    if (selected.isNotEmpty()) {
+        Row(
+            Modifier.fillMaxWidth().background(Mine.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MineButton("Скасувати", vm::clearSelected, tone = MineTone.TEXT)
+            MineButton("Цінники для вибраних · ${selected.size}", vm::prepareLabels, Modifier.weight(1f), tone = MineTone.ACCENT)
+        }
+    }
     }
 
     ImportDialog(vm, employee)
@@ -665,7 +676,7 @@ private fun ProductHeader(p: ProductDetails?, item: StockItem?, net: NetAvailabi
 private fun SiteLine(have: Boolean) {
     val m = Mine.colors
     Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(if (have) m.success else m.outline)
+        StatusDot(if (have) m.stockIn else m.stockOut)
         Spacer(Modifier.width(8.dp))
         Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
     }
@@ -680,13 +691,7 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
             Text("У твоєму магазині", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary)
             val item = st.item
             when {
-                item != null -> Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        item.qty.qty(), fontFamily = PriceFont, fontWeight = FontWeight.ExtraBold, fontSize = 48.sp, lineHeight = 52.sp,
-                        color = if (item.qty > 0) m.success else m.logout,
-                    )
-                    Text(" шт", Modifier.padding(bottom = 8.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
+                item != null -> StockBox(item.qty, null, null, Modifier.padding(top = 8.dp))
                 st.stockError != null -> Text(st.stockError, Modifier.padding(top = 6.dp), fontSize = 15.sp, color = m.warningText)
                 !uploaded -> Text("Завантаж файл з 1С, щоб бачити кількість.", Modifier.padding(top = 6.dp), fontSize = 16.sp)
                 else -> Text(
@@ -696,7 +701,7 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
             }
             st.siteAvailable?.let { have ->
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatusDot(if (have) m.success else m.outline)
+                    StatusDot(if (have) m.stockIn else m.stockOut)
                     Spacer(Modifier.width(8.dp))
                     Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
                 }
@@ -805,9 +810,6 @@ private fun LabelBatchCard(
             note?.let { Text(it, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary) }
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MineButton("Змінені з минулого завантаження", onChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
-            }
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Цінники для вибраних", onLabels, Modifier.weight(1f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
             }
         }
     }
