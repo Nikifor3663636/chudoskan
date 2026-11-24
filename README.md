@@ -82,7 +82,6 @@ flowchart LR
 | [`printer/`](printer) | «ЧудоСкан Друк» (C#, .NET 8): Core, тести, WinForms, інсталятор |
 | [`firestore.rules`](firestore.rules), [`rules-tests/`](rules-tests) | Правила доступу й тести на емуляторі |
 | [`docs/`](docs) | Документація, знімки, сторінка встановлення |
-| [`design/`](design) | Дизайн-токени й матеріали для Figma |
 | [`proxy/`](proxy) | Cloudflare Worker для веб-версії |
 | [`.github/`](.github) | CI, шаблони issue і PR |
 

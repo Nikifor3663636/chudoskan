@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Nikifor3663636/chudoskan/blob/main/docs/sale.schema.json",
+  "title": "Продаж ЧудоСкан для 1С",
+  "description": "Один продаж, який програма на ПК магазину передає в 1С. Гроші — цілі копійки. Див. docs/obmin-prodazhiv-1c.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "saleId", "shopCode", "at", "items", "discountKop", "totalKop", "payment"],
+  "properties": {
+    "version": { "const": 1, "description": "Версія формату." },
+    "saleId": {
+      "type": "string", "minLength": 1, "maxLength": 40,
+      "description": "Ідентифікатор sales/{id}. Унікальний; повторне надсилання того самого saleId 1С має ігнорувати."
+    },
+    "shopCode": {
+      "type": "string", "pattern": "^[0-9]{1,4}$",
+      "description": "Код магазину — число з «ЧО NN» (ЧО 22 → \"22\"), той самий, що й склад у звіті залишків."
+    },
+    "at": {
+      "type": "string", "format": "date-time",
+      "description": "Час оплати за Києвом з часовим поясом, ISO 8601: 2026-11-24T14:05:31+02:00."
+    },
+    "cashier": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uid"],
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "items": {
+      "type": "array", "minItems": 1, "maxItems": 200,
+      "items": { "$ref": "#/$defs/item" }
+    },
+    "discountKop": { "type": "integer", "minimum": 0, "description": "Знижка на весь чек. Дорівнює сумі discountKop рядків." },
+    "totalKop": { "type": "integer", "minimum": 0, "description": "До сплати. Дорівнює сумі sumKop рядків і payment.amountKop." },
+    "payment": { "$ref": "#/$defs/payment" },
+    "fiscal": { "$ref": "#/$defs/fiscal" }
+  },
+  "$defs": {
+    "item": {
+      "type": "object", "additionalProperties": false,
+      "required": ["barcode", "code1C", "qty", "priceKop", "discountKop", "sumKop"],
+      "properties": {
+        "barcode": { "type": "string", "maxLength": 64, "description": "Штрихкод; порожній, якщо товар додали за артикулом без штрихкоду." },
+        "code1C": { "type": "string", "pattern": "^([A-Z]{3}[0-9]{6})?$", "description": "Код номенклатури 1С (BOC022446). За ним 1С знаходить товар; порожній — шукати за штрихкодом." },
+        "article": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 300, "description": "Лише для людини; 1С бере назву зі своєї номенклатури." },
+        "qty": { "type": "integer", "minimum": 1 },
+        "priceKop": { "type": "integer", "minimum": 0, "description": "Ціна за одиницю до знижки." },
+        "discountKop": { "type": "integer", "minimum": 0, "description": "Частка знижки чека на цей рядок." },
+        "sumKop": { "type": "integer", "minimum": 0, "description": "qty × priceKop − discountKop." },
+        "manualPrice": { "type": "boolean", "description": "Ціну ввів продавець (на сайті її не було)." }
+      }
+    },
+    "payment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method", "amountKop"],
+      "properties": {
+        "method": { "enum": ["card", "cash"] },
+        "amountKop": { "type": "integer", "minimum": 0 },
+        "provider": { "type": "string", "maxLength": 40, "description": "Ідентифікатор провайдера оплати (наприклад, privat-nfcpos)." },
+        "terminalId": { "type": "string", "maxLength": 40 },
+        "rrn": { "type": "string", "maxLength": 32, "description": "Номер банківської операції (RRN). Для готівки відсутній." },
+        "authCode": { "type": "string", "maxLength": 12 },
+        "maskedPan": { "type": "string", "maxLength": 24, "description": "Маскований номер картки: 4149 49** **** 1234." },
+        "verified": { "type": "boolean", "description": "Оплату звірено з банком довіреною стороною." }
+      },
+      "allOf": [
+        { "if": { "properties": { "method": { "const": "card" } } }, "then": { "required": ["rrn"] } }
+      ]
+    },
+    "fiscal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fiscalNumber", "at"],
+      "properties": {
+        "fiscalNumber": { "type": "string", "maxLength": 64, "description": "Фіскальний номер чека ПРРО." },
+        "prro": { "enum": ["bank", "checkbox", "other"] },
+        "url": { "type": "string", "format": "uri", "description": "Посилання на чек для покупця." },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": 1,
+      "saleId": "8Fq3kM1zXc0YtP2b",
+      "shopCode": "22",
+      "at": "2026-11-24T14:05:31+02:00",
+      "cashier": { "uid": "u-22-0001", "name": "Консультант" },
+      "items": [
+        { "barcode": "4820000000017", "code1C": "BUK000123", "article": "MB-22", "name": "М'яч гумовий 22 см", "qty": 2, "priceKop": 24990, "discountKop": 4998, "sumKop": 44982, "manualPrice": false },
+        { "barcode": "2000999154010", "code1C": "BOC022446", "article": "", "name": "Пакет з петлевою ручкою", "qty": 1, "priceKop": 12900, "discountKop": 1290, "sumKop": 11610, "manualPrice": true },
+        { "barcode": "4820000000024", "code1C": "DPK000777", "article": "", "name": "Повітряний змій", "qty": 1, "priceKop": 8999, "discountKop": 900, "sumKop": 8099, "manualPrice": false }
+      ],
+      "discountKop": 7188,
+      "totalKop": 64691,
+      "payment": { "method": "card", "amountKop": 64691, "provider": "privat-nfcpos", "terminalId": "T0000001", "rrn": "432812345678", "authCode": "A1B2C3", "maskedPan": "4149 49** **** 1234", "verified": true },
+      "fiscal": { "fiscalNumber": "4000123456", "prro": "bank", "at": "2026-11-24T14:05:40+02:00" }
+    }
+  ]
+}
