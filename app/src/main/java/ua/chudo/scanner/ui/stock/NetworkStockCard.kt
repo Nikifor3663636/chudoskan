@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.ui.theme.Mine
-import ua.chudo.scanner.ui.common.PriceFont
+import ua.chudo.scanner.ui.common.QtyPill
+import ua.chudo.scanner.ui.common.StockBox
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -30,23 +31,7 @@ fun NetworkStockCard(av: NetAvailability, modifier: Modifier = Modifier) {
     val m = Mine.colors
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Text("У вашому магазині", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary)
-            val own = av.own
-            if (own != null) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        qtyText(own), fontFamily = PriceFont, fontWeight = FontWeight.ExtraBold, fontSize = 48.sp, lineHeight = 52.sp,
-                        color = if (own > 0) m.success else m.logout,
-                    )
-                    Text(" шт", Modifier.padding(bottom = 8.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Text(
-                    "Магазин ще не прив'язано до складу 1С — це робить адмін залишків.",
-                    Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 20.sp, color = m.warningText,
-                )
-            }
-
+            StockBox(av.own, null, null)
             if (av.cityName != null) {
                 Text(
                     "У магазинах міста" + " · ${av.cityName}",
@@ -59,7 +44,7 @@ fun NetworkStockCard(av: NetAvailability, modifier: Modifier = Modifier) {
                         if (i > 0) HorizontalDivider(color = m.line)
                         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(s.name, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 20.sp)
-                            Text("${qtyText(s.qty)} шт", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            QtyPill(s.qty)
                         }
                     }
                 }

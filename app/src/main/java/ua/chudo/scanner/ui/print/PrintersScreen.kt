@@ -596,7 +596,7 @@ private fun Tuning(title: String, value: Int?, start: Int, range: IntRange, onCh
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
             if (value == null) Text("як у самотесті", fontSize = 13.sp, color = m.textSecondary)
             else TextButton(onClick = { onChange(null) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                Text("Повернути як у самотесті", fontSize = 13.sp, color = m.accent)
+                Text("Повернути як у самотесті", fontSize = 13.sp, color = m.accentText)
             }
         }
         if (value == null) MineButton("Задати", { onChange(start) }) else MineStepper(value, { onChange(it) }, range)

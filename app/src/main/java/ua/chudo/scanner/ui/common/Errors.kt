@@ -7,11 +7,11 @@ import uniffi.chudo_core.CoreException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
-data class UiError(val title: String, val hint: String, val openSite: Boolean = false)
+data class UiError(val title: String, val hint: String, val openSite: Boolean = false, val offline: Boolean = false)
 
 fun Throwable.toUiError(): UiError = run {
     when (this@toUiError) {
-        is UnknownHostException -> UiError("Немає інтернету", "Перевір підключення і спробуй ще раз.")
+        is UnknownHostException -> UiError("Немає інтернету", "Перевір підключення і спробуй ще раз.", offline = true)
         is SocketTimeoutException -> UiError("Сайт довго відповідає", "Спробуй ще раз за хвилину.")
         is BlockedException -> if (kind == BlockKind.RATE_LIMITED) {
             UiError("Забагато запитів", "Зачекай трохи. Відкрита база штрихкодів дає близько 100 запитів на добу.")

@@ -45,6 +45,9 @@ class ChudoApp : Application() {
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }
 
+    /** Кошик «Термінал» — один на застосунок (вкладка «Термінал» і «Додати в кошик» на товарі). */
+    val cart by lazy { ua.chudo.scanner.terminal.CartHub(ua.chudo.scanner.terminal.CartStore(java.io.File(filesDir, "terminal-cart.txt"))) }
+
     /** Автооновлення: meta/app (Google Диск), запасне — GitHub Releases. */
     val updates by lazy {
         val meta: suspend () -> ua.chudo.scanner.update.AppMeta? = {

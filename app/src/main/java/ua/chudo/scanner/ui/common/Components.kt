@@ -47,7 +47,6 @@ import coil.compose.SubcomposeAsyncImage
 import ua.chudo.scanner.print.PriceFormat
 import ua.chudo.scanner.ui.theme.Mine
 import androidx.compose.ui.unit.sp
-import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.Price
 import uniffi.chudo_core.ProductSummary
 import uniffi.chudo_core.StockStatus
@@ -61,7 +60,7 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
         contentAlignment = Alignment.Center,
     ) {
         if (url == null) {
-            Icon(Icons.Rounded.Image, null, tint = OutOfStockGrey)
+            Icon(Icons.Rounded.Image, null, tint = Mine.colors.stockOut)
         } else {
             SubcomposeAsyncImage(
                 model = url,
@@ -69,7 +68,7 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize().padding(6.dp),
                 loading = { Shimmer(Modifier.fillMaxSize()) },
-                error = { Icon(Icons.Rounded.Image, null, tint = OutOfStockGrey) },
+                error = { Icon(Icons.Rounded.Image, null, tint = Mine.colors.stockOut) },
             )
         }
     }
@@ -140,7 +139,7 @@ fun ProductCard(item: ProductSummary, onClick: () -> Unit, modifier: Modifier = 
             ProductImage(item.image, Modifier.size(88.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (highlight) Text("Точний збіг артикулу", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = m.accent)
+                if (highlight) Text("Точний збіг артикулу", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = m.accentText)
                 Text(item.name, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 item.article?.let { Text("Арт. $it", fontSize = 14.sp, color = m.textSecondary) }
                 PriceLine(item.price, compact = true)
@@ -158,7 +157,7 @@ fun Shimmer(modifier: Modifier = Modifier, shapeRadius: Dp = 12.dp) {
         modifier
             .clip(RoundedCornerShape(shapeRadius))
             .alpha(a)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(Mine.colors.field)
     )
 }
 
@@ -175,12 +174,12 @@ fun MessageState(
     val m = Mine.colors
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(80.dp).clip(CircleShape).background(m.accentTone), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(36.dp), tint = m.accent)
+            Icon(icon, null, Modifier.size(36.dp), tint = m.accentText)
         }
         Spacer(Modifier.height(20.dp))
-        Text(title, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = m.text, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
-        Text(text, fontSize = 15.sp, lineHeight = 22.sp, color = m.textSecondary, textAlign = TextAlign.Center)
+        Text(title, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = m.text, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text(text, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = m.textSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
         primary?.let { (label, action) -> MinePrimaryButton(label, action) }
         secondary?.let { (label, action) ->
@@ -193,14 +192,15 @@ fun MessageState(
 @Composable
 fun ErrorState(error: UiError, siteUrl: String?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    MessageState(
-        icon = Icons.Rounded.CloudOff,
-        title = error.title,
-        text = error.hint,
-        modifier = modifier,
-        primary = "Спробувати ще раз" to onRetry,
-        secondary = if (error.openSite && siteUrl != null) "Відкрити сайт" to { ctx.openUrl(siteUrl) } else null,
-    )
+    Column(modifier) {
+        EmptyState(
+            if (error.offline) Illustration.OFFLINE else Illustration.ERROR, error.title, error.hint,
+            action = "Спробувати ще раз" to onRetry,
+        )
+        if (error.openSite && siteUrl != null) {
+            MineButton("Відкрити сайт", { ctx.openUrl(siteUrl) }, Modifier.align(Alignment.CenterHorizontally), tone = MineTone.TEXT)
+        }
+    }
 }
 
 @Composable

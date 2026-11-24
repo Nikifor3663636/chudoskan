@@ -106,7 +106,7 @@ fun ScannerScreen(
     }
     LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(MineDark.camera)) {
         if (granted) {
             CameraScreen(onBarcode, onClose)
         } else if (askedOnce) {
@@ -254,6 +254,7 @@ private fun RoundIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
 private fun ScanOverlay(modifier: Modifier) {
     // Рамка — фирменным оранжевым (как кнопка сканера).
     val accent = MineDark.accent
+    val scrim = MineDark.scrim
     val t = rememberInfiniteTransition(label = "laser")
     val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "p")
 
@@ -266,7 +267,7 @@ private fun ScanOverlay(modifier: Modifier) {
         val r = 24.dp.toPx()
         val hole = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(r))) }
 
-        clipPath(hole, ClipOp.Difference) { drawRect(Color.Black.copy(alpha = 0.55f)) }
+        clipPath(hole, ClipOp.Difference) { drawRect(scrim) }
 
         val len = 34.dp.toPx()
         val stroke = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)

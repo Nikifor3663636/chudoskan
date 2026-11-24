@@ -1,11 +1,27 @@
 package ua.chudo.scanner.ui.stock
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.common.BarcodeScanIcon
+import ua.chudo.scanner.ui.common.Banner
+import ua.chudo.scanner.ui.common.BannerKind
+import ua.chudo.scanner.ui.common.MineSegment
+import ua.chudo.scanner.ui.common.QtyPill
+import ua.chudo.scanner.ui.product.shopsWord
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import ua.chudo.scanner.ui.common.EmptyState
+import ua.chudo.scanner.ui.common.Illustration
+import ua.chudo.scanner.ui.common.Skeleton
+import ua.chudo.scanner.ui.common.SkeletonKind
+import ua.chudo.scanner.ui.common.StockBox
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.common.MineSearchField
@@ -114,8 +130,6 @@ import ua.chudo.scanner.ui.common.ProductCard
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.toUiError
-import ua.chudo.scanner.ui.theme.InStockGreen
-import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
 import java.text.DateFormat
@@ -153,6 +167,16 @@ sealed interface ImportState {
     data class Uploading(val done: Int, val total: Int) : ImportState
     data class Done(val result: ImportResult) : ImportState
     data class Failed(val message: String) : ImportState
+}
+
+/** Вкладки «Залишків» (дизайн-система → 08–11). */
+enum class StockTab(val title: String) { OWN("Свій магазин"), CITY("Місто"), NETWORK("Мережа"), CHANGED("Змінені") }
+
+/** «Змінені з минулого завантаження»: null — ще не завантажували. */
+sealed interface ChangedState {
+    data object Loading : ChangedState
+    data class Ready(val items: List<NetAvailability>) : ChangedState
+    data class Failed(val message: String) : ChangedState
 }
 
 class StockViewModel(
@@ -211,6 +235,34 @@ class StockViewModel(
     private val _state = MutableStateFlow<StockState>(StockState.Idle)
     val state = _state.asStateFlow()
 
+    private val _tab = MutableStateFlow(StockTab.OWN)
+    val tab = _tab.asStateFlow()
+    private val _changed = MutableStateFlow<ChangedState?>(null)
+    val changed = _changed.asStateFlow()
+
+    /** Перемикач вкладок: «Мережа» вперше — довідник магазинів, «Змінені» — список змін (одне читання пакета). */
+    fun selectTab(t: StockTab) {
+        _tab.value = t
+        if (t == StockTab.NETWORK && _stores.value.isEmpty()) loadStores()
+        if (t == StockTab.CHANGED && _changed.value !is ChangedState.Ready) loadChanged()
+    }
+
+    fun loadChanged() {
+        val n = net ?: run { _changed.value = ChangedState.Failed("Залишки мережі недоступні."); return }
+        _changed.value = ChangedState.Loading
+        viewModelScope.launch {
+            _changed.value = try {
+                ChangedState.Ready(n.changedSinceLastImport(employee.shopId))
+            } catch (e: CancellationException) { throw e } catch (e: Exception) { ChangedState.Failed(e.authMessage()) }
+        }
+    }
+
+    /** Вибрати всі змінені для цінників. */
+    fun selectAll(items: List<NetAvailability>) {
+        val have = _selected.value.map { it.barcode }.toSet()
+        _selected.value = _selected.value + items.filter { it.barcode !in have }
+    }
+
     // ---------- Пакетний друк: вибрані товари ----------
 
     private val _selected = MutableStateFlow<List<NetAvailability>>(emptyList())
@@ -226,6 +278,9 @@ class StockViewModel(
     }
 
     fun unselect(barcode: String) { _selected.value = _selected.value.filter { it.barcode != barcode } }
+
+    /** «Скасувати» в нижній панелі вибору. */
+    fun clearSelected() { _selected.value = emptyList() }
 
     /** «Змінені з минулого завантаження» — додати до вибраних ті, що є у своєму магазині. */
     fun addChanged() {
@@ -489,6 +544,8 @@ fun StockScreen(
     val storeItems by vm.storeItems.collectAsStateWithLifecycle()
     val storeLoading by vm.storeLoading.collectAsStateWithLifecycle()
     val labelsProgress by vm.labelsProgress.collectAsStateWithLifecycle()
+    val tab by vm.tab.collectAsStateWithLifecycle()
+    val changed by vm.changed.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
@@ -499,8 +556,9 @@ fun StockScreen(
         scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
     }
 
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
     LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
+        Modifier.weight(1f),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -520,39 +578,34 @@ fun StockScreen(
                 }
             }
         }
-        item {
-            LabelBatchCard(
-                selected, changedLoading, labelsProgress ?: batchNote,
-                onChanged = vm::addChanged, onRemove = vm::unselect, onLabels = vm::prepareLabels,
-            )
+        item { MineSegment(StockTab.entries, tab, { it.title }, vm::selectTab) }
+        if (selected.isNotEmpty() || batchNote != null || labelsProgress != null) item {
+            LabelBatchCard(selected, labelsProgress ?: batchNote, onRemove = vm::unselect)
         }
 
-        when (val st = s) {
-            StockState.Idle -> {}
-            is StockState.Loading -> item {
-                Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Mine.colors.accent)
-                    Spacer(Modifier.height(16.dp))
-                    Text(st.step, fontSize = 15.sp, color = Mine.colors.textSecondary, textAlign = TextAlign.Center)
-                }
+        if (tab == StockTab.CHANGED) changedTab(changed, selected, onToggle = vm::toggleSelected, onAll = vm::selectAll, onRetry = vm::loadChanged)
+        else when (val st = s) {
+            StockState.Idle -> if (tab != StockTab.OWN) item {
+                EmptyState(
+                    Illustration.STOCK, "Знайди товар",
+                    "Відскануй або введи артикул — покажемо залишки " + (if (tab == StockTab.CITY) "у магазинах міста." else "по всій мережі."),
+                    action = "Сканувати" to onScan,
+                )
+            }
+            is StockState.Loading -> {
+                item { Text(st.step, Modifier.padding(horizontal = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Mine.colors.textSecondary) }
+                item { Skeleton(SkeletonKind.CARD) }
+                items(2) { Skeleton(SkeletonKind.ROW) }
             }
             is StockState.Failed -> item { ErrorState(st.error, null, { vm.search(query) }) }
             is StockState.NotFound -> item {
-                MessageState(
-                    Icons.Rounded.SearchOff,
-                    "Не знайшли «${st.query}»",
-                    "Ні на сайті, ні у вивантаженні твого магазину.",
-                )
+                EmptyState(Illustration.SEARCH, "Не знайшли «${st.query}»", "Ні на сайті, ні у вивантаженні твого магазину.", action = "Сканувати ще" to onScan)
             }
             is StockState.NotInExport -> item {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    MessageState(
-                        Icons.Rounded.SearchOff,
-                        "Немає у вивантаженні 1С",
-                        "Штрихкод ${st.code}",
-                    )
-                    MineButton("Шукати на сайті", { vm.search(st.code) })
-                }
+                EmptyState(
+                    Illustration.SEARCH, "Немає у вивантаженні 1С", "Штрихкод ${st.code} не знайдено в залишках 1С.",
+                    action = "Шукати на сайті" to { vm.search(st.code) }, tone = MineTone.OUTLINE,
+                )
             }
             is StockState.Pick -> {
                 item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
@@ -571,9 +624,19 @@ fun StockScreen(
                 val net = st.net
                 item { ProductHeader(st.product, st.item, net) }
                 if (net != null) {
-                    item { NetworkStockCard(net) }
-                    // Адмін бачить товар одразу в усіх магазинах мережі.
-                    if (vm.networkView) item { NetworkDistributionCard(NetworkAvailability.byCity(net.item, stores, ownCode ?: net.ownCode), ownCode ?: net.ownCode) }
+                    when (tab) {
+                        StockTab.CITY -> item { NetworkStockCard(net) }
+                        StockTab.NETWORK -> item {
+                            if (stores.isEmpty()) Skeleton(SkeletonKind.ROW)
+                            else NetworkDistributionCard(NetworkAvailability.byCity(net.item, stores, ownCode ?: net.ownCode), ownCode ?: net.ownCode)
+                        }
+                        else -> item {
+                            StockBox(
+                                net.own, net.cityName?.let { "$it, ${shopsWord(net.city.size)}" },
+                                net.city.sumOf { it.qty }.takeIf { net.cityName != null },
+                            )
+                        }
+                    }
                     st.siteAvailable?.let { have -> item { SiteLine(have) } }
                     item {
                         val chosen = selected.any { it.barcode == net.barcode }
@@ -585,12 +648,23 @@ fun StockScreen(
             }
         }
         // Адмін: що лежить у будь-якому магазині мережі.
-        if (vm.networkView) item(key = "store-stock") {
+        if (vm.networkView && tab == StockTab.NETWORK) item(key = "store-stock") {
             StoreStockCard(
                 NetworkAvailability.storeChoices(stores), storeCode, storeItems, storeLoading,
                 onPick = vm::pickStore, onOpen = vm::openStoreItem,
             )
         }
+    }
+    // Дія вибору — внизу, у зоні великого пальця (дизайн-система → 08 Залишки).
+    if (selected.isNotEmpty()) {
+        Row(
+            Modifier.fillMaxWidth().background(Mine.colors.surface).padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MineButton("Скасувати", vm::clearSelected, tone = MineTone.TEXT)
+            MineButton("Цінники для вибраних · ${selected.size}", vm::prepareLabels, Modifier.weight(1f), tone = MineTone.ACCENT)
+        }
+    }
     }
 
     ImportDialog(vm, employee)
@@ -667,7 +741,7 @@ private fun ProductHeader(p: ProductDetails?, item: StockItem?, net: NetAvailabi
 private fun SiteLine(have: Boolean) {
     val m = Mine.colors
     Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(if (have) m.success else m.outline)
+        StatusDot(if (have) m.stockIn else m.stockOut)
         Spacer(Modifier.width(8.dp))
         Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
     }
@@ -682,13 +756,7 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
             Text("У твоєму магазині", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary)
             val item = st.item
             when {
-                item != null -> Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        item.qty.qty(), fontFamily = PriceFont, fontWeight = FontWeight.ExtraBold, fontSize = 48.sp, lineHeight = 52.sp,
-                        color = if (item.qty > 0) m.success else m.logout,
-                    )
-                    Text(" шт", Modifier.padding(bottom = 8.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
+                item != null -> StockBox(item.qty, null, null, Modifier.padding(top = 8.dp))
                 st.stockError != null -> Text(st.stockError, Modifier.padding(top = 6.dp), fontSize = 15.sp, color = m.warningText)
                 !uploaded -> Text("Завантаж файл з 1С, щоб бачити кількість.", Modifier.padding(top = 6.dp), fontSize = 16.sp)
                 else -> Text(
@@ -698,7 +766,7 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
             }
             st.siteAvailable?.let { have ->
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatusDot(if (have) m.success else m.outline)
+                    StatusDot(if (have) m.stockIn else m.stockOut)
                     Spacer(Modifier.width(8.dp))
                     Text(if (have) "Є на сайті" else "Немає на сайті", fontSize = 15.sp, color = m.textSecondary)
                 }
@@ -779,24 +847,13 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
     }
 }
 
-/**
- * Пакетний друк: «Змінені з минулого завантаження» і вибрані товари → «Цінники»
- * (один документ на кілька аркушів у «Друк цінників»).
- */
+/** Вибрані для цінників: список із «прибрати»; друк — кнопкою внизу екрана. */
 @Composable
-private fun LabelBatchCard(
-    selected: List<NetAvailability>, loading: Boolean, note: String?,
-    onChanged: () -> Unit, onRemove: (String) -> Unit, onLabels: () -> Unit,
-) {
+private fun LabelBatchCard(selected: List<NetAvailability>, note: String?, onRemove: (String) -> Unit) {
     val m = Mine.colors
     Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
-        Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Text("Цінники", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(
-                if (selected.isEmpty()) "Додай товари кнопкою «Додати до цінників» або візьми змінені з минулого завантаження."
-                else "Вибрано: ${selected.size}",
-                Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 19.sp, color = m.textSecondary,
-            )
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(if (selected.isEmpty()) "Цінники" else "Вибрано для цінників: ${selected.size}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             selected.take(MAX_SHOWN).forEach { av ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(av.item.name.ifBlank { av.barcode }, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -805,11 +862,43 @@ private fun LabelBatchCard(
             }
             if (selected.size > MAX_SHOWN) Text("… і ще ${selected.size - MAX_SHOWN}", fontSize = 14.sp, color = m.textSecondary)
             note?.let { Text(it, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary) }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Змінені з минулого завантаження", onChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
+        }
+    }
+}
+
+/** Вкладка «Змінені»: товари свого магазину, що змінились з минулого завантаження 1С; вибір — для цінників. */
+private fun LazyListScope.changedTab(
+    state: ChangedState?, selected: List<NetAvailability>,
+    onToggle: (NetAvailability) -> Unit, onAll: (List<NetAvailability>) -> Unit, onRetry: () -> Unit,
+) {
+    when (state) {
+        null, ChangedState.Loading -> items(4) { Skeleton(SkeletonKind.ROW) }
+        is ChangedState.Failed -> item { Banner(BannerKind.ERROR, state.message, action = "Повторити" to onRetry) }
+        is ChangedState.Ready -> if (state.items.isEmpty()) item {
+            EmptyState(Illustration.STOCK, "Змін немає", "З минулого завантаження 1С кількість у твоєму магазині не змінилась.")
+        } else {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Змінено: ${state.items.size}", Modifier.weight(1f).padding(horizontal = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Mine.colors.textSecondary)
+                    MineButton("Вибрати всі", { onAll(state.items) }, tone = MineTone.TEXT)
+                }
             }
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Цінники для вибраних", onLabels, Modifier.weight(1f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
+            items(state.items, key = { "changed-" + it.barcode }) { av ->
+                val on = selected.any { it.barcode == av.barcode }
+                val m = Mine.colors
+                Surface(
+                    onClick = { onToggle(av) }, shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text,
+                    modifier = Modifier.fillMaxWidth().semantics { this.selected = on },
+                ) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(if (on) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank, null, tint = if (on) m.accentText else m.outline)
+                        Column(Modifier.weight(1f)) {
+                            Text(av.item.name.ifBlank { av.barcode }, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text(netIds(av.item.code, av.item.article, av.barcode), fontSize = 13.sp, color = m.textSecondary, maxLines = 1)
+                        }
+                        av.own?.let { QtyPill(it) }
+                    }
+                }
             }
         }
     }

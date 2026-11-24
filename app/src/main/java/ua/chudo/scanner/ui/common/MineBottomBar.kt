@@ -3,6 +3,7 @@ package ua.chudo.scanner.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
@@ -43,10 +45,12 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.theme.Manrope
 import ua.chudo.scanner.ui.theme.Mine
 
 /** Вкладки нижней панели (макет Orders): Пошук · Замовлення · [сканер] · Друк · Профіль. */
@@ -62,23 +66,31 @@ val BarcodeScanIcon: ImageVector by lazy {
     }.build()
 }
 
+/** Висота панелі без системної навігації, діаметр FAB і на скільки він виступає над панеллю. */
+val BottomBarHeight = 80.dp
+private val FabSize = 72.dp
+private val FabRise = 30.dp
+
 /**
- * Нижняя панель стиля Mine: четыре вкладки и большая круглая кнопка сканера по центру,
- * приподнятая над панелью и обведённая кольцом цвета фона.
+ * Нижня панель (дизайн-система → MineBottomBar): 80 dp на поверхні, вкладки 64 dp з індикатором-«пігулкою»
+ * 56×32 на активній, кнопка сканера 72 dp по центру виступає над панеллю на 30 dp.
  */
 @Composable
 fun MineBottomBar(tab: MainTab?, newOrders: Int, onTab: (MainTab) -> Unit, onScan: () -> Unit) {
     val m = Mine.colors
     Box(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().background(m.card).navigationBarsPadding()) {
+        Column(Modifier.fillMaxWidth().background(m.surface).navigationBarsPadding()) {
             HorizontalDivider(color = m.line)
-            Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Дві половини однакової ширини: місце під круглу кнопку — рівно по центру (2 вкладки зліва, 3 справа).
+            Row(
+                Modifier.fillMaxWidth().height(BottomBarHeight - 1.dp).padding(bottom = 8.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                // Дві половини однакової ширини: місце під FAB — рівно по центру (2 вкладки зліва, 3 справа).
                 Row(Modifier.weight(1f)) {
                     TabItem(MainTab.SEARCH, tab, Icons.Rounded.Search, "Пошук", 0, onTab)
                     TabItem(MainTab.ORDERS, tab, Icons.Outlined.ShoppingBag, "Замовлення", newOrders, onTab)
                 }
-                Spacer(Modifier.width(84.dp))
+                Spacer(Modifier.width(FabSize + 8.dp))
                 Row(Modifier.weight(1f)) {
                     TabItem(MainTab.STOCK, tab, Icons.Outlined.Inventory2, "Залишки", 0, onTab)
                     TabItem(MainTab.TERMINAL, tab, Icons.Outlined.PointOfSale, "Термінал", 0, onTab)
@@ -86,18 +98,16 @@ fun MineBottomBar(tab: MainTab?, newOrders: Int, onTab: (MainTab) -> Unit, onSca
                 }
             }
         }
-        // Кнопка сканера: 76 dp, кольцо 6 dp цвета фона, мягкая тень — как в макете.
+        // FAB «Скан»: працює з будь-якої вкладки; тінь — лише в листа, FAB і діалогу.
         Box(
-            Modifier.align(Alignment.TopCenter).offset(y = (-30).dp).size(88.dp)
-                .shadow(10.dp, CircleShape, ambientColor = m.accent, spotColor = m.accent)
-                .clip(CircleShape).background(m.card)
+            Modifier.align(Alignment.TopCenter).offset(y = -FabRise).size(FabSize)
+                .shadow(8.dp, CircleShape)
+                .clip(CircleShape).background(m.accent)
                 .clickable(onClick = onScan)
                 .semantics { contentDescription = "Сканувати"; role = Role.Button },
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.size(76.dp).clip(CircleShape).background(m.accent), contentAlignment = Alignment.Center) {
-                Icon(BarcodeScanIcon, null, Modifier.size(32.dp), tint = m.onAccent)
-            }
+            Icon(BarcodeScanIcon, null, Modifier.size(32.dp), tint = m.onAccent)
         }
     }
 }
@@ -107,27 +117,32 @@ private fun RowScope.TabItem(t: MainTab, selected: MainTab?, icon: ImageVector, 
     val m = Mine.colors
     val on = t == selected
     Column(
-        Modifier.weight(1f).clickable { onTab(t) }.padding(vertical = 6.dp)
-            .semantics { role = Role.Tab },
+        Modifier.weight(1f).height(64.dp).clickable { onTab(t) }
+            .semantics { role = Role.Tab; this.selected = on },
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
-        Box {
-            Icon(icon, null, Modifier.size(26.dp), tint = if (on) m.text else m.textSecondary)
+        Box(
+            // «Пігулка» 56×32, але не ширша за саму вкладку (5 вкладок на вузькому екрані).
+            Modifier.padding(horizontal = 4.dp).widthIn(max = 56.dp).fillMaxWidth().height(32.dp)
+                .clip(CircleShape).background(if (on) m.accentTone else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, null, Modifier.size(24.dp), tint = if (on) m.accentText else m.textSecondary)
             if (badge > 0) {
                 Box(
-                    Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-6).dp).size(20.dp)
-                        .clip(CircleShape).background(m.accent).border(2.dp, m.card, CircleShape),
+                    Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = (-2).dp).size(20.dp)
+                        .clip(CircleShape).background(m.accent).border(2.dp, m.surface, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(if (badge > 9) "9+" else "$badge", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = m.onAccent)
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
-        // П'ять вкладок на вузькому екрані: «Замовлення» зменшується до 9 sp, а не обрізається.
+        // П'ять вкладок на вузькому екрані: «Замовлення» зменшується від 12 до 9 sp, а не обрізається.
         BasicText(
             label, Modifier.padding(horizontal = 2.dp),
-            style = TextStyle(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) m.text else m.textSecondary, textAlign = TextAlign.Center),
+            style = TextStyle(fontFamily = Manrope, fontWeight = FontWeight.SemiBold, color = if (on) m.text else m.textSecondary, textAlign = TextAlign.Center),
             maxLines = 1, softWrap = false,
             autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 12.sp, stepSize = 0.5.sp),
         )
