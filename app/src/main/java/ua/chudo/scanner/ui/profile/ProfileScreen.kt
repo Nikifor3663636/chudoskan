@@ -210,7 +210,7 @@ fun ProfileContent(
                     ProfileRow("Залишки мережі", "Завантажити з 1С", onClick = onNetworkStock)
                     RowDivider()
                 }
-                ProfileRow("Магазин", ui.shop)
+                ProfileStackedRow("Магазин", ui.shop)
                 RowDivider()
                 ProfileRow("Місто", ui.city)
                 RowDivider()
@@ -224,6 +224,21 @@ fun ProfileContent(
         Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
         ui.message?.let { Text(it, Modifier.padding(start = 4.dp, top = 10.dp), fontSize = 15.sp, color = m.success) }
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+/**
+ * Довге значення (адреса магазину) — під підписом, до 3 рядків, а не обрізаним в один рядок поруч із підписом.
+ */
+@Composable
+private fun ProfileStackedRow(label: String, value: String) {
+    val m = Mine.colors
+    Column(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Text(label, fontSize = 14.sp, color = m.textSecondary)
+        Text(
+            value.ifBlank { "—" }, Modifier.padding(top = 2.dp), fontSize = 16.sp, lineHeight = 21.sp,
+            color = m.text, maxLines = 3, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
