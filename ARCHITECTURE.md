@@ -1,114 +1,105 @@
-# Архитектура ЧудоСкан
+# Архітектура ЧудоСкан
 
-Документ описывает, из чего состоит ЧудоСкан, как части связаны между собой и почему они устроены
-именно так. Для установки и сборки — [README](README.md).
+З чого складається ЧудоСкан, як частини пов'язані і чому вони влаштовані саме так.
+Встановлення й збірка — у [README](README.md).
 
-## Содержание
-
-1. [Обзор](#1-обзор)
-2. [Модули](#2-модули)
-3. [Rust-ядро](#3-rust-ядро-core)
-4. [Мост ядра в Kotlin](#4-мост-ядра-в-kotlin)
-5. [Android-приложение](#5-android-приложение-app)
-6. [Общий модуль и iOS](#6-общий-модуль-shared-и-ios-iosapp)
-7. [Поиск товара](#7-поиск-товара)
-8. [Вход и остатки (Firebase)](#8-вход-и-остатки-firebase)
-9. [Печать ценников](#9-печать-ценников)
-10. [Сборка и CI](#10-сборка-и-ci)
-11. [Тесты](#11-тесты)
-12. [Принятые решения](#12-принятые-решения)
-13. [Ограничения и развитие](#13-ограничения-и-развитие)
+**Зміст** · [1. Огляд](#1-огляд) · [2. Модулі](#2-модулі) · [3. Rust-ядро](#3-rust-ядро) ·
+[4. Мости ядра](#4-мости-ядра) · [5. Android](#5-android) · [6. iPhone і веб](#6-iphone-і-веб) ·
+[7. Пошук товару](#7-пошук-товару) · [8. Дані у Firestore](#8-дані-у-firestore) · [9. Вхід і ролі](#9-вхід-і-ролі) ·
+[10. Залишки мережі](#10-залишки-мережі) · [11. Друк](#11-друк) · [12. ЧудоСкан Друк](#12-чудоскан-друк) ·
+[13. Збірка і CI](#13-збірка-і-ci) · [14. Тести](#14-тести) · [15. Рішення](#15-рішення) · [16. Обмеження](#16-обмеження)
 
 ---
 
-## 1. Обзор
+## 1. Огляд
 
-ЧудоСкан — приложение для продавцов сети «Чудо Острів». Продавец сканирует штрихкод, вводит артикул
-или название и за секунду видит цену, наличие в магазинах города и остаток в своём магазине.
+Продавець сканує штрихкод і за секунду бачить ціну, залишок у своєму магазині й у магазинах міста,
+а цінник друкується однією кнопкою.
 
-Три принципа:
+**Три принципи:**
 
-- **Одна логика для всех платформ.** Всё, что касается данных сайта (запросы, разбор ответов,
-  штрихкоды), написано один раз на Rust и одинаково работает на Android и iPhone.
-- **Ядро без ввода-вывода.** Rust не ходит в сеть и не трогает файлы: строит тела запросов и разбирает
-  ответы. Поэтому его легко тестировать на сохранённых ответах сайта.
-- **Платформа делает только платформенное.** Камера, сеть, хранение, печать и интерфейс — на стороне
-  Kotlin/Swift, там, где есть нативные API.
+| | Принцип | Навіщо |
+|---|---|---|
+| 🦀 | **Одна логіка даних сайту** — на Rust | Однаково працює на Android, iPhone і в вебі; тести на справжніх відповідях сайту |
+| 🧪 | **Ядро без вводу-виводу** | Rust не ходить у мережу: будує запити й розбирає відповіді — легко тестувати |
+| 🔒 | **Права вирішує сервер** | Кожен доступ до Firestore перевіряють `firestore.rules`, покриті тестами |
 
 ```mermaid
 flowchart LR
-    subgraph Devices[Устройства]
-        A[Android<br/>app/ · Jetpack Compose]
-        I[iPhone<br/>iosApp/ + shared/ · Compose Multiplatform]
+    subgraph people["Люди"]
+        seller(["👤 Продавець"])
+        admin(["🧑‍💼 Адмін"])
     end
-    C[[Rust-ядро<br/>core/]]
-    A -- UniFFI · JNA --> C
-    I -- C ABI · cinterop --> C
-    A -- HTTPS --> S[(chudo-ostriv.com.ua<br/>GraphQL + наличие)]
-    I -- HTTPS --> S
-    A -- HTTPS --> U[(UPCitemdb)]
-    I -- HTTPS --> U
-    A -- Firebase SDK --> F[(Firebase<br/>Auth + Firestore)]
-    I -- REST --> F
+    subgraph clients["Клієнти"]
+        android["📱 Android<br/>app/"]
+        ios["🍏 iPhone · 🌐 веб<br/>shared/"]
+        pc["💻 ЧудоСкан Друк<br/>printer/"]
+    end
+    core[["🦀 Rust-ядро<br/>core/"]]
+    site[("🌐 chudo-ostriv.com.ua<br/>GraphQL · наявність")]
+    fb[("🔥 Firebase<br/>Auth · Firestore")]
+    proxy["☁️ Cloudflare Worker<br/>proxy/"]
+    brother["🖨 Brother"]
+    godex["🏷 Godex"]
+
+    seller & admin --> android & ios
+    android & ios --> core
+    android --> site
+    ios -->|веб| proxy --> site
+    android & ios & pc --> fb
+    android -->|"TCP 9100"| brother
+    pc -->|"RAW у спулер"| godex
+
+    classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
+    classDef soft fill:#FFF3E8,stroke:#FF7500,color:#5A2A00;
+    class core brand;
+    class site,fb,proxy soft;
 ```
 
-## 2. Модули
+## 2. Модулі
 
-| Модуль | Язык | Назначение |
+| Модуль | Мова | Призначення |
 |---|---|---|
-| [`core/`](core) | Rust | Запросы к сайту, разбор ответов, штрихкоды EAN/UPC, города, распознавание блокировок |
-| [`app/`](app) | Kotlin, Jetpack Compose | Android-приложение: сканер, поиск, карточка, остатки, печать, вход |
-| [`shared/`](shared) | Kotlin Multiplatform, Compose Multiplatform | Общий код и экраны для iPhone; Firebase через REST |
-| [`iosApp/`](iosApp) | Swift, SwiftUI | Тонкая оболочка iOS: показывает экраны из `shared` |
-| [`firestore.rules`](firestore.rules) | Firestore Rules | Кто что видит в базе |
-| [`docs/`](docs) | HTML | Страница установки (GitHub Pages), скриншоты, логотип |
-| [`.github/workflows/`](.github/workflows) | GitHub Actions | Сборка и проверки Android, Rust и iOS |
+| [`core/`](core) | Rust | Запити до сайту й розбір відповідей, штрихкоди EAN/UPC, міста, розпізнавання блокувань |
+| [`app/`](app) | Kotlin, Jetpack Compose | Android: сканер, пошук, картка, залишки, друк, замовлення, адміністрування |
+| [`shared/`](shared) | Kotlin Multiplatform, Compose Multiplatform | Екрани iPhone і веб-версії (Wasm), Firebase через REST |
+| [`iosApp/`](iosApp) | Swift | Тонка оболонка iPhone для екранів `shared` |
+| [`printer/`](printer) | C#, .NET 8, WinForms | «ЧудоСкан Друк» — друк на Godex з ПК магазину |
+| [`proxy/`](proxy) | JavaScript | Cloudflare Worker: CORS для веб-версії (білий список шляхів) |
+| [`firestore.rules`](firestore.rules) · [`rules-tests/`](rules-tests) | Rules, JS | Хто що бачить у базі, і тести цього на емуляторі |
+| [`docs/`](docs) | HTML | Сторінка встановлення (GitHub Pages), відео, знімки |
 
-Зависимости направлены только внутрь: платформы зависят от ядра, ядро не знает о платформах.
+Залежності спрямовані лише всередину: клієнти залежать від ядра, ядро не знає про клієнтів.
 
-```mermaid
-flowchart TB
-    app[app/ Android] --> core
-    iosApp[iosApp/ SwiftUI] --> shared
-    shared[shared/ KMP] --> core[core/ Rust]
-```
+## 3. Rust-ядро
 
-## 3. Rust-ядро (`core/`)
-
-| Файл | Что делает |
+| Файл | Що робить |
 |---|---|
-| `barcode.rs` | Определяет тип ввода (EAN-13, EAN-8, UPC-A, артикул, текст), проверяет контрольную цифру, рисует полосы EAN-13 для ценника |
-| `graphql.rs` | Тела запросов к Magento GraphQL (через `variables`, без склейки строк) и разбор ответов; точное совпадение артикула по `external_id` |
-| `shops.rs` | Разбор HTML наличия по магазинам (`available` / `not-available`) |
-| `upc.rs` | Ответ UPCitemdb → вероятные артикулы из названия товара |
-| `guard.rs` | Распознаёт страницу проверки Cloudflare, 403/429/503 |
-| `regions.rs` | 29 городов с кодами сайта |
-| `urls.rs` | Адреса сайта и UPCitemdb |
-| `model.rs` | Общие типы: `ProductSummary`, `ProductDetails`, `ShopAvailability`, `Region`… |
-| `ffi_c.rs` | C-интерфейс для iOS: `chudo_call(метод, JSON)` |
-| `error.rs` | `CoreError` |
+| `barcode.rs` | Тип вводу (EAN-13, EAN-8, UPC-A, артикул, текст), контрольна цифра, смуги EAN-13 для цінника |
+| `graphql.rs` | Тіла запитів Magento GraphQL (через `variables`) і розбір відповідей; точний збіг артикула |
+| `shops.rs` | Розбір HTML наявності по магазинах |
+| `upc.rs` | Відповідь UPCitemdb → імовірні артикули з назви |
+| `guard.rs` | Сторінка перевірки Cloudflare, 403/429/503 |
+| `regions.rs` · `urls.rs` · `model.rs` | Міста сайту, адреси, спільні типи |
+| `ffi_c.rs` | C-інтерфейс для iPhone: `chudo_call(метод, JSON)` |
 
-Функции ядра чистые: на вход строка, на выход значение или `CoreError`. В релизе — `opt-level = "z"`,
-LTO и `panic = "abort"`: библиотека для arm64 весит около 1,5 МБ.
+Функції чисті: на вхід рядок — на вихід значення або `CoreError`. У релізі `opt-level = "z"`, LTO,
+`panic = "abort"`: бібліотека для arm64 — близько 1,5 МБ.
 
-## 4. Мост ядра в Kotlin
+## 4. Мости ядра
 
-У ядра две «двери», и у каждой своя причина:
-
-| | Android | iOS |
+| | Android | iPhone |
 |---|---|---|
-| Механизм | [UniFFI](https://mozilla.github.io/uniffi-rs/) → Kotlin-обёртка (`app/src/main/java/uniffi/`) | C ABI → Kotlin/Native `cinterop` (`core/include/chudo_core.h`) |
-| Библиотека | `libchudo_core.so` (cargo-ndk, 3 ABI) | `libchudo_core.a` (статическая, `aarch64-apple-ios[-sim]`) |
-| Вызов | Типизированные функции и классы | Одна функция `chudo_call("method", "{json}")` → `{"ok": …}` / `{"err": …}` |
-| Модели | Сгенерированы UniFFI | `@Serializable`-классы в `shared/core/Core.kt` |
+| Механізм | [UniFFI](https://mozilla.github.io/uniffi-rs/) → Kotlin-обгортка | C ABI → Kotlin/Native `cinterop` |
+| Бібліотека | `libchudo_core.so` (cargo-ndk, 3 ABI) | `libchudo_core.a` (статична) |
+| Виклик | Типізовані функції | Одна функція `chudo_call("method", "{json}")` |
 
-JSON-мост для iOS выбран потому, что UniFFI не генерирует код для Kotlin/Native. Чтобы модели
-на двух сторонах не разошлись, `CoreContractTest` прогоняет Kotlin-модели `shared` через настоящее
-ядро на сохранённых ответах сайта.
+UniFFI не генерує код для Kotlin/Native, тому для iPhone — JSON-міст. Щоб моделі по обидва боки
+не розійшлися, `CoreContractTest` проганяє Kotlin-моделі `shared` через справжнє ядро.
 
 ```mermaid
 sequenceDiagram
-    participant UI as Экран (Kotlin)
+    participant UI as Екран (Kotlin)
     participant Core as Core.kt
     participant Rust as chudo_call (Rust)
     UI->>Core: parseSearch(body, query)
@@ -117,218 +108,287 @@ sequenceDiagram
     Core-->>UI: List<ProductSummary>
 ```
 
-## 5. Android-приложение (`app/`)
+## 5. Android
 
-Слои — обычные для Compose-приложения, без DI-фреймворка: все зависимости создаёт `ChudoApp`
-(ручной DI, один контейнер).
+Звичайні шари Compose-застосунку, без DI-фреймворку: усі залежності створює `ChudoApp`.
 
 ```mermaid
 flowchart TB
-    subgraph UI[ui/ — экраны Compose]
-        home[home] --- scan[scan] --- results[results] --- product[product]
-        stock[stock] --- print[print] --- auth[auth] --- profile[profile]
+    subgraph ui["ui/ — екрани Compose"]
+        direction LR
+        home["home"]
+        scan["scan"]
+        results["results"]
+        product["product"]
+        stock["stock"]
+        orders["orders"]
+        admin["admin"]
+        profile["profile"]
     end
-    subgraph VM[ViewModel + StateFlow]
+    vm["ViewModel + StateFlow"]
+    subgraph data["data/"]
+        site["SiteClient<br/>OkHttp + WebView"]
+        net["NetworkStockRepository<br/>залишки мережі"]
+        auth["AuthRepository"]
+        parser["Звіт 1С<br/>xlsx · csv"]
     end
-    subgraph Data[data/]
-        repo[ChudoRepository] --> site[SiteClient<br/>OkHttp + WebView-фолбэк]
-        stockRepo[ShopStockRepository] --> fs[(Firestore)]
-        authRepo[AuthRepository] --> fa[(Firebase Auth)]
-        parser[StockFileParser<br/>xlsx / csv из 1С]
-        prefs[AppPrefs<br/>SharedPreferences]
+    subgraph print["print/"]
+        resolver["PrinterResolver"]
+        render["LabelRenderer"]
+        tr["TCP 9100 · USB OTG · черга для ПК"]
     end
-    subgraph Print[print/]
-        resolver[PrinterResolver<br/>реестр · поиск · ПК-агент] --> tr[Transports<br/>TCP 9100 · USB OTG · агент]
-        render[LabelRenderer] --> lang[Languages<br/>EZPL · PCL]
-    end
-    UI --> VM --> Data
-    UI --> Print
-    repo --> core[[uniffi.chudo_core]]
+    ui --> vm --> data
+    ui --> print
+    site --> core[["uniffi.chudo_core"]]
     render --> core
+    resolver --> tr
+
+    classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
+    class core brand;
 ```
 
-- **Камера:** CameraX + ML Kit Barcode. Код принимается, если совпал в двух кадрах подряд.
-- **Сеть:** OkHttp. Если Cloudflare вернул страницу проверки (`detect_block`), запрос повторяется
-  из невидимого WebView, у которого есть JS и cookies (`WebViewFetcher`).
-- **Состояние:** `StateFlow` во ViewModel, в Compose — `collectAsStateWithLifecycle`.
-- **Тема:** светлая и тёмная, фирменный оранжевый `#FF7500`.
+- **Камера:** CameraX + ML Kit Barcode; код приймається, якщо збігся у двох кадрах поспіль.
+- **Мережа:** OkHttp; якщо Cloudflare повернув сторінку перевірки — повтор через невидимий WebView.
+- **Стан:** `StateFlow` у ViewModel, у Compose — `collectAsStateWithLifecycle`.
+- **Дизайн:** стиль «Mine», світла й темна тема, фірмовий помаранчевий `#FF7500`.
+- **Навігація:** `Пошук · Замовлення · 📷 · Залишки · Профіль`.
 
-## 6. Общий модуль (`shared/`) и iOS (`iosApp/`)
+## 6. iPhone і веб
 
-iPhone-версия — это Compose Multiplatform: экраны пишутся один раз на Kotlin и рисуются через Skia.
-Платформенные кусочки объявлены через `expect`/`actual`:
+Екрани пишуться один раз на Kotlin (Compose Multiplatform) і малюються на iPhone та у браузері (Wasm).
+Платформне — через `expect`/`actual`:
 
-| `expect` | Android (`androidMain`) | iOS (`iosMain`) |
-|---|---|---|
-| `KeyValueStore` | SharedPreferences | `NSUserDefaults` |
-| `createHttpClient()` | Ktor + OkHttp | Ktor + Darwin (`NSURLSession`) |
-| `BarcodeScannerView` | — | AVFoundation (`AVCaptureMetadataOutput`) |
-| `NativeCore` | JNA → `libchudo_core.so` (для тестов) | cinterop → `libchudo_core.a` |
-| `openUrl` | Intent | `UIApplication.openURL` |
+| `expect` | Android | iPhone | Веб |
+|---|---|---|---|
+| Сховище | SharedPreferences | `NSUserDefaults` | `localStorage` |
+| HTTP | Ktor + OkHttp | Ktor + Darwin | Ktor + fetch через `proxy/` |
+| Сканер | — | AVFoundation | фото камерою |
 
-Firebase на iOS подключён **через REST** (Identity Toolkit, Secure Token, Firestore REST), а не через
-нативный SDK: так модуль остаётся чистым Kotlin без CocoaPods. Ключ и id проекта генерируются при
-сборке из `app/google-services.json` (задача `genFirebaseConfig`); в git ключ не попадает.
+Firebase на iPhone і в вебі — **через REST** (Identity Toolkit, Secure Token, Firestore REST):
+модуль лишається чистим Kotlin без CocoaPods. Проєкт Xcode генерує XcodeGen з `iosApp/project.yml`.
 
-`iosApp/iOSApp.swift` — 20 строк: SwiftUI-окно, внутри `MainViewController()` из `shared`.
-Проект Xcode не хранится в git, его генерирует [XcodeGen](https://github.com/yonaskolb/XcodeGen) из `iosApp/project.yml`.
+## 7. Пошук товару
 
-### План магазина — iPhone и веб
-
-Логика «де лежить товар» (`shared/.../layout/LayoutMatch.kt`) — чистый Kotlin в модуле `shared`, тесты — в
-`shared/src/androidUnitTest`. В Android-приложении на месте вкладки «Планування» теперь «Замовлення».
-
-### Интернет-заказы на самовывоз (Android)
-
-Вкладка «Замовлення»: «Нові / Збираю / Готові», сборка заказа сканером, «Видано». Источник заказов — интерфейс
-`OrdersSource`; пока подключены только демо-данные (`DemoOrders`), экран честно это показывает.
-
-## 7. Поиск товара
-
-Сайт не индексирует штрихкоды, поэтому поиск — цепочка шагов. Каждый шаг виден пользователю
-(«Шукаємо на сайті…», «Шукаємо штрихкод у базі…»).
+Сайт не індексує штрихкоди, тому пошук — ланцюжок кроків, і кожен видно користувачу.
 
 ```mermaid
 flowchart TD
-    in[Ввод: штрихкод / артикул / название] --> cls{classify_query}
-    cls -->|штрихкод уже привязан| saved[Открыть товар сразу]
-    cls --> site[GraphQL search]
-    site -->|точное совпадение артикула| card[Карточка товара]
-    site -->|нет| upc[UPCitemdb lookup]
-    upc --> cand[upc_candidates: артикулы из названия]
-    cand --> site2[GraphQL search по каждому]
-    site2 -->|нашли| remember[«Запам'ятати?» → привязка штрихкода]
-    remember --> card
-    site2 -->|нет| text[Текстовый поиск по названию]
-    text --> list[Список результатов]
-    card --> shops[Наличие: multiwarehouse/shops]
-    card --> stock[Остаток своего магазина: Firestore]
+    in["Ввід: штрихкод · артикул · назва"] --> saved{"Штрихкод уже прив'язано?"}
+    saved -->|так| card
+    saved -->|ні| site["GraphQL search на сайті"]
+    site -->|"точний збіг артикула"| card["Картка товару"]
+    site -->|ні| upc["UPCitemdb → артикули з назви"] --> site2["GraphQL по кожному"]
+    site2 -->|"знайшли → «Запам'ятати?»"| card
+    site2 -->|ні| text["Пошук за назвою → список"]
+    card --> avail["Наявність на сайті: є / немає"]
+    card --> qty["Кількість з 1С: stock/{штрихкод}<br/>свій магазин і місто"]
+
+    classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
+    class card brand;
 ```
 
-Данные сайта:
+Пошук за **кодом 1С** (`BOC022446`) і артикулом із залишків — на вкладці «Залишки»
+(запит `stock` за полями `code` / `article`).
 
-| Что | Как |
+| Що | Як |
 |---|---|
-| Поиск, карточка | `POST /graphql`, заголовок `Store: ua` |
-| Артикул | поле `external_id` (`sku` на сайте — GUID из 1С, фильтр по нему отключён) |
-| Наличие | `GET /ua/multiwarehouse/shops/index/?id={id}&region={код}` → HTML в JSON |
-| Штрихкод → товар | `api.upcitemdb.com/prod/trial/lookup` (≈100 запросов в сутки) |
+| Пошук, картка | `POST /graphql`, заголовок `Store: ua` |
+| Артикул | поле `external_id` |
+| Наявність | `GET /ua/multiwarehouse/shops/index/?id={id}&region={код}` |
+| Штрихкод → товар | збережена прив'язка, далі `api.upcitemdb.com` (≈100 запитів на добу) |
 
-## 8. Вход и остатки (Firebase)
+## 8. Дані у Firestore
+
+```mermaid
+flowchart LR
+    users["users/{uid}<br/>анкета · approved · admin<br/>superAdmin · stockAdmin"]
+    shops["shops/{shopId}<br/>адреса · code1C · printerSubnets"]
+    printers["shops/{shopId}/printers/{id}<br/>реєстр принтерів"]
+    stock["stock/{штрихкод}<br/>q: {«22»: 1, …} · name · code · article"]
+    stores["stores/{код ЧО}<br/>назва · місто · shopId"]
+    meta["meta/stock<br/>коли й хто оновив"]
+    devices["devices/{uid ПК}<br/>shopId"]
+    pairing["devicePairing/{код}<br/>15 хв"]
+    agents["agents/{uid ПК}<br/>пульс · Godex · черга"]
+    jobs["printJobs/{id}<br/>queued → printing → done"]
+    log["adminLog/{id}"]
+
+    users --> shops --> printers
+    stores --> shops
+    stock --> stores
+    pairing --> devices --> agents
+    jobs --> agents
+```
+
+| Колекція | Хто пише | Хто читає |
+|---|---|---|
+| `users` | сам (анкета), адмін (права) | сам, адмін свого магазину, адмін мережі |
+| `shops` · `printers` | адмін магазину / мережі, телефони (реєстр) | співробітники магазину |
+| `stock` · `stores` · `meta` | адмін залишків / мережі | усі підтверджені |
+| `devicePairing` · `devices` | ПК (код), адмін (підтвердження) | адмін, сам ПК |
+| `agents` · `printJobs` | ПК (пульс, статус), співробітник (завдання) | магазин, ПК-адресат |
+| `adminLog` | адміни | адмін мережі |
+
+## 9. Вхід і ролі
 
 ```mermaid
 sequenceDiagram
-    actor E as Сотрудник
-    participant App as Приложение
+    actor E as 👤 Співробітник
+    participant App as 📱 Застосунок
     participant Auth as Firebase Auth
     participant DB as Firestore
-    actor Adm as Администратор
-    E->>App: Имя, телефон, пароль, магазин
+    actor Adm as 🏪 Адмін
+    E->>App: ім'я, телефон, пароль, магазин
     App->>Auth: createUser(380…@tel.chudoostriv.app, пароль)
     App->>DB: users/{uid} {approved: false}
-    Adm->>DB: approved = true
-    E->>App: Вход по телефону и паролю
-    App->>DB: shops/{shopId}/stock/* (только свой магазин)
+    Adm->>DB: approved = true (у застосунку)
+    E->>App: вхід за телефоном і паролем
+    App->>DB: дані свого магазину й міста
 ```
 
-- **Логин.** Firebase хранит пароль только в паре с email, поэтому логин — служебный адрес из
-  номера: `+380961234567` → `380961234567@tel.chudoostriv.app`. Пользователь его не видит, SMS не нужны.
-- **Данные.** `users/{uid}` — анкета (`name`, `phone`, `region`, `shop`, `shopId`, `approved`);
-  `shops/{shopId}/stock/{ключ}` — остатки из выгрузки 1С.
-- **Правила** ([`firestore.rules`](firestore.rules)): читать и писать остатки может только
-  подтверждённый сотрудник этого магазина; анкета создаётся неподтверждённой, а сменить магазин или
-  подтвердить может только администратор.
-- **Импорт 1С.** `StockFileParser` читает `.xlsx` (без Apache POI — свой разбор OOXML) и CSV
-  (UTF-8 или Windows-1251), находит колонки по заголовкам; `ShopStockRepository.import` заменяет
-  остатки магазина пачками по 450 записей.
+- **Логін.** Firebase тримає пароль лише в парі з email, тому логін — службова адреса з номера:
+  `+380961234567` → `380961234567@tel.chudoostriv.app`. Користувач її не бачить, SMS не потрібні.
+- **Ролі:** співробітник → адмін магазину (`admin`) → адмін мережі (`superAdmin`); окремо — адмін
+  залишків (`stockAdmin`). `superAdmin` і `stockAdmin` ставляться лише в консолі Firebase, клієнт їх
+  змінити не може.
+- **«Працювати як у магазині ЧО NN»** — адмін мережі тимчасово бачить застосунок очима будь-якого магазину.
 
-## 9. Печать ценников
-
-Сотрудник ничего не выбирает и не настраивает: «Друк» → напечатано.
+## 10. Залишки мережі
 
 ```mermaid
 flowchart LR
-    tag[PriceTag] --> r[LabelRenderer<br/>один Bitmap: превью = печать]
-    r -->|40×24, 203 dpi, 1 бит| ezpl[EZPL<br/>Godex]
-    r -->|A4 300 dpi, 1 бит| pcl[PCL растр<br/>Brother]
-    ezpl & pcl --> pick{PrinterResolver}
-    pick --> c[кеш сессии] & reg[реестр магазина<br/>первый ответивший] & disc[поиск ≤ 6 с] & agent[ПК-агент]
-    c & reg & disc --> tcp[TCP 9100]
-    pick --> usb[USB OTG]
-    agent --> jobs[(Firestore printJobs)] --> pc[«ЧудоСкан Друк» на ПК<br/>RAW в спулер Windows]
+    c["1С: «Ведомость по партиям<br/>товаров на складах»"] -->|.xlsx| app["📱 Імпорт<br/>адмін мережі"]
+    app --> parse["Потоковий розбір<br/>склади «ЧО NN» у колонках"]
+    parse --> diff["Різниця з минулим файлом<br/>(знімок на телефоні)"]
+    diff -->|"лише змінене"| stock[("stock/{штрихкод}")]
+    diff --> meta[("meta/stock")]
+    stock --> card["Картка товару:<br/>свій магазин + місто"]
+
+    classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
+    classDef soft fill:#FFF3E8,stroke:#FF7500,color:#5A2A00;
+    class app brand;
+    class stock,meta soft;
 ```
 
-- **Реестр** `shops/{shopId}/printers/{id}`: id — MAC (SNMP `ifPhysAddress`), иначе модель+имя, поэтому смена IP
-  не создаёт дубль. Нашедший или напечатавший телефон делает upsert; остальные слушают реестр и не сканируют.
-- **Поиск** (фоновый): NSD своей подсети, TCP 9100 по `shops/{shopId}.printerSubnets` + /24 Wi-Fi телефона,
-  SNMP `sysDescr`/`hrDeviceDescr`/MAC, при молчании SNMP — страница `http://IP/` (Godex). Неопознанное —
-  только администратору. При запуске (не чаще раза в 10 минут) реестр тихо проверяется.
-- **Экран «Принтери»** — только администратору (`users/{uid}.admin`): тест, плотность и скорость Godex,
-  «Додати вручну», удаление.
-- **EAN-13**: тихая зона 5 модулей, модуль — целое число точек (Godex 2, Brother 3), без сглаживания;
-  тест декодирует настоящий Bitmap печати ZXing.
+- **Формат звіту:** у колонці B — «назва, КОД, артикул» (ділиться з кінця, бо в назвах бувають коми);
+  під кожним складом — «Штрих код | Конечный остаток»; порожньо = товару немає. 1С пише
+  `xl/SharedStrings.xml` з великої S — частини архіву порівнюються без урахування регістру.
+- **Обсяг:** ~24 000 товарів × 46 магазинів; аркуш ~100 МБ XML читається потоково.
+- **Зберігання:** документ на товар `stock/{штрихкод}` з мапою `q` — ключ код магазину. Скан — одне читання.
+- **Захист:** магазин без товарів у файлі не обнуляється; товарів < 50% від минулого — підтвердження;
+  невідомий склад — «Який це магазин?» з підказкою за назвою ТЦ.
+- **Ліміт:** перше завантаження ~24 000 записів (більше безкоштовних 20 000 на добу) — застосунок попереджає;
+  далі пишуться лише зміни.
 
-## 10. Сборка и CI
+## 11. Друк
+
+Продавець нічого не налаштовує: «Цінник» → надруковано.
 
 ```mermaid
 flowchart LR
-    push[git push] --> a[android.yml]
-    push --> i[ios.yml]
-    a --> a1[core: fmt · clippy · test] --> a2[lint · unit-тесты · APK]
-    i --> i1[Rust для iOS] --> i2[Kotlin-фреймворк] --> i3[XcodeGen + xcodebuild] --> i4[IPA · скриншоты]
-    i4 -.секреты App Store Connect.-> tf[TestFlight]
+    tag["PriceTag<br/>дані 1С + ціна сайту"] --> r["LabelRenderer<br/>один Bitmap: прев'ю = друк"]
+    r -->|"40×24 · 203 dpi"| ezpl["EZPL"]
+    r -->|"A4 · 300 dpi"| pcl["PCL-растр"]
+    ezpl & pcl --> pick{"PrinterResolver"}
+    pick -->|"кеш · реєстр · пошук ≤ 6 с"| tcp["TCP 9100 → Brother"]
+    pick --> usb["USB OTG"]
+    pick -->|Godex через ПК| jobs[("printJobs")] --> pc["💻 ЧудоСкан Друк"]
+    pick -.->|"обраний недоступний"| ask["Питання:<br/>друкувати на іншому?"]
+
+    classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
+    classDef warn fill:#FFF3E8,stroke:#FF7500,color:#5A2A00;
+    class r brand;
+    class ask warn;
 ```
 
-| Что | Где | Команда |
+- **Реєстр** `shops/{shopId}/printers/{id}`: id — MAC (SNMP), тому зміна IP не створює дубль.
+- **Пошук:** NSD, TCP 9100 по `printerSubnets` і /24 Wi-Fi телефона, SNMP, вебсторінка Godex.
+- **Вибір принтера** запам'ятовується окремо для етикеток і A4; якщо обраний не відповідає — питання, а не
+  тиха заміна.
+- **A4 альбомно:** аркуш малюється 3508×2480 і повертається на 90°; розкладка рахується від друкованої
+  області Brother (поле 4,2 мм).
+- **EAN-13:** тиха зона 5 модулів, модуль — ціле число точок; тест читає штрихкод зі справжнього Bitmap друку.
+
+## 12. ЧудоСкан Друк
+
+Програма для ПК, до якого кабелем підключено Godex. Без служби Windows, без прав адміністратора і
+без ключів сервісного акаунта.
+
+```mermaid
+sequenceDiagram
+    participant PC as 💻 ЧудоСкан Друк
+    participant Auth as Firebase Auth
+    participant DB as Firestore
+    actor Adm as 🏪 Адмін магазину
+    PC->>Auth: анонімний вхід → uid
+    PC->>DB: devicePairing/{код} (діє 15 хв)
+    Note over PC: великий код у вікні
+    Adm->>DB: код у застосунку → devices/{uid} = {shopId}
+    DB-->>PC: devices/{uid} з'явився → робочий режим
+    loop кожні 60 с
+        PC->>DB: agents/{uid}: онлайн, Godex, черга
+    end
+    DB-->>PC: printJobs (queued, для цього ПК)
+    PC->>PC: RAW у спулер Windows → Godex
+    PC->>DB: done / error
+```
+
+- **Права ПК** — лише його магазин: взяти завдання для себе, змінити їхній статус, писати свій пульс.
+  «Відключити» видаляє `devices/{uid}` — доступ закривається одразу.
+- **Надійність:** завдання забирається транзакцією; зависле `printing` > 2 хв повертається в чергу один раз;
+  `done/error` старші 7 днів видаляються.
+- **Вікно:** 🟢 Працює · 🔵 Підключіть комп'ютер · 🔴 Потрібна увага · ⚪ Немає зв'язку; значок біля годинника.
+- **Збірка:** `printer.yml` — .NET-тести → установники x64 і x86 (Inno Setup, `PrivilegesRequired=lowest`).
+
+## 13. Збірка і CI
+
+```mermaid
+flowchart LR
+    push(["git push"]) --> a["android.yml"] --> a1["Rust: fmt · clippy · test"] --> a2["lint · unit-тести · APK"]
+    push --> r["rules.yml"] --> r1["емулятор Firestore · rules-tests"]
+    push --> p["printer.yml"] --> p1["dotnet test"] --> p2["установники x64 / x86<br/>перевірка на ключі"]
+    push --> i["ios.yml"] --> i1["Rust для iOS → фреймворк → xcodebuild"]
+    push --> w["pages.yml"] --> w1["веб-версія → GitHub Pages"]
+    a2 -.->|"тег vX.Y"| rel1["реліз APK"]
+    p2 -.->|"тег printer-vX.Y.Z"| rel2["реліз установників"]
+```
+
+Версії залежностей — в одному каталозі [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
+Lint Android суворий: попередження — це помилки.
+
+## 14. Тести
+
+| Набір | Де | Що перевіряє |
 |---|---|---|
-| Ядро | любая ОС | `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` |
-| Android | Windows / Linux / macOS | `./gradlew :app:assembleRelease` (Gradle сам вызывает `cargo ndk`) |
-| iOS | только macOS (CI) | `scripts/build-ios-core.sh` → `:shared:linkDebugFrameworkIosSimulatorArm64` → `xcodebuild` |
-| Привязки UniFFI | после смены API ядра | `scripts/gen-bindings.sh` / `.ps1` |
+| Ядро | `core/src/**`, `core/tests/real_responses.rs` | Штрихкоди, URL, розбір GraphQL, блокування; справжні відповіді сайту |
+| Контракт моделей | `shared/src/androidUnitTest/CoreContractTest.kt` | Kotlin-моделі iPhone-мосту ↔ JSON ядра |
+| Залишки мережі | `app/src/test/.../data/Network*Test.kt`, `StoreMatcherTest.kt` | Розбір звіту 1С, різниця, захист, підказка магазину |
+| Друк | `app/src/test/.../print/*Test.kt` | EAN-13 (ZXing), EZPL/PCL, розкладка аркушів, вибір принтера без тихої заміни |
+| Дизайн | `app/src/test/.../design/DesignSnapshots.kt` | Знімки Paparazzi екранів і цінників |
+| Правила | `rules-tests/rules.test.js` | Ролі, свій магазин, підключення ПК, залишки мережі — дозволи й відмови |
+| ЧудоСкан Друк | `printer/ChudoScan.Print.Tests` | Godex з WMI, дедуплікація, код, завислі завдання, стан |
 
-Версии зависимостей — в одном каталоге [`gradle/libs.versions.toml`](gradle/libs.versions.toml).
-Lint Android настроен строго: предупреждения считаются ошибками.
+Якщо сайт змінить розмітку, першими впадуть тести на `fixtures` — раніше, ніж це помітять продавці.
 
-## 11. Тесты
+## 15. Рішення
 
-| Набор | Где | Что проверяет |
-|---|---|---|
-| Юнит-тесты ядра | `core/src/**` | Штрихкоды, URL, разбор GraphQL, блокировки |
-| Реальные ответы | `core/tests/real_responses.rs` + `fixtures/` | Разбор настоящих ответов сайта и UPCitemdb |
-| Контракт моделей | `shared/src/androidUnitTest/CoreContractTest.kt` | Kotlin-модели iOS-моста ↔ JSON ядра |
-| SHA-1 | `shared/src/androidUnitTest/Sha1Test.kt` | Отпечаток для `shopId` |
-| Печать | `app/src/test/.../print/*Test.kt` | EAN-13 (ZXing), байты EZPL / PCL / ZPL / TSPL, SNMP, mDNS, CIDR, автовыбор принтера |
-| Дизайн | `app/src/test/.../design/DesignSnapshots.kt` | Снимки Paparazzi экранов «Mine» и ценников; штрихкод из Bitmap печати читается ZXing |
-| «ЧудоСкан Друк» | `printer/ChudoScan.Print.Tests` | Godex из WMI и дедупликация, код подключения, зависшие задания, общий статус, тестовая этикетка |
+| Рішення | Чому |
+|---|---|
+| **Rust для спільної логіки** | Ядро з'явилося раніше iPhone-версії й покрите тестами на справжніх відповідях; маленька нативна бібліотека для всіх платформ |
+| **Ядро без мережі** | HTTP потребує платформного (cookies, WebView для Cloudflare); так ядро детерміноване |
+| **Два мости** | UniFFI зручніший для Android, але не підтримує Kotlin/Native; для iPhone — C + JSON + контрактний тест |
+| **Firebase через REST на iPhone і в вебі** | Потрібно кілька викликів — простіше Ktor, ніж нативний SDK з CocoaPods |
+| **Вхід за телефоном без SMS** | SMS у Firebase платні; телефон + пароль безкоштовні, а підтвердження адміном закриває доступ стороннім |
+| **ПК входить анонімно й підключається кодом** | Жодних ключів сервісного акаунта на комп'ютерах магазинів; права лише свого магазину |
+| **Залишки мережі одним звітом 1С** | Один файл від адміна мережі замість вивантаження в кожному магазині; пишуться лише зміни |
+| **Ручний DI** | Один контейнер на десяток залежностей зрозуміліший за Hilt/Koin і не сповільнює збірку |
 
-Если сайт поменяет разметку, первыми упадут тесты на `fixtures`: видно, что сломалось, до того, как
-это заметят продавцы.
+## 16. Обмеження
 
-## 12. Принятые решения
-
-**Rust для общей логики, а не Kotlin Multiplatform целиком.** Ядро появилось раньше iOS-версии и
-уже покрыто тестами на реальных ответах. Rust даёт маленькую нативную библиотеку для обеих платформ
-и строгую типизацию разбора. KMP добавлен позже — только для экранов iPhone.
-
-**Ядро без сети.** HTTP требует платформенных вещей (cookies, WebView-фолбэк для Cloudflare,
-системные прокси). Отдав сеть платформе, ядро осталось детерминированным и тестируемым.
-
-**Два моста вместо одного.** UniFFI удобнее для Android (типы, исключения), но не поддерживает
-Kotlin/Native. Для iOS — один C-вызов с JSON и контрактный тест.
-
-**Firebase через REST на iOS.** Нативный Firebase SDK для iOS тянет CocoaPods/SPM и Objective-C
-interop в Kotlin/Native. Нужны четыре вызова — проще REST через тот же Ktor.
-
-**Вход по телефону без SMS.** SMS в Firebase платные (тариф Blaze). Телефон + пароль через
-служебный email бесплатны, а подтверждение администратором закрывает доступ посторонним.
-
-**Ручной DI.** Один контейнер (`ChudoApp`, `AppGraph`) на десяток зависимостей понятнее, чем
-Hilt/Koin, и не замедляет сборку.
-
-## 13. Ограничения и развитие
-
-- Сайт отдаёт наличие да/нет, без количества; количество — только из выгрузки 1С.
-- UPCitemdb (бесплатный тариф) — около 100 запросов в сутки; привязанные штрихкоды лимит не тратят.
-- На iPhone пока нет остатков и печати — это следующий этап (экраны переедут в `shared`).
-- Android-экраны со временем можно перевести на `shared`, чтобы интерфейс был один на обе платформы.
-- Установка на iPhone для всех — через TestFlight (нужен Apple Developer Program); CI к этому готов.
+- Сайт віддає наявність «є / немає»; кількість — лише зі звіту 1С і на момент завантаження.
+- Залишки читаються з Firestore під час скану; без інтернету — лише те, що вже відкривали
+  (план — локальна база на телефоні й пакетне зберігання).
+- Перше завантаження залишків мережі перевищує безкоштовний добовий ліміт записів Firestore.
+- UPCitemdb (безкоштовно) — близько 100 запитів на добу; прив'язані штрихкоди ліміт не витрачають.
+- iPhone у TestFlight потребує Apple Developer Program; CI до цього готовий.
+- Замовлення поки на демо-даних.
