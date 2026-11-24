@@ -69,7 +69,8 @@ val BarcodeScanIcon: ImageVector by lazy {
 /** Висота панелі без системної навігації, діаметр FAB і на скільки він виступає над панеллю. */
 val BottomBarHeight = 80.dp
 private val FabSize = 72.dp
-private val FabRise = 30.dp
+/** На скільки кнопка сканера виступає над панеллю — екрани з панеллю мають такий запас знизу. */
+val FabRise = 30.dp
 
 /**
  * Нижня панель (дизайн-система → MineBottomBar): 80 dp на поверхні, вкладки 64 dp з індикатором-«пігулкою»

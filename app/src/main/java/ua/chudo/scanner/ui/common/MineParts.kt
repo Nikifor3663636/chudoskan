@@ -94,7 +94,7 @@ fun MineTile(icon: ImageVector, title: String, note: String, accent: Boolean, on
             Icon(icon, null, Modifier.size(26.dp), tint = m.text)
             Spacer(Modifier.height(14.dp))
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(note, Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = if (accent) FontWeight.Medium else FontWeight.Normal, color = if (accent) m.accent else m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(note, Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = if (accent) FontWeight.Medium else FontWeight.Normal, color = if (accent) m.accentText else m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

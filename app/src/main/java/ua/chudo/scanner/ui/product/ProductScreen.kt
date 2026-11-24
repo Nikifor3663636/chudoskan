@@ -171,7 +171,8 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
                 }
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
+        // Над нижніми кнопками «Друкувати цінник» і «Додати в кошик», а не поверх них.
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = if (p != null) 152.dp else 16.dp))
     }
 
     val product = p

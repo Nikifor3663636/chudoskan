@@ -195,6 +195,9 @@ class NetworkStockLookup(
     suspend fun lastUpdated(): Date? = loadMeta()?.updatedAt
 
     /** «Змінені з минулого завантаження», які є у своєму магазині. */
+    /** У базі є пакет залишків 1С (інакше «змін немає» було б неправдою — даних просто немає). */
+    suspend fun hasPack(): Boolean = loadMeta()?.pack != null
+
     suspend fun changedSinceLastImport(shopId: String, limit: Long = 500): List<NetAvailability> {
         val p = pack() ?: return emptyList()
         val own = ownCode(shopId) ?: return emptyList()

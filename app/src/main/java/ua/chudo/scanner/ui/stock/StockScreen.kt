@@ -183,6 +183,8 @@ enum class StockTab(val title: String) {
 sealed interface ChangedState {
     data object Loading : ChangedState
     data class Ready(val items: List<NetAvailability>) : ChangedState
+    /** Пакета залишків 1С у базі немає — порівнювати нема з чим. */
+    data object NoData : ChangedState
     data class Failed(val message: String) : ChangedState
 }
 
@@ -259,7 +261,7 @@ class StockViewModel(
         _changed.value = ChangedState.Loading
         viewModelScope.launch {
             _changed.value = try {
-                ChangedState.Ready(n.changedSinceLastImport(employee.shopId))
+                if (!n.hasPack()) ChangedState.NoData else ChangedState.Ready(n.changedSinceLastImport(employee.shopId))
             } catch (e: CancellationException) { throw e } catch (e: Exception) { ChangedState.Failed(e.authMessage()) }
         }
     }
@@ -882,6 +884,9 @@ private fun LazyListScope.changedTab(
     when (state) {
         null, ChangedState.Loading -> items(4) { Skeleton(SkeletonKind.ROW) }
         is ChangedState.Failed -> item { Banner(BannerKind.ERROR, state.message, action = "Повторити" to onRetry) }
+        ChangedState.NoData -> item {
+            EmptyState(Illustration.FILE, "Залишки 1С ще не завантажено", "Після завантаження звіту 1С тут з’являться товари, кількість яких змінилась.")
+        }
         is ChangedState.Ready -> if (state.items.isEmpty()) item {
             EmptyState(Illustration.STOCK, "Змін немає", "З минулого завантаження 1С кількість у твоєму магазині не змінилась.")
         } else {
