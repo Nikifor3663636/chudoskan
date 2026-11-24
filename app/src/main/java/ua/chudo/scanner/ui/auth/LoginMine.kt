@@ -114,7 +114,7 @@ fun LoginMineShell(onToggleTheme: () -> Unit, content: @Composable ColumnScope.(
             Surface(
                 Modifier.padding(top = 14.dp).align(Alignment.CenterHorizontally),
                 shape = RoundedCornerShape(999.dp), color = m.surface, contentColor = m.textSecondary,
-                border = BorderStroke(1.dp, if (m.dark) Color(0xFF2E2F36) else m.line),
+                border = BorderStroke(1.dp, m.line),
             ) {
                 Text("ЧудоСкан для співробітників", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }

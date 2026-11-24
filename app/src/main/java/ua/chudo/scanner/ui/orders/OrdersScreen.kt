@@ -242,4 +242,4 @@ private fun PickingCard(o: PickupOrder, onScan: () -> Unit) {
 }
 
 /** Доріжка перемикача й прогресу: у світлій темі сіра (білий вибраний сегмент на ній видно), у темній — поверхня. */
-private fun track(m: ua.chudo.scanner.ui.theme.MineColors) = if (m.dark) m.surface else Color(0xFFECEEF1)
+private fun track(m: ua.chudo.scanner.ui.theme.MineColors) = if (m.dark) m.surface else m.stockOutBg

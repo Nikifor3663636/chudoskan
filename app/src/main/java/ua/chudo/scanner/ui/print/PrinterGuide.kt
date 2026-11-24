@@ -59,7 +59,7 @@ fun PrinterGuide(onClose: () -> Unit) {
 private fun Step(n: Int, title: String, text: String) {
     val m = Mine.colors
     Row {
-        Text("$n", Modifier.width(22.dp), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.accent)
+        Text("$n", Modifier.width(22.dp), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.accentText)
         Spacer(Modifier.width(4.dp))
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
