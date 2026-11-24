@@ -36,7 +36,7 @@ public class SalesExporterTests
         Assert.Equal(new[] { "s1", "s2" }, oneC.Sent);
         Assert.Equal(2, first.Sent);
         Assert.Equal(0, second.Sent);
-        Assert.Equal(2, second.Skipped);
+        Assert.Equal(3, second.Skipped); // s1, ще раз s1 і s2 — уже в 1С
     }
 
     [Fact]
