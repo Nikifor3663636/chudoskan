@@ -114,8 +114,6 @@ import ua.chudo.scanner.ui.common.ProductCard
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.toUiError
-import ua.chudo.scanner.ui.theme.InStockGreen
-import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
 import java.text.DateFormat

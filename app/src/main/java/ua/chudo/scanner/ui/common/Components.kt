@@ -47,7 +47,6 @@ import coil.compose.SubcomposeAsyncImage
 import ua.chudo.scanner.print.PriceFormat
 import ua.chudo.scanner.ui.theme.Mine
 import androidx.compose.ui.unit.sp
-import ua.chudo.scanner.ui.theme.OutOfStockGrey
 import uniffi.chudo_core.Price
 import uniffi.chudo_core.ProductSummary
 import uniffi.chudo_core.StockStatus
@@ -61,7 +60,7 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
         contentAlignment = Alignment.Center,
     ) {
         if (url == null) {
-            Icon(Icons.Rounded.Image, null, tint = OutOfStockGrey)
+            Icon(Icons.Rounded.Image, null, tint = Mine.colors.stockOut)
         } else {
             SubcomposeAsyncImage(
                 model = url,
@@ -69,7 +68,7 @@ fun ProductImage(url: String?, modifier: Modifier = Modifier, contentScale: Cont
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize().padding(6.dp),
                 loading = { Shimmer(Modifier.fillMaxSize()) },
-                error = { Icon(Icons.Rounded.Image, null, tint = OutOfStockGrey) },
+                error = { Icon(Icons.Rounded.Image, null, tint = Mine.colors.stockOut) },
             )
         }
     }
