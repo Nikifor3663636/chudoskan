@@ -196,7 +196,7 @@ object StockDiff {
 }
 
 /** Знімок останнього завантаженого файлу на телефоні (`filesDir/last-stock.json.gz`) — щоб не читати Firestore. */
-class StockSnapshot(private val file: File) {
+class StockSnapshot(val file: File) {
 
     fun read(): Map<String, NetItem>? {
         if (!file.exists()) return null
@@ -340,4 +340,32 @@ class StockSnapshot(private val file: File) {
             return sb.append('"').toString()
         }
     }
+}
+
+/**
+ * Пакет залишків: увесь знімок ([StockSnapshot], gzip JSON ~1 МБ на 22 000 товарів) у кількох документах
+ * `stockPacks/{версія}_{i}` по [PART] байт + список змінених штрихкодів у частині 0.
+ * Завантаження — ~2–3 записи замість 22 000; телефон качає пакет раз на версію й шукає локально.
+ */
+object StockPack {
+    const val PART = 800_000
+
+    fun split(bytes: ByteArray): List<ByteArray> =
+        if (bytes.isEmpty()) listOf(bytes) else (bytes.indices step PART).map { bytes.copyOfRange(it, minOf(it + PART, bytes.size)) }
+
+    fun join(parts: List<ByteArray>): ByteArray {
+        val out = java.io.ByteArrayOutputStream(parts.sumOf { it.size })
+        parts.forEach(out::write)
+        return out.toByteArray()
+    }
+
+    fun gzipLines(lines: Collection<String>): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        GZIPOutputStream(out).bufferedWriter().use { w -> lines.forEach { w.write(it); w.write("\n") } }
+        return out.toByteArray()
+    }
+
+    fun gunzipLines(bytes: ByteArray): Set<String> =
+        if (bytes.isEmpty()) emptySet()
+        else GZIPInputStream(bytes.inputStream()).bufferedReader().useLines { l -> l.filter { it.isNotBlank() }.toHashSet() }
 }
