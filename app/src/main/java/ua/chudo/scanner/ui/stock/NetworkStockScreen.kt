@@ -37,6 +37,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +54,8 @@ import ua.chudo.scanner.data.NetworkStockInfo
 import ua.chudo.scanner.data.NetworkStockParser
 import ua.chudo.scanner.data.NetworkStockRepository
 import ua.chudo.scanner.data.ShopRef
+import ua.chudo.scanner.data.SiteShop
+import ua.chudo.scanner.data.StoreMatcher
 import ua.chudo.scanner.data.StockDiff
 import ua.chudo.scanner.data.StockFileException
 import ua.chudo.scanner.data.StockPlan
@@ -65,16 +69,26 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 /** Розібраний файл, що чекає на відповіді адміна перед записом. */
-data class NetPending(val fresh: NetworkStock, val plan: StockPlan, val known: Map<String, StoreDoc>, val startedAt: Long)
+data class NetPending(
+    val fresh: NetworkStock, val plan: StockPlan, val known: Map<String, StoreDoc>, val startedAt: Long,
+    /** Скільки складів прив'язано до магазинів автоматично. */
+    val autoLinked: Int = 0,
+)
 
 sealed interface NetState {
     data object Idle : NetState
     data class Parsing(val progress: Float) : NetState
+    /** Звіряю склади 1С з магазинами сайту. */
+    data object Matching : NetState
     /** «Який це магазин?» — склади без прив'язки, по одному. */
-    data class Linking(val pending: NetPending, val unknown: List<NetStore>, val shops: List<ShopRef>, val busy: Boolean = false) : NetState
+    /** [candidates] — для кожного складу магазини сайту, найкращі першими; [shops] — усі (запасний список). */
+    data class Linking(
+        val pending: NetPending, val unknown: List<NetStore>, val shops: List<ShopRef>, val busy: Boolean = false,
+        val candidates: Map<String, List<ShopRef>> = emptyMap(),
+    ) : NetState
     data class Confirm(val pending: NetPending, val text: String) : NetState
     data class Uploading(val done: Int, val total: Int) : NetState
-    data class Done(val result: NetworkImportResult) : NetState
+    data class Done(val result: NetworkImportResult, val autoLinked: Int = 0) : NetState
     data class Failed(val message: String) : NetState
 }
 
@@ -83,6 +97,8 @@ class NetworkStockViewModel(
     private val repo: NetworkStockRepository,
     /** Після завантаження: показ залишків перечитає склади й дату. */
     private val onImported: suspend () -> Unit = {},
+    /** Магазини з сайту (той самий список, що при реєстрації) — для автоприв'язки складів 1С. */
+    private val siteShops: suspend () -> List<SiteShop> = { emptyList() },
 ) : ViewModel() {
     private val _state = MutableStateFlow<NetState>(NetState.Idle)
     val state: StateFlow<NetState> = _state.asStateFlow()
@@ -108,7 +124,31 @@ class NetworkStockViewModel(
             val known = repo.stores()
             val pending = NetPending(fresh, plan, known, startedAt)
             val unknown = fresh.stores.filter { known[it.code]?.shopId == null }
-            if (unknown.isNotEmpty()) _state.value = NetState.Linking(pending, unknown, repo.shops()) else confirmOrUpload(pending)
+            if (unknown.isEmpty()) { confirmOrUpload(pending); return@guard }
+            // Автоматично: склад 1С ↔ магазин сайту за назвою ТЦ і містом; питаємо лише про сумнівні.
+            _state.value = NetState.Matching
+            val shops = runCatching { siteShops() }.getOrDefault(emptyList())
+            val matches = StoreMatcher.match(unknown, shops, alreadyLinked = known.values.mapNotNull { it.shopId }.toSet())
+            var auto = 0
+            for (m in matches) {
+                val id = m.shopId ?: continue
+                runCatching { repo.link(m.code, id) }.onSuccess { auto++ }
+            }
+            val autoCodes = matches.filter { it.shopId != null }.map { it.code }.toSet()
+            val withAuto = pending.copy(
+                known = pending.known + matches.filter { it.shopId != null }.associate { m ->
+                    m.code to (known[m.code] ?: unknown.first { it.code == m.code }.let { StoreDoc(it.name, it.city, null) }).copy(shopId = m.shopId)
+                },
+                autoLinked = auto,
+            )
+            val rest = unknown.filter { it.code !in autoCodes }
+            if (rest.isEmpty()) { confirmOrUpload(withAuto); return@guard }
+            fun ref(s: SiteShop) = ShopRef(s.shopId, s.address, s.regionName)
+            _state.value = NetState.Linking(
+                withAuto, rest,
+                shops.map(::ref).ifEmpty { repo.shops() },
+                candidates = matches.associate { m -> m.code to m.candidates.map(::ref) },
+            )
         }
     }
 
@@ -149,7 +189,7 @@ class NetworkStockViewModel(
             val r = repo.upload(employee, p.fresh, p.plan, p.known, p.startedAt) { done, total ->
                 _state.value = NetState.Uploading(done, total)
             }
-            _state.value = NetState.Done(r)
+            _state.value = NetState.Done(r, p.autoLinked)
             runCatching { onImported() }
             refreshInfo()
         }
@@ -182,14 +222,17 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
     val app = LocalContext.current.chudoApp
     val vm: NetworkStockViewModel = viewModel(
         key = "network-stock-${employee.uid}",
-        factory = viewModelFactory { initializer { NetworkStockViewModel(employee, app.networkStock) { app.networkLookup.invalidate() } } },
+        factory = viewModelFactory { initializer { NetworkStockViewModel(
+                    employee, app.networkStock, onImported = { app.networkLookup.invalidate() },
+                    siteShops = { loadSiteShops(app.repository, app.prefs.allRegions.map { it.code to it.name }) },
+                ) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.pick(ctx, it) } }
     val m = Mine.colors
-    val busy = s is NetState.Parsing || s is NetState.Uploading || s is NetState.Linking || s is NetState.Confirm
+    val busy = s is NetState.Parsing || s is NetState.Matching || s is NetState.Uploading || s is NetState.Linking || s is NetState.Confirm
 
     Column(
         Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -213,6 +256,11 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 LinearProgressIndicator({ st.progress }, Modifier.fillMaxWidth())
             }
+            NetState.Matching -> MineCard {
+                Text("Звіряю склади 1С з магазинами мережі…", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(10.dp))
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
             is NetState.Uploading -> MineCard {
                 Text("Записую: ${NetworkStockViewModel.fmt(st.done)} з ${NetworkStockViewModel.fmt(st.total)}", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(10.dp))
@@ -228,6 +276,10 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
                         "Видалено: ${NetworkStockViewModel.fmt(r.removed)} · Час: ${r.seconds} с",
                     fontSize = 15.sp, lineHeight = 21.sp,
                 )
+                if (st.autoLinked > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Склади 1С автоматично прив'язано до магазинів: ${st.autoLinked}. Кожен магазин бачить свої залишки.", fontSize = 14.sp, lineHeight = 19.sp, color = m.success)
+                }
                 if (r.keptStores.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -272,11 +324,12 @@ private fun LinkDialog(s: NetState.Linking, onPick: (String?) -> Unit, onCancel:
                 Text(store.name, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
                 Text("Складів без прив'язки: ${s.unknown.size}", fontSize = 13.sp, color = m.textSecondary)
                 Spacer(Modifier.height(10.dp))
-                if (s.shops.isEmpty()) {
+                val list = (s.candidates[store.code].orEmpty() + s.shops).distinctBy { it.id }
+                if (list.isEmpty()) {
                     Text("У базі ще немає магазинів застосунку. Можна пропустити — залишки все одно завантажаться.", fontSize = 14.sp, color = m.textSecondary)
                 } else {
                     LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        items(s.shops, key = { it.id }) { shop ->
+                        items(list, key = { it.id }) { shop ->
                             Column(Modifier.fillMaxWidth().clickable(enabled = !s.busy) { onPick(shop.id) }.padding(vertical = 10.dp)) {
                                 Text(shop.address.ifBlank { shop.id }, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                 if (shop.region.isNotBlank()) Text(shop.region, fontSize = 13.sp, color = m.textSecondary)
@@ -291,3 +344,20 @@ private fun LinkDialog(s: NetState.Linking, onPick: (String?) -> Unit, onCancel:
         dismissButton = { TextButton(onClick = onCancel, enabled = !s.busy) { Text("Скасувати") } },
     )
 }
+
+/** Усі магазини мережі з сайту (по 4 міста одночасно); id — як у анкеті сотрудника (AuthRepository.shopId). */
+suspend fun loadSiteShops(repo: ua.chudo.scanner.data.ChudoRepository, regions: List<Pair<String, String>>): List<SiteShop> =
+    kotlinx.coroutines.coroutineScope {
+        regions.chunked(4).flatMap { chunk ->
+            chunk.map { (code, name) ->
+                async {
+                    runCatching { repo.shops(SITE_SHOPS_PRODUCT_ID, code) }.getOrDefault(emptyList())
+                        .map { it.address }.distinct()
+                        .map { a -> SiteShop(ua.chudo.scanner.data.AuthRepository.shopId(code, a), code, name, a) }
+                }
+            }.awaitAll().flatten()
+        }
+    }
+
+/** Будь-який товар: сайт віддає список магазинів міста разом із наявністю (як при реєстрації). */
+private const val SITE_SHOPS_PRODUCT_ID = 1L
