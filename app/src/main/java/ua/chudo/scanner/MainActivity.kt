@@ -67,6 +67,7 @@ import ua.chudo.scanner.ui.results.ResultsScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
 import ua.chudo.scanner.ui.common.MainTab
 import ua.chudo.scanner.ui.common.MineBottomBar
+import ua.chudo.scanner.ui.common.FabRise
 import ua.chudo.scanner.ui.theme.ChudoTheme
 import ua.chudo.scanner.ui.theme.isDarkTheme
 
@@ -214,7 +215,10 @@ private fun AppNav(home: Employee) {
         },
     ) { inner ->
         AppNavHost(
-            nav, employee, home, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner),
+            // + виступ кнопки сканера над панеллю: інакше вона закриває низ вмісту.
+            nav, employee, home,
+            Modifier.padding(bottom = inner.calculateBottomPadding() + if (route != null && route !in FULLSCREEN) FabRise else 0.dp)
+                .consumeWindowInsets(inner),
             onActAs = { e -> e.shopId?.let { id -> switchShop(home.actingIn(id, e.address, e.region, e.code)) } },
         )
     }

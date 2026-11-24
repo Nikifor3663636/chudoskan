@@ -170,12 +170,21 @@ sealed interface ImportState {
 }
 
 /** Вкладки «Залишків» (дизайн-система → 08–11). */
-enum class StockTab(val title: String) { OWN("Свій магазин"), CITY("Місто"), NETWORK("Мережа"), CHANGED("Змінені") }
+enum class StockTab(val title: String) {
+    OWN("Свій магазин"), CITY("Місто"), NETWORK("Мережа"), CHANGED("Змінені");
+
+    companion object {
+        /** Звичайний співробітник — лише свій магазин; адмін магазину чи мережі — усі вкладки. */
+        fun visibleTo(admin: Boolean): List<StockTab> = if (admin) entries else listOf(OWN, CHANGED)
+    }
+}
 
 /** «Змінені з минулого завантаження»: null — ще не завантажували. */
 sealed interface ChangedState {
     data object Loading : ChangedState
     data class Ready(val items: List<NetAvailability>) : ChangedState
+    /** Пакета залишків 1С у базі немає — порівнювати нема з чим. */
+    data object NoData : ChangedState
     data class Failed(val message: String) : ChangedState
 }
 
@@ -252,7 +261,7 @@ class StockViewModel(
         _changed.value = ChangedState.Loading
         viewModelScope.launch {
             _changed.value = try {
-                ChangedState.Ready(n.changedSinceLastImport(employee.shopId))
+                if (!n.hasPack()) ChangedState.NoData else ChangedState.Ready(n.changedSinceLastImport(employee.shopId))
             } catch (e: CancellationException) { throw e } catch (e: Exception) { ChangedState.Failed(e.authMessage()) }
         }
     }
@@ -578,7 +587,8 @@ fun StockScreen(
                 }
             }
         }
-        item { MineSegment(StockTab.entries, tab, { it.title }, vm::selectTab) }
+        // Співробітник бачить лише свій магазин; місто й мережа — для адмінів (магазини не бачать залишків одне одного).
+        item { MineSegment(StockTab.visibleTo(vm.networkView), tab, { it.title }, vm::selectTab) }
         if (selected.isNotEmpty() || batchNote != null || labelsProgress != null) item {
             LabelBatchCard(selected, labelsProgress ?: batchNote, onRemove = vm::unselect)
         }
@@ -632,8 +642,8 @@ fun StockScreen(
                         }
                         else -> item {
                             StockBox(
-                                net.own, net.cityName?.let { "$it, ${shopsWord(net.city.size)}" },
-                                net.city.sumOf { it.qty }.takeIf { net.cityName != null },
+                                net.own, net.cityName?.takeIf { vm.networkView }?.let { "$it, ${shopsWord(net.city.size)}" },
+                                net.city.sumOf { it.qty }.takeIf { net.cityName != null && vm.networkView },
                             )
                         }
                     }
@@ -874,6 +884,9 @@ private fun LazyListScope.changedTab(
     when (state) {
         null, ChangedState.Loading -> items(4) { Skeleton(SkeletonKind.ROW) }
         is ChangedState.Failed -> item { Banner(BannerKind.ERROR, state.message, action = "Повторити" to onRetry) }
+        ChangedState.NoData -> item {
+            EmptyState(Illustration.FILE, "Залишки 1С ще не завантажено", "Після завантаження звіту 1С тут з’являться товари, кількість яких змінилась.")
+        }
         is ChangedState.Ready -> if (state.items.isEmpty()) item {
             EmptyState(Illustration.STOCK, "Змін немає", "З минулого завантаження 1С кількість у твоєму магазині не змінилась.")
         } else {

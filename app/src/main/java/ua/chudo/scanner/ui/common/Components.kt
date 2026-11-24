@@ -95,8 +95,8 @@ fun DiscountBadge(percent: Double, modifier: Modifier = Modifier) {
     val m = Mine.colors
     Text(
         "−${percent.toInt()}%",
-        modifier.clip(RoundedCornerShape(8.dp)).background(m.accent).padding(horizontal = 8.dp, vertical = 2.dp),
-        color = m.onAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+        modifier.clip(RoundedCornerShape(8.dp)).background(m.danger).padding(horizontal = 8.dp, vertical = 2.dp),
+        color = m.onDanger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
     )
 }
 

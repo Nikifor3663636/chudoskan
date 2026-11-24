@@ -27,12 +27,12 @@ fun qtyText(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() e
 
 /** Залишки мережі з 1С: свій магазин великим шрифтом, магазини міста з кількостями, дата оновлення. */
 @Composable
-fun NetworkStockCard(av: NetAvailability, modifier: Modifier = Modifier) {
+fun NetworkStockCard(av: NetAvailability, modifier: Modifier = Modifier, showOthers: Boolean = true) {
     val m = Mine.colors
     Surface(modifier, shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             StockBox(av.own, null, null)
-            if (av.cityName != null) {
+            if (showOthers && av.cityName != null) {
                 Text(
                     "У магазинах міста" + " · ${av.cityName}",
                     Modifier.padding(top = 14.dp, bottom = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary,
