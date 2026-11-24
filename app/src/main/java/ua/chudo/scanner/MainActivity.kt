@@ -285,6 +285,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) {
             ResultsScreen(
+                shopId = employee.shopId,
                 onBack = { nav.popBackStack() },
                 onOpenProduct = { urlKey, bc, replace ->
                     nav.navigate(Routes.product(urlKey, bc)) {

@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import java.util.Date
+import java.util.Optional
 
 /** Кількість у магазині мережі. */
 data class StoreQty(val code: String, val name: String, val qty: Double)
@@ -146,14 +147,25 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
     }
 
     /** Після завантаження залишків — перечитати склади й дату. */
-    suspend fun invalidate() = lock.withLock { stores = null; metaLoaded = false; code1C.clear() }
+    suspend fun invalidate() = lock.withLock { stores = null; metaLoaded = false; code1C.clear(); synchronized(items) { items.clear() } }
 
     /** `null` — у stock/{bc} немає даних (тоді показуємо як раніше: сайт і shops/{shopId}/stock). */
     suspend fun byBarcode(shopId: String, barcode: String): NetAvailability? {
         val bc = barcode.filter(Char::isDigit).ifEmpty { return null }
-        val d = db.collection(NetworkStockRepository.STOCK).document(bc).get().await()
-        val item = d.toNetItem() ?: return null
+        val item = item(bc) ?: return null
         return availability(shopId, bc, item)
+    }
+
+    /** Кеш stock/{bc} на сесію (і «немає» теж): повторний скан — без читання. */
+    private val items = object : LinkedHashMap<String, Optional<NetItem>>(64, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Optional<NetItem>>?) = size > 300
+    }
+
+    private suspend fun item(bc: String): NetItem? {
+        synchronized(items) { items[bc] }?.let { return it.orElse(null) }
+        val item = db.collection(NetworkStockRepository.STOCK).document(bc).get().await().toNetItem()
+        synchronized(items) { items[bc] = Optional.ofNullable(item) }
+        return item
     }
 
     /** Пошук за кодом 1С (BOC…) або артикулом: `stock where code ==` / `article ==`. */

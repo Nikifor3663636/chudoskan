@@ -1,5 +1,8 @@
 package ua.chudo.scanner.data
 
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import uniffi.chudo_core.Lang
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
@@ -22,7 +25,12 @@ sealed interface Via {
     data object Remembered : Via
     data class UpcArticle(val article: String) : Via
     data class UpcTitle(val title: String) : Via
+    /** Артикул узяли із залишків 1С (stock/{штрихкод}). */
+    data class Stock1C(val article: String) : Via
 }
+
+/** Залишки 1С за штрихкодом; `null` — немає або недоступно. */
+fun interface Stock1C { suspend fun find(barcode: String): NetAvailability? }
 
 sealed interface LookupResult {
     val query: String
@@ -48,6 +56,13 @@ sealed interface LookupResult {
         override val barcode: String?,
         val triedArticles: List<String>,
     ) : LookupResult
+
+    /** Є в 1С, на сайті не знайшли. */
+    data class Only1C(
+        override val query: String,
+        override val barcode: String,
+        val stock: NetAvailability,
+    ) : LookupResult
 }
 
 class ChudoRepository(
@@ -67,42 +82,64 @@ class ChudoRepository(
         parseShops(client.getJson(shopsUrl(lang, productId, region)))
 
     /**
-     * Цепочка поиска:
-     * 1. штрихкод, который пользователь уже привязал;
-     * 2. поиск по сайту как есть (артикул, название или EAN, если он в названии);
-     * 3. для штрихкода: UPCitemdb → вероятные артикулы → поиск каждого;
-     * 4. для штрихкода: название из UPCitemdb → поиск по тексту.
+     * 1. привʼязаний штрихкод; 2. паралельно: сайт як є + stock/{штрихкод} (1С) → одразу пошук за артикулом з 1С;
+     * 3. є в 1С, на сайті немає → [LookupResult.Only1C] (UPCitemdb не чіпаємо); 4. немає в 1С → UPCitemdb.
      */
-    suspend fun lookup(raw: String, onStep: (String) -> Unit = {}): LookupResult {
+    suspend fun lookup(raw: String, stock: Stock1C? = null, onStep: (String) -> Unit = {}): LookupResult = coroutineScope {
         val q = classifyQuery(raw)
         val code = q.normalized
         val barcode = code.takeIf { isBarcode(q.kind) }
 
         barcode?.let { bc ->
-            prefs.rememberedProduct(bc)?.let { return LookupResult.Single(code, bc, it, Via.Remembered) }
+            prefs.rememberedProduct(bc)?.let { return@coroutineScope LookupResult.Single(code, bc, it, Via.Remembered) }
         }
 
-        onStep("Шукаємо «$code» на сайті…")
-        pick(code, barcode, search(code), Via.Direct)?.let { return it }
-        if (barcode == null) return LookupResult.NotFound(code, null, emptyList())
+        onStep("Шукаємо «$code»…")
+        val direct = async { runCatching { search(code) } }
+        val net: Deferred<NetAvailability?>? = if (barcode != null && stock != null) {
+            async { safe { stock.find(barcode) } }
+        } else null
+        val byArticle = net?.let { n ->
+            async {
+                n.await()?.item?.article?.trim()?.takeIf { it.isNotEmpty() && it != code }?.let { a -> safe { search(a) }?.let { a to it } }
+            }
+        }
+        fun stop() { net?.cancel(); byArticle?.cancel() }
 
-        onStep("Сайт не знає штрихкодів — шукаємо у відкритій базі…")
+        val site = direct.await()
+        site.getOrNull()?.let { list -> pick(code, barcode, list, Via.Direct)?.let { stop(); return@coroutineScope it } }
+        // Сайт недоступний — але 1С знає товар: показуємо 1С, інакше помилка як раніше.
+        val av = net?.await()
+        if (av == null) site.getOrThrow()
+        if (barcode == null) return@coroutineScope LookupResult.NotFound(code, null, emptyList())
+
+        av?.let {
+            byArticle?.await()?.let { (article, list) ->
+                pick(code, barcode, list, Via.Stock1C(article))?.let { return@coroutineScope it }
+            }
+            return@coroutineScope LookupResult.Only1C(code, barcode, it)
+        }
+
+        onStep("Шукаємо у відкритій базі…")
         val upc = runCatching { client.getExternal(upcLookupUrl(barcode)) }.getOrNull()
-            ?: return LookupResult.NotFound(code, barcode, emptyList())
+            ?: return@coroutineScope LookupResult.NotFound(code, barcode, emptyList())
 
         val articles = upcCandidates(upc, barcode, 4u)
         for (article in articles) {
             onStep("Пробуємо артикул $article…")
-            pick(code, barcode, search(article), Via.UpcArticle(article))?.let { return it }
+            pick(code, barcode, search(article), Via.UpcArticle(article))?.let { return@coroutineScope it }
         }
 
         upcTitle(upc)?.let { title ->
             onStep("Шукаємо за назвою…")
             val short = title.split(' ').take(6).joinToString(" ")
-            pick(code, barcode, search(short), Via.UpcTitle(title))?.let { return it }
+            pick(code, barcode, search(short), Via.UpcTitle(title))?.let { return@coroutineScope it }
         }
-        return LookupResult.NotFound(code, barcode, articles)
+        LookupResult.NotFound(code, barcode, articles)
     }
+
+    /** Помилка не валить пошук; скасування — пропускаємо далі. */
+    private suspend fun <T> safe(block: suspend () -> T): T? = try { block() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
 
     private fun pick(query: String, barcode: String?, list: List<ProductSummary>, via: Via): LookupResult? {
         if (list.isEmpty()) return null

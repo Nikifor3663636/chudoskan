@@ -29,7 +29,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,6 +64,7 @@ import ua.chudo.scanner.ChudoApp
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.LookupResult
+import ua.chudo.scanner.data.Stock1C
 import ua.chudo.scanner.data.Via
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MessageState
@@ -80,6 +83,7 @@ sealed interface ResultsState {
 
 class ResultsViewModel(
     private val repo: ChudoRepository,
+    private val stock: Stock1C?,
     private val app: ChudoApp,
     handle: SavedStateHandle,
 ) : ViewModel() {
@@ -96,7 +100,7 @@ class ResultsViewModel(
             _state.value = ResultsState.Loading("Шукаємо…")
             _state.value = try {
                 val step: (String) -> Unit = { _state.value = ResultsState.Loading(it) }
-                ResultsState.Done(repo.lookup(query, step))
+                ResultsState.Done(repo.lookup(query, stock, step))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -109,13 +113,18 @@ class ResultsViewModel(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
+    /** Магазин співробітника — для залишків 1С; `null` — без них. */
+    shopId: String?,
     onBack: () -> Unit,
     onOpenProduct: (urlKey: String, barcode: String?, replace: Boolean) -> Unit,
     onScanAgain: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: ResultsViewModel = viewModel(factory = viewModelFactory {
-        initializer { ResultsViewModel(app.repository, app, createSavedStateHandle()) }
+        initializer {
+            val stock = shopId?.takeIf { app.auth.configured }?.let { id -> Stock1C { bc -> app.networkLookup.byBarcode(id, bc) } }
+            ResultsViewModel(app.repository, stock, app, createSavedStateHandle())
+        }
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -124,7 +133,7 @@ fun ResultsScreen(
     LaunchedEffect(state) {
         val r = (state as? ResultsState.Done)?.result
         if (r is LookupResult.Single) {
-            val bc = r.barcode.takeIf { r.via is Via.UpcArticle || r.via is Via.UpcTitle }
+            val bc = r.barcode.takeIf { r.via !is Via.Direct && r.via !is Via.Remembered }
             onOpenProduct(r.urlKey, bc, true)
         }
     }
@@ -144,6 +153,7 @@ fun ResultsScreen(
                             val bc = r.barcode.takeIf { r.via !is Via.Direct }
                             onOpenProduct(urlKey, bc, false)
                         }
+                        is LookupResult.Only1C -> Only1CCard(r, onScanAgain) { ctx.openUrl(siteSearchUrl(Lang.UA, r.stock.item.name.split(' ').take(6).joinToString(" "))) }
                         is LookupResult.NotFound -> Column(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.Center,
@@ -219,7 +229,49 @@ private fun viaNote(via: Via): String? = when (via) {
     Via.Direct, Via.Remembered -> null
     is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі, артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
     is Via.UpcTitle -> "Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар."
+    is Via.Stock1C -> "Знайшли за артикулом ${via.article} із залишків 1С. Обери свій товар — ми його запам'ятаємо."
 }
+
+/** Товар є в 1С, на сайті немає: назва, коди й залишки. */
+@Composable
+private fun Only1CCard(r: LookupResult.Only1C, onScanAgain: () -> Unit, onSite: () -> Unit) {
+    val m = Mine.colors
+    val av = r.stock
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Товар з 1С", fontSize = 14.sp, color = m.textSecondary)
+                Text(av.item.name.ifBlank { "Без назви" }, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(listOfNotNull(av.item.code.ifBlank { null }, av.item.article.ifBlank { null }?.let { "арт. $it" }, r.barcode).joinToString(" · "),
+                    fontSize = 14.sp, color = m.textSecondary)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when (val own = av.own) {
+                        null -> "Магазин ще не прив'язано до складу 1С"
+                        else -> "У твоєму магазині: ${fmtQty(own)} шт."
+                    },
+                    fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                )
+                av.city.take(5).forEach { Text("${it.name}: ${fmtQty(it.qty)} шт.", fontSize = 14.sp, color = m.textSecondary) }
+            }
+        }
+        ViaNote("Цього товару немає на сайті, тому ціну не знайшли.")
+        MessageActions(onSite, onScanAgain)
+    }
+}
+
+@Composable
+private fun MessageActions(onSite: () -> Unit, onScanAgain: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton(onClick = onSite, modifier = Modifier.weight(1f)) { Text("Шукати на сайті") }
+        Button(onClick = onScanAgain, modifier = Modifier.weight(1f)) { Text("Сканувати ще") }
+    }
+}
+
+private fun fmtQty(q: Double): String = if (q % 1.0 == 0.0) q.toLong().toString() else "%.2f".format(q).trimEnd('0').trimEnd(',', '.')
 
 @Composable
 private fun ViaNote(text: String) {
