@@ -85,6 +85,10 @@ import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineTone
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.MinePrimaryButton
+import ua.chudo.scanner.terminal.CartHub
+import ua.chudo.scanner.terminal.Money
+import ua.chudo.scanner.terminal.cartItemOf
+import androidx.compose.material.icons.rounded.AddShoppingCart
 import ua.chudo.scanner.ui.common.StockBox
 import ua.chudo.scanner.ui.theme.PriceStyle
 import androidx.compose.material.icons.rounded.Print
@@ -150,6 +154,18 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
                         onPrint = { printSheet = true }, onScan = onScan, onCity = { showRegions = true },
                         onRetryShops = vm::loadShops, onMap = ctx::openMap, onSite = { ctx.openUrl(url) },
                         onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net,
+                        onAddToCart = {
+                            val msg = when (val r = app.cart.add(cartItemOf(
+                                p.name, net?.item?.article?.ifBlank { null } ?: p.article, p.price?.finalPrice?.let(Money::fromUah),
+                                vm.barcode ?: net?.barcode ?: own?.barcode, net?.item?.code, vm.urlKey,
+                            ))) {
+                                is CartHub.AddResult.Added -> "У кошику: ${r.qty} шт цього товару, усього ${r.count} шт" +
+                                    (if (p.price == null) ". Ціну введи в «Терміналі»" else "")
+                                CartHub.AddResult.Locked -> "Кошик зайнятий: заверши продаж у «Терміналі»"
+                                is CartHub.AddResult.Failed -> r.message
+                            }
+                            scope.launch { snackbar.showSnackbar(msg) }
+                        },
                     )
                 }
             }
@@ -200,6 +216,8 @@ fun ProductPage(
     onSite: () -> Unit = {},
     onRemember: () -> Unit = {},
     onForget: () -> Unit = {},
+    /** «Додати в кошик» «Термінала»; `null` — кнопки немає. */
+    onAddToCart: (() -> Unit)? = null,
     /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, лише наявність із сайту. */
     net: NetAvailability? = null,
 ) {
@@ -232,6 +250,9 @@ fun ProductPage(
         // Головна дія — внизу, у зоні великого пальця.
         Column(Modifier.fillMaxWidth().background(Mine.colors.surface).navigationBarsPadding().padding(16.dp)) {
             MinePrimaryButton("Друкувати цінник", onPrint, icon = Icons.Rounded.Print)
+            onAddToCart?.let {
+                MineButton("Додати в кошик", it, Modifier.padding(top = 8.dp).fillMaxWidth(), icon = Icons.Rounded.AddShoppingCart)
+            }
         }
     }
 }
