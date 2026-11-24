@@ -198,7 +198,7 @@ class DesignSnapshots {
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
                         // Сьогодні о 09:30 — щоб знімок не залежав від часу запуску.
-                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Вакаренко Микита", todayAt930(), "", recent, 3),
+                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Олена Приклад", todayAt930(), "", recent, 3),
                     )
                 }
             }
@@ -214,7 +214,7 @@ class DesignSnapshots {
             Surface(color = Mine.colors.bg) {
                 ua.chudo.scanner.ui.profile.ProfileContent(
                     ua.chudo.scanner.ui.profile.ProfileUi(
-                        name = "Вакаренко Микита", phone = "+380 96 232 09 33", city = "Одеса",
+                        name = "Олена Приклад", phone = "+380 00 000 00 00", city = "Одеса",
                         shop = "вул. Генуезька, 5/2, ТРЦ \"Gagarinn Plaza\", друга черга, 3 поверх",
                         stock = "2 418 позицій", theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
                     ),

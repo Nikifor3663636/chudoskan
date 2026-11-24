@@ -276,63 +276,14 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
 
     LaunchedEffect(scanned) { scanned?.let { vm.find(it); onScannedConsumed() } }
 
-    LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { Text("Термінал", Modifier.padding(horizontal = 4.dp, vertical = 8.dp), fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineSearchField(query, { query = it }, "Штрихкод, артикул або назва", {
-                    keyboard?.hide(); vm.find(query); query = ""
-                }, Modifier.weight(1f))
-                Surface(onClick = onScan, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(18.dp), color = m.accentTone, contentColor = m.accent) {
-                    Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
-                }
-            }
-        }
-        (state as? TerminalState.Loading)?.let { s ->
-            item {
-                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = m.accent)
-                    Spacer(Modifier.width(10.dp))
-                    Text(s.step, fontSize = 15.sp, color = m.textSecondary)
-                }
-            }
-        }
-        if (cart.items.isEmpty()) {
-            item {
-                MineCard {
-                    Text("Кошик порожній", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("Скануйте товар або введіть штрихкод чи артикул.", fontSize = 14.sp, color = m.textSecondary)
-                }
-            }
-        } else {
-            items(cart.items, key = { it.key }) { it ->
-                CartRow(it, onInc = { vm.inc(it.key) }, onDec = { vm.dec(it.key) }, onRemove = { vm.remove(it.key) }, onPrice = {
-                    vm.editPrice(it)
-                })
-            }
-            item { DiscountCard(cart.discount, vm::discount) }
-            item { TotalsCard(cart, received) { received = it } }
-            item {
-                MinePrimaryButton("Передати на касу", vm::send, height = 58.dp, busy = state is TerminalState.Sending)
-            }
-            item {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    MineButton(
-                        if (checkBank) "Перевірити оплату" else "Оплатити карткою", vm::payCard, Modifier.fillMaxWidth(),
-                        enabled = card, busy = state is TerminalState.Paying,
-                    )
-                    if (!card) Text(
-                        "Оплата карткою з'явиться після підключення банку",
-                        Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary, textAlign = TextAlign.Center,
-                    )
-                }
-            }
-        }
-    }
+    TerminalContent(
+        cart, (state as? TerminalState.Loading)?.step, card, checkBank,
+        sending = state is TerminalState.Sending, paying = state is TerminalState.Paying,
+        query = query, onQuery = { query = it }, onSubmit = { keyboard?.hide(); vm.find(query); query = "" },
+        received = received, onReceived = { received = it }, onScan = onScan,
+        onInc = vm::inc, onDec = vm::dec, onRemove = vm::remove, onPrice = vm::editPrice,
+        onDiscount = vm::discount, onSend = vm::send, onPay = vm::payCard,
+    )
 
     when (val s = state) {
         is TerminalState.Choose -> AlertDialog(
@@ -369,6 +320,72 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
             text = { Text(notices.joinToString("\n\n"), fontSize = 15.sp) },
             confirmButton = { TextButton(onClick = app.payments::dismissNotices) { Text("Зрозуміло") } },
         )
+    }
+}
+
+
+/** Кошик без стану — для екрана й для знімків дизайну. */
+@Composable
+fun TerminalContent(
+    cart: Cart, loading: String?, card: Boolean, checkBank: Boolean, sending: Boolean, paying: Boolean,
+    query: String, onQuery: (String) -> Unit, onSubmit: () -> Unit,
+    received: String, onReceived: (String) -> Unit, onScan: () -> Unit,
+    onInc: (String) -> Unit = {}, onDec: (String) -> Unit = {}, onRemove: (String) -> Unit = {}, onPrice: (CartItem) -> Unit = {},
+    onDiscount: (Discount) -> Unit = {}, onSend: () -> Unit = {}, onPay: () -> Unit = {},
+) {
+    val m = Mine.colors
+    LazyColumn(
+        Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { Text("Термінал", Modifier.padding(horizontal = 4.dp, vertical = 8.dp), fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MineSearchField(query, onQuery, "Штрихкод, артикул або назва", onSubmit, Modifier.weight(1f))
+                Surface(onClick = onScan, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(18.dp), color = m.accentTone, contentColor = m.accent) {
+                    Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
+                }
+            }
+        }
+        loading?.let { step ->
+            item {
+                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = m.accent)
+                    Spacer(Modifier.width(10.dp))
+                    Text(step, fontSize = 15.sp, color = m.textSecondary)
+                }
+            }
+        }
+        if (cart.items.isEmpty()) {
+            item {
+                MineCard {
+                    Text("Кошик порожній", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Скануйте товар або введіть штрихкод чи артикул.", fontSize = 14.sp, color = m.textSecondary)
+                }
+            }
+        } else {
+            items(cart.items, key = { it.key }) { it ->
+                CartRow(it, onInc = { onInc(it.key) }, onDec = { onDec(it.key) }, onRemove = { onRemove(it.key) }, onPrice = { onPrice(it) })
+            }
+            item { DiscountCard(cart.discount, onDiscount) }
+            item { TotalsCard(cart, received, onReceived) }
+            item {
+                MinePrimaryButton("Передати на касу", onSend, height = 58.dp, busy = sending)
+            }
+            item {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    MineButton(
+                        if (checkBank) "Перевірити оплату" else "Оплатити карткою", onPay, Modifier.fillMaxWidth(),
+                        enabled = card, busy = paying,
+                    )
+                    if (!card) Text(
+                        "Оплата карткою з'явиться після підключення банку",
+                        Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary, textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
     }
 }
 

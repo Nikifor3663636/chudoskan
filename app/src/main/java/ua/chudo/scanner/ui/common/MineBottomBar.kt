@@ -73,13 +73,17 @@ fun MineBottomBar(tab: MainTab?, newOrders: Int, onTab: (MainTab) -> Unit, onSca
         Column(Modifier.fillMaxWidth().background(m.card).navigationBarsPadding()) {
             HorizontalDivider(color = m.line)
             Row(Modifier.fillMaxWidth().height(72.dp), verticalAlignment = Alignment.CenterVertically) {
-                TabItem(MainTab.SEARCH, tab, Icons.Rounded.Search, "Пошук", 0, onTab)
-                TabItem(MainTab.ORDERS, tab, Icons.Outlined.ShoppingBag, "Замовлення", newOrders, onTab)
-                // Место под круглую кнопку: фиксированное, чтобы подписи вкладок («Замовлення») не обрезались.
-                Spacer(Modifier.width(80.dp))
-                TabItem(MainTab.STOCK, tab, Icons.Outlined.Inventory2, "Залишки", 0, onTab)
-                TabItem(MainTab.TERMINAL, tab, Icons.Outlined.PointOfSale, "Термінал", 0, onTab)
-                TabItem(MainTab.PROFILE, tab, Icons.Outlined.Person, "Профіль", 0, onTab)
+                // Дві половини однакової ширини: місце під круглу кнопку — рівно по центру (2 вкладки зліва, 3 справа).
+                Row(Modifier.weight(1f)) {
+                    TabItem(MainTab.SEARCH, tab, Icons.Rounded.Search, "Пошук", 0, onTab)
+                    TabItem(MainTab.ORDERS, tab, Icons.Outlined.ShoppingBag, "Замовлення", newOrders, onTab)
+                }
+                Spacer(Modifier.width(84.dp))
+                Row(Modifier.weight(1f)) {
+                    TabItem(MainTab.STOCK, tab, Icons.Outlined.Inventory2, "Залишки", 0, onTab)
+                    TabItem(MainTab.TERMINAL, tab, Icons.Outlined.PointOfSale, "Термінал", 0, onTab)
+                    TabItem(MainTab.PROFILE, tab, Icons.Outlined.Person, "Профіль", 0, onTab)
+                }
             }
         }
         // Кнопка сканера: 76 dp, кольцо 6 dp цвета фона, мягкая тень — как в макете.
