@@ -170,7 +170,14 @@ sealed interface ImportState {
 }
 
 /** Вкладки «Залишків» (дизайн-система → 08–11). */
-enum class StockTab(val title: String) { OWN("Свій магазин"), CITY("Місто"), NETWORK("Мережа"), CHANGED("Змінені") }
+enum class StockTab(val title: String) {
+    OWN("Свій магазин"), CITY("Місто"), NETWORK("Мережа"), CHANGED("Змінені");
+
+    companion object {
+        /** Звичайний співробітник — лише свій магазин; адмін магазину чи мережі — усі вкладки. */
+        fun visibleTo(admin: Boolean): List<StockTab> = if (admin) entries else listOf(OWN, CHANGED)
+    }
+}
 
 /** «Змінені з минулого завантаження»: null — ще не завантажували. */
 sealed interface ChangedState {
@@ -578,7 +585,8 @@ fun StockScreen(
                 }
             }
         }
-        item { MineSegment(StockTab.entries, tab, { it.title }, vm::selectTab) }
+        // Співробітник бачить лише свій магазин; місто й мережа — для адмінів (магазини не бачать залишків одне одного).
+        item { MineSegment(StockTab.visibleTo(vm.networkView), tab, { it.title }, vm::selectTab) }
         if (selected.isNotEmpty() || batchNote != null || labelsProgress != null) item {
             LabelBatchCard(selected, labelsProgress ?: batchNote, onRemove = vm::unselect)
         }
@@ -632,8 +640,8 @@ fun StockScreen(
                         }
                         else -> item {
                             StockBox(
-                                net.own, net.cityName?.let { "$it, ${shopsWord(net.city.size)}" },
-                                net.city.sumOf { it.qty }.takeIf { net.cityName != null },
+                                net.own, net.cityName?.takeIf { vm.networkView }?.let { "$it, ${shopsWord(net.city.size)}" },
+                                net.city.sumOf { it.qty }.takeIf { net.cityName != null && vm.networkView },
                             )
                         }
                     }

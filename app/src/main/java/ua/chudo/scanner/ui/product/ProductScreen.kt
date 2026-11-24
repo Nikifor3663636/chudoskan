@@ -154,6 +154,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
                         onPrint = { printSheet = true }, onScan = onScan, onCity = { showRegions = true },
                         onRetryShops = vm::loadShops, onMap = ctx::openMap, onSite = { ctx.openUrl(url) },
                         onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net,
+                        showOthers = employee.managesShop || employee.stockAdmin,
                         onAddToCart = {
                             val msg = when (val r = app.cart.add(cartItemOf(
                                 p.name, net?.item?.article?.ifBlank { null } ?: p.article, p.price?.finalPrice?.let(Money::fromUah),
@@ -218,18 +219,20 @@ fun ProductPage(
     onForget: () -> Unit = {},
     /** «Додати в кошик» «Термінала»; `null` — кнопки немає. */
     onAddToCart: (() -> Unit)? = null,
+    /** Залишки інших магазинів (місто з 1С) — лише адмінам: магазини не бачать залишків одне одного. */
+    showOthers: Boolean = false,
     /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, лише наявність із сайту. */
     net: NetAvailability? = null,
 ) {
     Column(Modifier.fillMaxSize().background(pageBg())) {
         // Ціна й залишок — у першій картці, без прокрутки (дизайн-система → 06 Товар).
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { SummaryCard(p, net, own, Modifier.padding(horizontal = H).padding(top = 4.dp)) }
+            item { SummaryCard(p, net, own, showOthers, Modifier.padding(horizontal = H).padding(top = 4.dp)) }
             toRemember?.let { bc -> item { RememberCard(bc, onRemember, onForget) } }
             item { SectionTitle("Наявність в місті $city") }
             item { CityField(city, onCity) }
             shopsSection(shops, myShop, own, onRetry = onRetryShops, onMap = onMap)
-            net?.takeIf { it.city.isNotEmpty() }?.let { av ->
+            net?.takeIf { showOthers && it.city.isNotEmpty() }?.let { av ->
                 item { SectionDivider() }
                 item { SectionTitle("Залишки за даними 1С") }
                 item { NetworkStockCard(av, Modifier.padding(horizontal = H)) }
@@ -275,7 +278,7 @@ internal fun shopsWord(n: Int): String {
 
 /** Картка товару: фото 88, назва, артикул, ціна 40 sp (зі знижкою — стара закреслена), блок залишку. */
 @Composable
-private fun SummaryCard(p: ProductDetails, net: NetAvailability?, own: StockItem?, modifier: Modifier = Modifier) {
+private fun SummaryCard(p: ProductDetails, net: NetAvailability?, own: StockItem?, showOthers: Boolean, modifier: Modifier = Modifier) {
     val m = Mine.colors
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -318,8 +321,8 @@ private fun SummaryCard(p: ProductDetails, net: NetAvailability?, own: StockItem
             if (net != null || own != null) {
                 StockBox(
                     own = ownQty,
-                    cityLabel = net?.cityName?.let { "$it, ${shopsWord(net.city.size)}" },
-                    city = net?.takeIf { it.cityName != null }?.city?.sumOf { it.qty },
+                    cityLabel = net?.cityName?.takeIf { showOthers }?.let { "$it, ${shopsWord(net.city.size)}" },
+                    city = net?.takeIf { showOthers && it.cityName != null }?.city?.sumOf { it.qty },
                 )
             } else {
                 Availability(p.stock)
