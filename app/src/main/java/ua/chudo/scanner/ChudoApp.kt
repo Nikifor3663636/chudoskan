@@ -38,7 +38,9 @@ class ChudoApp : Application() {
     /** Показ залишків мережі: склади й дата — раз на сесію. */
     val networkLookup by lazy { ua.chudo.scanner.data.NetworkStockLookup(ua.chudo.scanner.data.FirestoreStockStore(FirebaseFirestore.getInstance()), filesDir) }
     /** «Термінал»: кошики, передані на касу (sales/{id}). */
-    val sales by lazy { ua.chudo.scanner.terminal.SalesRepository(FirebaseFirestore.getInstance()) }
+    val sales by lazy { ua.chudo.scanner.terminal.SalesRepository(FirebaseFirestore.getInstance()) { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid } }
+    /** Оплата карткою: провайдер магазину (shops/{shopId}.payment); у release — лише справжні. */
+    val payments by lazy { ua.chudo.scanner.payment.PaymentService(sales, ua.chudo.scanner.payment.PaymentRegistry.forBuild()) }
     /** Интернет-заказы на самовывоз (пока демо-источник). */
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }

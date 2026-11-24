@@ -120,6 +120,12 @@ service cloud.firestore {
         && changed().hasOnly(['code1C'])
         && request.resource.data.code1C is string && request.resource.data.code1C.size() <= 40;
 
+      // Оплата карткою: який провайдер і термінал — лише ідентифікатори, ніяких ключів. Вмикає адмін мережі.
+      allow create: if isSuperAdmin()
+        && request.resource.data.keys().hasOnly(['payment']) && shopPaymentOk(request.resource.data.payment);
+      allow update: if isSuperAdmin()
+        && changed().hasOnly(['payment']) && shopPaymentOk(request.resource.data.payment);
+
       allow delete: if false;
 
       // Спільний реєстр принтерів магазину. Знайдений або той, що надрукував, телефон робить upsert;
@@ -360,11 +366,95 @@ service cloud.firestore {
         && request.resource.data.by == request.auth.uid
         && request.resource.data.at == request.time
         && request.resource.data.status in ['draft', 'sent'];
-      // Статус змінює лише автор (у своєму магазині) або адмін магазину; решта полів — незмінні.
+      // Телефон: автор (у своєму магазині) або адмін магазину. Чернетку можна редагувати; далі — лише статус
+      // уперед за clientStep, а на "paid" — ще й payment. fiscal, exported1C, verified телефону заборонені.
       allow update: if ((resource.data.by == request.auth.uid && worksAt(resource.data.shopId)) || canManage(resource.data.shopId))
-        && changed().hasOnly(['status'])
-        && request.resource.data.status in ['draft', 'sent', 'paid', 'cancelled'];
+        && (
+          (resource.data.status == 'draft' && request.resource.data.status == 'draft'
+            && changed().hasOnly(['items', 'discount', 'total']) && saleOk(request.resource.data))
+          || (clientStep(resource.data.status, request.resource.data.status)
+            && ((request.resource.data.status == 'paid' && changed().hasOnly(['status', 'payment']) && paymentOk(request.resource.data))
+              || (request.resource.data.status != 'paid' && changed().hasOnly(['status']))))
+        );
+      // Довірена сторона — ПК магазину: фіскалізація, передача в 1С, звірка оплати з банком.
+      allow update: if isDevice(resource.data.shopId)
+        && changed().hasOnly(['status', 'fiscal', 'exported1C', 'verified'])
+        && (!('status' in changed()) || trustedStep(resource.data.status, request.resource.data.status))
+        && (!('fiscal' in changed()) || fiscalOk(request.resource.data.fiscal))
+        && (!('exported1C' in changed()) || request.resource.data.exported1C is timestamp)
+        && (!('verified' in changed()) || request.resource.data.verified is bool);
       allow delete: if false;
+
+      // Журнал продажу: хто, коли, з якого стану в який. Лише разом зі зміною статусу (getAfter).
+      match /log/{logId} {
+        allow read: if canSee(get(/databases/$(database)/documents/sales/$(id)).data.shopId);
+        allow create: if (worksAt(get(/databases/$(database)/documents/sales/$(id)).data.shopId)
+            || isSuperAdmin() || isDevice(get(/databases/$(database)/documents/sales/$(id)).data.shopId))
+          && request.resource.data.keys().hasOnly(['by', 'at', 'from', 'to'])
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at == request.time
+          && request.resource.data.from == get(/databases/$(database)/documents/sales/$(id)).data.status
+          && request.resource.data.to == getAfter(/databases/$(database)/documents/sales/$(id)).data.status
+          && request.resource.data.from != request.resource.data.to;
+        allow update, delete: if false;
+      }
+    }
+
+    // Стан продажу — лише вперед. Телефон:
+    function clientStep(a, b) {
+      return (a == 'draft' && b in ['sent', 'cancelled'])
+        || (a == 'sent' && b in ['paying', 'cancelled'])
+        || (a == 'paying' && b in ['paid', 'declined', 'cancelled'])
+        || (a in ['declined', 'cancelled'] && b == 'draft')
+        || (a in ['paid', 'fiscalized'] && b == 'refunded');
+    }
+
+    function shopPaymentOk(p) {
+      return p is map && p.keys().hasOnly(['provider', 'terminalId'])
+        && p.provider is string && p.provider.matches('^[a-z0-9-]{1,40}$')
+        && (!('terminalId' in p) || (p.terminalId is string && p.terminalId.matches('^[A-Za-z0-9-]{1,40}$')));
+    }
+
+    // Довірена сторона (ПК магазину / сервер):
+    function trustedStep(a, b) {
+      return (a == 'paid' && b == 'fiscalized') || (a == 'fiscalized' && b == 'exported1C');
+    }
+
+    // payment пише телефон після схваленої оплати: лише ідентифікатори операції, сума = total.
+    function paymentOk(d) {
+      return d.payment is map
+        && d.payment.keys().hasOnly(['provider', 'rrn', 'authCode', 'maskedPan', 'amountKop', 'at'])
+        && d.payment.keys().hasAll(['provider', 'rrn', 'amountKop', 'at'])
+        && d.payment.provider is string && d.payment.provider.size() <= 40
+        && d.payment.rrn is string && d.payment.rrn.size() >= 1 && d.payment.rrn.size() <= 32
+        && d.payment.get('authCode', '') is string && d.payment.get('authCode', '').size() <= 12
+        && d.payment.get('maskedPan', '') is string && d.payment.get('maskedPan', '').size() <= 24
+        && d.payment.amountKop == d.total
+        && d.payment.at is timestamp;
+    }
+
+    function fiscalOk(f) {
+      return f is map
+        && f.keys().hasOnly(['fiscalNumber', 'url', 'at', 'prro'])
+        && f.fiscalNumber is string && f.fiscalNumber.size() >= 1 && f.fiscalNumber.size() <= 64
+        && f.at is timestamp
+        && (!('url' in f) || (f.url is string && f.url.size() <= 500))
+        && (!('prro' in f) || f.prro in ['bank', 'checkbox', 'other']);
+    }
+
+    // Повернення — окремий документ з посиланням на продаж; разом із ним продаж переходить у "refunded".
+    match /refunds/{id} {
+      allow read: if canSee(resource.data.shopId);
+      allow create: if (worksAt(request.resource.data.shopId) || canManage(request.resource.data.shopId))
+        && (request.resource.data.keys().hasOnly(['saleId', 'shopId', 'by', 'createdAt', 'provider', 'rrn', 'authCode', 'maskedPan', 'amountKop', 'at'])
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.saleId is string
+          && get(/databases/$(database)/documents/sales/$(request.resource.data.saleId)).data.shopId == request.resource.data.shopId
+          && request.resource.data.amountKop is int && request.resource.data.amountKop > 0
+          && request.resource.data.amountKop <= get(/databases/$(database)/documents/sales/$(request.resource.data.saleId)).data.total
+          && getAfter(/databases/$(database)/documents/sales/$(request.resource.data.saleId)).data.status == 'refunded');
+      allow update, delete: if false;
     }
 
     // ---------- Журнал дій адмінів ----------

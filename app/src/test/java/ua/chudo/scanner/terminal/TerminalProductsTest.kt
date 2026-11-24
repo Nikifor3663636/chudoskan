@@ -9,11 +9,6 @@ import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.data.NetItem
 import ua.chudo.scanner.data.NetworkAvailability
 import ua.chudo.scanner.data.Via
-import ua.chudo.scanner.payment.FiscalProvider
-import ua.chudo.scanner.payment.PaymentProvider
-import ua.chudo.scanner.payment.PaymentResult
-import ua.chudo.scanner.payment.Receipt
-import java.util.Date
 
 class TerminalProductsTest {
     private val bc = "2000999154010"
@@ -52,24 +47,5 @@ class TerminalProductsTest {
 
     @Test fun `не знайшли`() = runBlocking {
         assertEquals(Found.NotFound("x"), products(LookupResult.NotFound("x", null, emptyList())).find("x"))
-    }
-
-    /** Фейки під майбутню оплату: кошик не залежить від того, який банк підключать. */
-    private class FakePayment(val result: PaymentResult) : PaymentProvider {
-        val calls = mutableListOf<Pair<Long, String>>()
-        override suspend fun pay(amountKop: Long, saleId: String): PaymentResult { calls += amountKop to saleId; return result }
-    }
-
-    private class FakeFiscal : FiscalProvider {
-        override suspend fun receipt(sale: Sale, payment: PaymentResult.Approved) = Receipt("ФН-${sale.id}", null, payment.at)
-    }
-
-    @Test fun `фейкова оплата й чек — сума в копійках і номер продажу`() = runBlocking {
-        val sale = Sale.of("s1", "22", "u", Cart().add(CartItem(bc, bc, "Пакет", "", "", 2, 2_490, false)), "AB23CD")
-        val ok = PaymentResult.Approved("123456789012", "A1B2C3", sale.totalKop, Date(0))
-        val pay = FakePayment(ok)
-        val r = pay.pay(sale.totalKop, sale.id) as PaymentResult.Approved
-        assertEquals(listOf(4_980L to "s1"), pay.calls)
-        assertEquals("ФН-s1", FakeFiscal().receipt(sale, r).fiscalNumber)
     }
 }

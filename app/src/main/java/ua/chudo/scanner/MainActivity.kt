@@ -145,6 +145,9 @@ private fun AppNav(home: Employee) {
     // Пакет залишків мережі — одразу після входу, у фоні.
     val appCtx = LocalContext.current.applicationContext
     LaunchedEffect(home.uid) { ua.chudo.scanner.data.StockPrefetchWorker.schedule(appCtx) }
+    // Оплати, що зависли в "paying" (збій, перезапуск), — питаємо банк, без повторного списання.
+    val chudo = LocalContext.current.chudoApp
+    LaunchedEffect(employee.shopId) { if (chudo.auth.configured) chudo.payments.recover(employee.shopId, home.uid) }
     val orders by ordersRepo.orders.collectAsStateWithLifecycle()
     val newOrders = orders.count { it.stage == ua.chudo.scanner.data.OrderStage.NEW }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.

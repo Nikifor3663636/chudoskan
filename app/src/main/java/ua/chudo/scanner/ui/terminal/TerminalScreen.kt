@@ -65,7 +65,10 @@ import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.Stock1C
+import ua.chudo.scanner.payment.PayOutcome
+import ua.chudo.scanner.payment.PaymentService
 import ua.chudo.scanner.terminal.Cart
+import ua.chudo.scanner.terminal.SaleStatus
 import ua.chudo.scanner.terminal.CartItem
 import ua.chudo.scanner.terminal.Discount
 import ua.chudo.scanner.terminal.Found
@@ -95,17 +98,68 @@ sealed interface TerminalState {
     data class Message(val text: String) : TerminalState
     data object Sending : TerminalState
     data class Sent(val sale: Sale) : TerminalState
+    /** Застосунок банку відкрито — кошик зафіксовано. */
+    data object Paying : TerminalState
+    data class Paid(val totalKop: Long) : TerminalState
 }
 
 class TerminalViewModel(
     private val employee: Employee,
     private val products: TerminalProducts,
     private val sales: SalesRepository?,
+    private val payments: PaymentService? = null,
 ) : ViewModel() {
     private val _cart = MutableStateFlow(Cart())
     val cart = _cart.asStateFlow()
     private val _state = MutableStateFlow<TerminalState>(TerminalState.Idle)
     val state = _state.asStateFlow()
+
+    /** Оплата карткою підключена в магазині (shops/{shopId}.payment.provider ≠ "none"). */
+    private val _card = MutableStateFlow(false)
+    val card = _card.asStateFlow()
+
+    /** Банк не відповів: продаж лишається "paying", кошик не змінюємо, кнопка — «Перевірити оплату». */
+    private val _checkBank = MutableStateFlow(false)
+    val checkBank = _checkBank.asStateFlow()
+
+    /** Продаж для поточного кошика (створюється під час першої оплати); зміна кошика — новий продаж. */
+    private var saleId: String? = null
+
+    /** Під час оплати й поки невідомо, чи списано гроші, склад кошика не змінюється. */
+    private val locked get() = _state.value is TerminalState.Paying || _checkBank.value
+
+    init {
+        payments?.let { p -> viewModelScope.launch { _card.value = runCatching { p.provider(employee.shopId) }.getOrNull() != null } }
+    }
+
+    private fun edit(f: (Cart) -> Cart) {
+        if (locked) return
+        _cart.value = f(_cart.value)
+        saleId = null
+    }
+
+    /** «Оплатити карткою» (або «Перевірити оплату» після збою): ключів банку в застосунку немає. */
+    fun payCard() {
+        val p = payments ?: return
+        val repo = sales ?: return
+        val cart = _cart.value
+        if (cart.items.isEmpty() || _state.value is TerminalState.Paying) return
+        if (cart.items.any { it.manualPrice && it.priceKop == 0L }) {
+            _state.value = TerminalState.Message("Вкажіть ціну для всіх товарів з позначкою «ціна вручну».")
+            return
+        }
+        _state.value = TerminalState.Paying
+        guard {
+            val flow = p.flow(employee.shopId) ?: error("Оплату карткою в магазині не підключено")
+            val id = saleId ?: repo.send(employee.shopId, employee.uid, cart, SaleStatus.SENT).id.also { saleId = it }
+            _state.value = when (val r = flow.pay(id)) {
+                is PayOutcome.Paid -> { _checkBank.value = false; TerminalState.Paid(cart.totalKop) }
+                is PayOutcome.Declined -> { _checkBank.value = false; TerminalState.Message("Оплату відхилено: ${r.reason}. Можна спробувати ще раз.") }
+                PayOutcome.Cancelled -> { _checkBank.value = false; TerminalState.Message("Оплату скасовано. Можна спробувати ще раз.") }
+                is PayOutcome.CheckBank -> { _checkBank.value = true; TerminalState.Message(r.message) }
+            }
+        }
+    }
 
     fun find(query: String) {
         val q = query.trim().ifEmpty { return }
@@ -128,26 +182,26 @@ class TerminalViewModel(
     }
 
     private fun add(item: CartItem) {
-        runCatching { _cart.value = _cart.value.add(item) }
+        if (locked) { _state.value = TerminalState.Message("Спершу завершіть оплату."); return }
+        runCatching { edit { it.add(item) } }
             .onFailure { _state.value = TerminalState.Message(it.message ?: "Не вдалося додати товар") }
     }
 
     /** Ціна вручну: для нового товару — додає, для наявного — змінює. */
     fun setPrice(item: CartItem, kop: Long) {
-        val c = _cart.value
-        if (c.items.any { it.key == item.key }) _cart.value = c.setPrice(item.key, kop)
-        else add(item.copy(priceKop = kop, manualPrice = true))
         _state.value = TerminalState.Idle
+        if (_cart.value.items.any { it.key == item.key }) edit { it.setPrice(item.key, kop) }
+        else add(item.copy(priceKop = kop, manualPrice = true))
     }
 
     /** Змінити ціну рядка «ціна вручну». */
-    fun editPrice(item: CartItem) { _state.value = TerminalState.AskPrice(item) }
+    fun editPrice(item: CartItem) { if (!locked) _state.value = TerminalState.AskPrice(item) }
 
-    fun inc(key: String) { _cart.value = _cart.value.inc(key) }
-    fun dec(key: String) { _cart.value = _cart.value.dec(key) }
-    fun remove(key: String) { _cart.value = _cart.value.remove(key) }
-    fun discount(d: Discount) { _cart.value = _cart.value.withDiscount(d) }
-    fun dismiss() { _state.value = TerminalState.Idle }
+    fun inc(key: String) = edit { it.inc(key) }
+    fun dec(key: String) = edit { it.dec(key) }
+    fun remove(key: String) = edit { it.remove(key) }
+    fun discount(d: Discount) = edit { it.withDiscount(d) }
+    fun dismiss() { if (_state.value !is TerminalState.Paying) _state.value = TerminalState.Idle }
 
     /** «Передати на касу»: одне записування `sales/{id}` зі status "draft", QR і короткий код. */
     fun send() {
@@ -163,7 +217,7 @@ class TerminalViewModel(
     }
 
     /** Після передачі на касу — новий кошик. */
-    fun newCart() { _cart.value = Cart(); _state.value = TerminalState.Idle }
+    fun newCart() { _cart.value = Cart(); saleId = null; _checkBank.value = false; _state.value = TerminalState.Idle }
 
     private fun guard(block: suspend () -> Unit) = viewModelScope.launch {
         try {
@@ -196,12 +250,17 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
                         stock = { bc -> stock?.find(bc) },
                     ),
                     if (app.auth.configured) app.sales else null,
+                    if (app.auth.configured) app.payments else null,
                 )
             }
         },
     )
     val cart by vm.cart.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
+    val card by vm.card.collectAsStateWithLifecycle()
+    val checkBank by vm.checkBank.collectAsStateWithLifecycle()
+    val noticesFlow = remember { if (app.auth.configured) app.payments.notices else MutableStateFlow(emptyList<String>()) }
+    val notices by noticesFlow.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var received by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -254,8 +313,11 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
             }
             item {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    MineButton("Оплатити карткою", {}, Modifier.fillMaxWidth(), enabled = false)
-                    Text(
+                    MineButton(
+                        if (checkBank) "Перевірити оплату" else "Оплатити карткою", vm::payCard, Modifier.fillMaxWidth(),
+                        enabled = card, busy = state is TerminalState.Paying,
+                    )
+                    if (!card) Text(
                         "Оплата карткою з'явиться після підключення банку",
                         Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary, textAlign = TextAlign.Center,
                     )
@@ -287,7 +349,18 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
             confirmButton = { TextButton(onClick = vm::dismiss) { Text("Зрозуміло") } },
         )
         is TerminalState.Sent -> SentDialog(s.sale, onNew = { received = ""; vm.newCart() })
-        else -> Unit
+        is TerminalState.Paid -> AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Оплачено") },
+            text = { Text("Карткою: ${Money.format(s.totalKop)}. Чек сформує каса магазину.", fontSize = 15.sp) },
+            confirmButton = { TextButton(onClick = { received = ""; vm.newCart() }) { Text("Новий кошик") } },
+        )
+        else -> if (notices.isNotEmpty()) AlertDialog(
+            onDismissRequest = app.payments::dismissNotices,
+            title = { Text("Оплата") },
+            text = { Text(notices.joinToString("\n\n"), fontSize = 15.sp) },
+            confirmButton = { TextButton(onClick = app.payments::dismissNotices) { Text("Зрозуміло") } },
+        )
     }
 }
 

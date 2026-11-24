@@ -102,7 +102,12 @@ object SaleCode {
     fun qr(saleId: String, code: String) = "chudoskan://sale/$saleId?c=$code"
 }
 
-enum class SaleStatus(val id: String) { DRAFT("draft"), SENT("sent"), PAID("paid"), CANCELLED("cancelled") }
+enum class SaleStatus(val id: String) {
+    DRAFT("draft"), SENT("sent"), PAYING("paying"), PAID("paid"), FISCALIZED("fiscalized"), EXPORTED_1C("exported1C"),
+    DECLINED("declined"), CANCELLED("cancelled"), REFUNDED("refunded");
+
+    companion object { fun of(id: String?): SaleStatus? = entries.firstOrNull { it.id == id } }
+}
 
 /** Продаж `sales/{id}`. */
 data class Sale(

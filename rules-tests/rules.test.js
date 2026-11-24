@@ -540,3 +540,109 @@ describe('Термінал: sales', () => {
     await assertFails(updateDoc(doc(as('emp22b'), 'sales', 's1'), { status: 'draft' }));
   });
 });
+
+describe('оплата: стан продажу лише вперед', () => {
+  const base = (status, over = {}) => ({
+    shopId: '22', by: 'emp22', at: Timestamp.now(), status, code: 'AB23CD', discount: 0, total: 4980,
+    items: [{ barcode: '1', name: 'Пакет', code: '', article: '', qty: 2, price: 2490, manualPrice: false }], ...over,
+  });
+  const put = async (id, data) => env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), 'sales', id), data); });
+  const pay = (over = {}) => ({ provider: 'fake', rrn: '432812345678', authCode: 'A1B2C3', maskedPan: '4149 49** **** 1234', amountKop: 4980, at: Timestamp.now(), ...over });
+  // Зміна статусу — разом із записом у журнал, як у застосунку.
+  const step = (db, id, from, to, extra = {}, by = 'emp22') => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'sales', id), { status: to, ...extra });
+    b.set(doc(collection(db, 'sales', id, 'log')), { by, at: serverTimestamp(), from, to });
+    return b.commit();
+  };
+
+  test('дозволені переходи телефону проходять, назад і через крок — ні', async () => {
+    const db = as('emp22');
+    await put('s', base('draft'));
+    await assertFails(step(db, 's', 'draft', 'paying'));
+    await assertFails(step(db, 's', 'draft', 'paid', { payment: pay() }));
+    await assertSucceeds(step(db, 's', 'draft', 'sent'));
+    await assertFails(step(db, 's', 'sent', 'draft'));
+    await assertSucceeds(step(db, 's', 'sent', 'paying'));
+    // У "paying" кошик зафіксовано.
+    await assertFails(updateDoc(doc(db, 'sales', 's'), { total: 100 }));
+    await assertFails(updateDoc(doc(db, 'sales', 's'), { items: [] }));
+    await assertFails(step(db, 's', 'paying', 'paid'));
+    await assertFails(step(db, 's', 'paying', 'paid', { payment: pay({ amountKop: 100 }) }));
+    await assertFails(step(db, 's', 'paying', 'paid', { payment: pay({ secretKey: 'x' }) }));
+    await assertSucceeds(step(db, 's', 'paying', 'paid', { payment: pay() }));
+    await assertFails(step(db, 's', 'paid', 'paying'));
+    await assertFails(step(db, 's', 'paid', 'draft'));
+    // fiscalized і exported1C ставить лише ПК магазину.
+    await assertFails(step(db, 's', 'paid', 'fiscalized'));
+  });
+
+  test('відхилено або скасовано — назад у draft; чернетку можна редагувати', async () => {
+    const db = as('emp22');
+    await put('d', base('paying'));
+    await assertSucceeds(step(db, 'd', 'paying', 'declined'));
+    await assertSucceeds(step(db, 'd', 'declined', 'draft'));
+    await assertSucceeds(updateDoc(doc(db, 'sales', 'd'), { total: 2490, items: [{ barcode: '1', name: 'Пакет', code: '', article: '', qty: 1, price: 2490, manualPrice: false }] }));
+    await put('c', base('paying'));
+    await assertSucceeds(step(db, 'c', 'paying', 'cancelled'));
+    await assertSucceeds(step(db, 'c', 'cancelled', 'draft'));
+  });
+
+  test('клієнт не пише fiscal, exported1C, verified', async () => {
+    const db = as('emp22');
+    await put('p', base('paid', { payment: pay() }));
+    await assertFails(updateDoc(doc(db, 'sales', 'p'), { fiscal: { fiscalNumber: '1', at: Timestamp.now() } }));
+    await assertFails(updateDoc(doc(db, 'sales', 'p'), { exported1C: Timestamp.now() }));
+    await assertFails(updateDoc(doc(db, 'sales', 'p'), { verified: true }));
+    await assertFails(updateDoc(doc(as('adm22'), 'sales', 'p'), { verified: true }));
+    await assertFails(updateDoc(doc(as('sup'), 'sales', 'p'), { verified: true }));
+    await assertFails(setDoc(doc(db, 'sales', 'n1'), { ...base('draft'), at: serverTimestamp(), verified: true }));
+  });
+
+  test('ПК магазину: звірка, фіскалізація, 1С — лише вперед і лише свій магазин', async () => {
+    const pc = as('pc22');
+    await put('p', base('paid', { payment: pay() }));
+    await assertSucceeds(updateDoc(doc(pc, 'sales', 'p'), { verified: true }));
+    await assertFails(updateDoc(doc(pc, 'sales', 'p'), { status: 'exported1C', exported1C: Timestamp.now() }));
+    await assertFails(updateDoc(doc(pc, 'sales', 'p'), { status: 'fiscalized', fiscal: { fiscalNumber: '', at: Timestamp.now() } }));
+    await assertSucceeds(updateDoc(doc(pc, 'sales', 'p'), { status: 'fiscalized', fiscal: { fiscalNumber: '4000123456', prro: 'bank', at: Timestamp.now() } }));
+    await assertFails(updateDoc(doc(pc, 'sales', 'p'), { total: 1 }));
+    await assertSucceeds(updateDoc(doc(pc, 'sales', 'p'), { status: 'exported1C', exported1C: Timestamp.now() }));
+    await assertFails(updateDoc(doc(pc, 'sales', 'p'), { status: 'paid' }));
+    await assertFails(updateDoc(doc(as('pc62'), 'sales', 'p'), { verified: false }));
+  });
+
+  test('журнал — лише разом зі справжньою зміною статусу', async () => {
+    const db = as('emp22');
+    await put('j', base('draft'));
+    await assertFails(addDoc(collection(db, 'sales', 'j', 'log'), { by: 'emp22', at: serverTimestamp(), from: 'draft', to: 'paid' }));
+    await assertSucceeds(step(db, 'j', 'draft', 'sent'));
+    await assertSucceeds(getDocs(collection(db, 'sales', 'j', 'log')));
+    await assertFails(getDocs(collection(as('emp62'), 'sales', 'j', 'log')));
+  });
+
+  test('повернення — окремий документ із посиланням на продаж', async () => {
+    const db = as('emp22');
+    await put('r', base('paid', { payment: pay() }));
+    const refund = (over = {}) => ({ saleId: 'r', shopId: '22', by: 'emp22', createdAt: serverTimestamp(), provider: 'fake', rrn: 'R1', amountKop: 4980, at: Timestamp.now(), ...over });
+    const both = (over = {}) => {
+      const b = writeBatch(db);
+      b.set(doc(collection(db, 'refunds')), refund(over));
+      b.update(doc(db, 'sales', 'r'), { status: 'refunded' });
+      b.set(doc(collection(db, 'sales', 'r', 'log')), { by: 'emp22', at: serverTimestamp(), from: 'paid', to: 'refunded' });
+      return b.commit();
+    };
+    await assertFails(addDoc(collection(db, 'refunds'), refund()));
+    await assertFails(both({ amountKop: 4981 }));
+    await assertSucceeds(both());
+    await assertFails(both());
+  });
+
+  test('shops.payment — лише адмін мережі, лише ідентифікатори', async () => {
+    await assertSucceeds(setDoc(doc(as('sup'), 'shops', '22'), { payment: { provider: 'fake', terminalId: 'T0000001' } }, { merge: true }));
+    await assertSucceeds(getDoc(doc(as('emp22'), 'shops', '22')));
+    await assertFails(setDoc(doc(as('adm22'), 'shops', '22'), { payment: { provider: 'none' } }, { merge: true }));
+    await assertFails(setDoc(doc(as('sup'), 'shops', '22'), { payment: { provider: 'privat', apiKey: 'x' } }, { merge: true }));
+    await assertFails(setDoc(doc(as('sup'), 'shops', '22'), { payment: { provider: 'Privat Bank' } }, { merge: true }));
+  });
+});
