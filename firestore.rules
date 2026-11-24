@@ -302,6 +302,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Автооновлення: опублікована версія (APK на Google Диску) і мінімальна версія. Пише лише адмін мережі.
+    match /meta/app {
+      allow read: if isApproved();
+      allow create, update: if isSuperAdmin()
+        && request.resource.data.keys().hasOnly(['versionCode', 'versionName', 'apkUrl', 'sha256', 'minVersionCode', 'notes', 'message', 'source', 'publishedBy', 'publishedAt'])
+        && (!('versionCode' in request.resource.data) || (request.resource.data.versionCode is int && request.resource.data.versionCode >= 0))
+        && (!('minVersionCode' in request.resource.data) || (request.resource.data.minVersionCode is int && request.resource.data.minVersionCode >= 0))
+        && (!('versionName' in request.resource.data) || (request.resource.data.versionName is string && request.resource.data.versionName.size() <= 40))
+        && (!('apkUrl' in request.resource.data) || (request.resource.data.apkUrl is string && request.resource.data.apkUrl.matches('^https://[^ ]{1,500}$')))
+        && (!('sha256' in request.resource.data) || (request.resource.data.sha256 is string && request.resource.data.sha256.matches('^[0-9a-f]{64}$')))
+        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 500))
+        && (!('message' in request.resource.data) || (request.resource.data.message is string && request.resource.data.message.size() <= 500))
+        && (!('source' in request.resource.data) || request.resource.data.source in ['drive', 'github'])
+        && (!('publishedBy' in request.resource.data) || (request.resource.data.publishedBy is string && request.resource.data.publishedBy.size() <= 100))
+        && (!('publishedAt' in request.resource.data) || request.resource.data.publishedAt is timestamp);
+      allow delete: if false;
+    }
+
     // Видалення старих stock/{штрихкод}: скільки видалено сьогодні (≤ 5 000 на добу) і скільки лишилося.
     match /meta/stockCleanup {
       allow read: if isStockAdmin();

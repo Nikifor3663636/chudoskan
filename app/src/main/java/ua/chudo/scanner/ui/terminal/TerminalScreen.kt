@@ -68,6 +68,7 @@ import ua.chudo.scanner.data.Stock1C
 import ua.chudo.scanner.payment.PayOutcome
 import ua.chudo.scanner.payment.PaymentService
 import ua.chudo.scanner.terminal.Cart
+import ua.chudo.scanner.terminal.CartStore
 import ua.chudo.scanner.terminal.SaleStatus
 import ua.chudo.scanner.terminal.CartItem
 import ua.chudo.scanner.terminal.Discount
@@ -108,6 +109,8 @@ class TerminalViewModel(
     private val products: TerminalProducts,
     private val sales: SalesRepository?,
     private val payments: PaymentService? = null,
+    /** Кошик у файлі: оновлення чи перезапуск не загублять його. */
+    private val store: CartStore? = null,
 ) : ViewModel() {
     private val _cart = MutableStateFlow(Cart())
     val cart = _cart.asStateFlow()
@@ -129,6 +132,7 @@ class TerminalViewModel(
     private val locked get() = _state.value is TerminalState.Paying || _checkBank.value
 
     init {
+        store?.load()?.let { (c, id) -> _cart.value = c; saleId = id }
         payments?.let { p -> viewModelScope.launch { _card.value = runCatching { p.provider(employee.shopId) }.getOrNull() != null } }
     }
 
@@ -136,6 +140,7 @@ class TerminalViewModel(
         if (locked) return
         _cart.value = f(_cart.value)
         saleId = null
+        persist()
     }
 
     /** «Оплатити карткою» (або «Перевірити оплату» після збою): ключів банку в застосунку немає. */
@@ -151,9 +156,9 @@ class TerminalViewModel(
         _state.value = TerminalState.Paying
         guard {
             val flow = p.flow(employee.shopId) ?: error("Оплату карткою в магазині не підключено")
-            val id = saleId ?: repo.send(employee.shopId, employee.uid, cart, SaleStatus.SENT).id.also { saleId = it }
+            val id = saleId ?: repo.send(employee.shopId, employee.uid, cart, SaleStatus.SENT).id.also { saleId = it; persist() }
             _state.value = when (val r = flow.pay(id)) {
-                is PayOutcome.Paid -> { _checkBank.value = false; TerminalState.Paid(cart.totalKop) }
+                is PayOutcome.Paid -> { _checkBank.value = false; store?.clear(); TerminalState.Paid(cart.totalKop) }
                 is PayOutcome.Declined -> { _checkBank.value = false; TerminalState.Message("Оплату відхилено: ${r.reason}. Можна спробувати ще раз.") }
                 PayOutcome.Cancelled -> { _checkBank.value = false; TerminalState.Message("Оплату скасовано. Можна спробувати ще раз.") }
                 is PayOutcome.CheckBank -> { _checkBank.value = true; TerminalState.Message(r.message) }
@@ -217,7 +222,9 @@ class TerminalViewModel(
     }
 
     /** Після передачі на касу — новий кошик. */
-    fun newCart() { _cart.value = Cart(); saleId = null; _checkBank.value = false; _state.value = TerminalState.Idle }
+    fun newCart() { _cart.value = Cart(); saleId = null; _checkBank.value = false; _state.value = TerminalState.Idle; store?.clear() }
+
+    private fun persist() { runCatching { store?.save(_cart.value, saleId) } }
 
     private fun guard(block: suspend () -> Unit) = viewModelScope.launch {
         try {
@@ -251,6 +258,7 @@ fun TerminalScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onS
                     ),
                     if (app.auth.configured) app.sales else null,
                     if (app.auth.configured) app.payments else null,
+                    CartStore(java.io.File(app.filesDir, "terminal-cart.txt")),
                 )
             }
         },

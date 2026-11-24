@@ -98,3 +98,29 @@ jobs:
         run: |
           gh release create $env:GITHUB_REF_NAME printer/installer/Output/*.exe --latest=false --title "ЧудоСкан Друк $env:VERSION" `
             --notes "Програма для друку етикеток на Godex з комп'ютера магазину. Встановлення без прав адміністратора: x64 — для 64-бітної Windows 10/11, x86 — для 32-бітної."
+
+      # Автооновлення: реліз «printer-latest» зі стабільними іменами — програма раз на 6 год читає
+      # …/releases/download/printer-latest/printer-version.json (без лімітів API).
+      - name: printer-latest
+        if: startsWith(github.ref, 'refs/tags/printer-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $base = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/printer-latest"
+          $assets = @{}
+          foreach ($arch in 'x64', 'x86') {
+            $src = Get-ChildItem printer/installer/Output -Filter "*-$arch.exe" | Select-Object -First 1
+            $dst = "ChudoScanPrint-$arch.exe"
+            Copy-Item $src.FullName $dst
+            $assets[$arch] = @{ url = "$base/$dst"; sha256 = (Get-FileHash $dst -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          git fetch --force origin "refs/tags/$($env:GITHUB_REF_NAME):refs/tags/$($env:GITHUB_REF_NAME)"
+          $notes = (git for-each-ref "refs/tags/$env:GITHUB_REF_NAME" --format='%(contents)') -join "`n"
+          @{ version = $env:VERSION; notes = $notes; publishedAt = (Get-Date).ToUniversalTime().ToString('o'); x64 = $assets.x64; x86 = $assets.x86 } |
+            ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8NoBOM printer-version.json
+          Get-Content printer-version.json
+          gh release view printer-latest *> $null
+          if ($LASTEXITCODE) {
+            gh release create printer-latest --latest=false --prerelease --title "ЧудоСкан Друк — остання версія" --notes "Для автооновлення програми. Встановлювати — з релізу printer-vX.Y.Z."
+          }
+          gh release upload printer-latest ChudoScanPrint-x64.exe ChudoScanPrint-x86.exe printer-version.json --clobber

@@ -21,9 +21,22 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "3.0.2"
+        // CI: -PversionCode=<номер збірки> -PversionName=<X.Y з тегу>; versionCode строго зростає.
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 16
+        versionName = providers.gradleProperty("versionName").orNull ?: "3.0.2"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+
+    // Release-ключ лише з GitHub Secrets (CI кладе keystore у тимчасовий файл); у репозиторії ключа немає.
+    // Без нього (локальна збірка) — debug-ключ: такий APK не оновить застосунок, установлений з релізу.
+    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = releaseKeystore
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
     }
 
     buildTypes {
@@ -31,8 +44,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Для личного APK подписываем debug-ключом; для Play — свой keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
     compileOptions {

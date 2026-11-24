@@ -43,6 +43,13 @@ internal static class Program
         waiter.Start();
 
         agent.Start();
+        // Самостійне оновлення: інсталятор окремим процесом, програма виходить; черга друку лишається в Firestore.
+        using var updater = new Updater(() =>
+        {
+            if (form.IsHandleCreated) form.BeginInvoke(Application.Exit);
+            else Application.Exit();
+        });
+        updater.Start();
         var hidden = args.Contains("--hidden", StringComparer.OrdinalIgnoreCase);
         if (hidden)
         {

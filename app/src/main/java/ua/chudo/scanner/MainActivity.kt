@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,6 +117,7 @@ private object Routes {
     const val ADMIN_STAFF = "admin-staff?shop={shop}"
     const val ADMIN_HISTORY = "admin-history"
     const val MY_SHOP = "my-shop"
+    const val PUBLISH_UPDATE = "publish-update"
 
     fun adminStaff(shop: String? = null) = "admin-staff" + (shop?.let { "?shop=" + Uri.encode(it) } ?: "")
 
@@ -148,6 +150,23 @@ private fun AppNav(home: Employee) {
     // Оплати, що зависли в "paying" (збій, перезапуск), — питаємо банк, без повторного списання.
     val chudo = LocalContext.current.chudoApp
     LaunchedEffect(employee.shopId) { if (chudo.auth.configured) chudo.payments.recover(employee.shopId, home.uid) }
+    // Автооновлення: перевірка одразу й раз на 6 год у фоні.
+    LaunchedEffect(home.uid) {
+        ua.chudo.scanner.update.UpdateWorker.schedule(appCtx)
+        runCatching { chudo.updates.check() }
+    }
+    val upd by chudo.updates.ui.collectAsStateWithLifecycle()
+    val updateAction = ua.chudo.scanner.ui.update.rememberUpdateAction()
+    val updateScope = androidx.compose.runtime.rememberCoroutineScope()
+    if (updateAction.needPermission) ua.chudo.scanner.ui.update.InstallPermissionDialog { updateAction.needPermission = false }
+    (upd.decision as? ua.chudo.scanner.update.UpdateDecision.Required)?.let { req ->
+        ua.chudo.scanner.ui.update.RequiredUpdateScreen(
+            req.info, req.message, upd.progress, upd.error,
+            onUpdate = { req.info?.let { i -> updateScope.launch { updateAction.run(i) } } },
+            onLogout = { chudo.auth.signOut() },
+        )
+        return
+    }
     val orders by ordersRepo.orders.collectAsStateWithLifecycle()
     val newOrders = orders.count { it.stage == ua.chudo.scanner.data.OrderStage.NEW }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
@@ -172,6 +191,9 @@ private fun AppNav(home: Employee) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             Column {
+            (upd.decision as? ua.chudo.scanner.update.UpdateDecision.Available)?.takeIf { route != null && route !in FULLSCREEN }?.let { a ->
+                ua.chudo.scanner.ui.update.UpdateBanner(a.info, upd.progress, upd.error) { updateScope.launch { updateAction.run(a.info) } }
+            }
             acting?.let { a -> ActingBanner(a, withInsets = route in FULLSCREEN) { switchShop(null) } }
             // Сканер и настройки принтеров — без нижней навигации.
             if (route != null && route !in FULLSCREEN) MineBottomBar(
@@ -221,6 +243,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
                 onMyShop = if (home.admin && !home.superAdmin) ({ nav.navigate(Routes.MY_SHOP) }) else null,
+                onPublishUpdate = if (home.superAdmin) ({ nav.navigate(Routes.PUBLISH_UPDATE) }) else null,
             )
         }
         composable(Routes.ADMIN) {
@@ -239,6 +262,9 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             else nav.popBackStack()
         }
         composable(Routes.ADMIN_HISTORY) { if (home.superAdmin) AdminHistoryScreen(home, onBack = { nav.popBackStack() }) else nav.popBackStack() }
+        composable(Routes.PUBLISH_UPDATE) {
+            if (home.superAdmin) ua.chudo.scanner.ui.update.PublishUpdateScreen(home, onBack = { nav.popBackStack() }) else nav.popBackStack()
+        }
         composable(Routes.MY_SHOP) {
             if (home.admin) StaffAdminScreen(home, onBack = { nav.popBackStack() }, ownShopOnly = true) else nav.popBackStack()
         }

@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.update.UpdateDecision
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.ShopStockInfo
 import ua.chudo.scanner.ui.auth.PasswordDialog
@@ -74,6 +75,8 @@ fun ProfileScreen(
     onNetworkAdmin: (() -> Unit)? = null,
     /** «Мій магазин» — адмін магазину (співробітники свого магазину). */
     onMyShop: (() -> Unit)? = null,
+    /** «Опублікувати оновлення» — лише superAdmin. */
+    onPublishUpdate: (() -> Unit)? = null,
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
@@ -93,10 +96,22 @@ fun ProfileScreen(
             shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
             theme = theme, admin = onPrinters != null, message = message, networkStock = onNetworkStock != null,
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
+            version = app.updates.currentName, publishUpdate = onPublishUpdate != null,
         ),
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
+        onCheckUpdate = {
+            message = "Перевіряю оновлення…"
+            scope.launch {
+                message = when (val d = app.updates.check()) {
+                    is UpdateDecision.Available -> "Доступне оновлення ${d.info.versionName} — натисніть «Оновити» внизу екрана."
+                    is UpdateDecision.Required -> "Потрібне оновлення."
+                    UpdateDecision.None -> app.updates.ui.value.error ?: "У вас остання версія."
+                }
+            }
+        },
+        onPublishUpdate = { onPublishUpdate?.invoke() },
     )
 
     if (changePassword) {
@@ -157,6 +172,9 @@ data class ProfileUi(
     val networkStock: Boolean = false,
     val networkAdmin: Boolean = false,
     val myShop: Boolean = false,
+    val version: String = "",
+    /** Суперадмін: «Опублікувати оновлення». */
+    val publishUpdate: Boolean = false,
 )
 
 /** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
@@ -173,6 +191,8 @@ fun ProfileContent(
     onMyShop: () -> Unit = {},
     onPassword: () -> Unit = {},
     onLogout: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
+    onPublishUpdate: () -> Unit = {},
 ) {
     val m = Mine.colors
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -218,6 +238,12 @@ fun ProfileContent(
                 RowDivider()
                 ProfileRow("Змінити пароль", null, onClick = onPassword)
                 RowDivider()
+                ProfileRow("Версія ${ui.version}", "Перевірити оновлення", onClick = onCheckUpdate)
+                RowDivider()
+                if (ui.publishUpdate) {
+                    ProfileRow("Опублікувати оновлення", "APK з Google Диска", onClick = onPublishUpdate)
+                    RowDivider()
+                }
                 ProfileRow("Вийти", null, danger = true, onClick = onLogout)
             }
         }

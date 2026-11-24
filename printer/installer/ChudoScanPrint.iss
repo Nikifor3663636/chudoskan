@@ -51,7 +51,9 @@ Name: "{userdesktop}\ЧудоСкан Друк"; Filename: "{app}\ChudoScanPrint
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ChudoScanPrint"; ValueData: """{app}\ChudoScanPrint.exe"" --hidden"; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\ChudoScanPrint.exe"; Description: "Запустити «ЧудоСкан Друк»"; Flags: nowait postinstall
+Filename: "{app}\ChudoScanPrint.exe"; Description: "Запустити «ЧудоСкан Друк»"; Flags: nowait postinstall skipifsilent
+; Самостійне оновлення (тихе встановлення) — одразу знову в трей.
+Filename: "{app}\ChudoScanPrint.exe"; Parameters: "--hidden"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM ChudoScanPrint.exe /F"; Flags: runhidden; RunOnceId: "StopApp"

@@ -646,3 +646,33 @@ describe('оплата: стан продажу лише вперед', () => {
     await assertFails(setDoc(doc(as('sup'), 'shops', '22'), { payment: { provider: 'Privat Bank' } }, { merge: true }));
   });
 });
+
+describe('автооновлення: meta/app', () => {
+  const sha = 'a'.repeat(64);
+  const app = (over = {}) => ({
+    versionCode: 1042, versionName: '3.1', apkUrl: 'https://drive.google.com/uc?export=download&id=1AbCdEfGhIjKlMnOpQrStUvWxYz',
+    sha256: sha, minVersionCode: 0, notes: 'Термінал', source: 'drive', publishedBy: 'Мережа', publishedAt: serverTimestamp(), ...over,
+  });
+
+  test('читає будь-який підтверджений, пише лише superAdmin', async () => {
+    await assertSucceeds(setDoc(doc(as('sup'), 'meta', 'app'), app()));
+    await assertSucceeds(getDoc(doc(as('emp22'), 'meta', 'app')));
+    await assertFails(getDoc(doc(as('new22'), 'meta', 'app')));
+    await assertFails(getDoc(doc(anon(), 'meta', 'app')));
+    await assertFails(setDoc(doc(as('adm22'), 'meta', 'app'), app()));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'app'), app()));
+    await assertFails(setDoc(doc(as('emp22'), 'meta', 'app'), { minVersionCode: 0 }, { merge: true }));
+    await assertFails(setDoc(doc(as('supNotApproved'), 'meta', 'app'), app()));
+  });
+
+  test('суперадмін піднімає мінімальну версію без релізу; білий список полів', async () => {
+    await assertSucceeds(setDoc(doc(as('sup'), 'meta', 'app'), { minVersionCode: 1042, message: 'Оновіться до 3.1' }, { merge: true }));
+    await assertSucceeds(setDoc(doc(as('sup'), 'meta', 'app'), { source: 'github' }, { merge: true }));
+    await assertFails(setDoc(doc(as('sup'), 'meta', 'app'), app({ token: 'x' })));
+    await assertFails(setDoc(doc(as('sup'), 'meta', 'app'), app({ sha256: 'abc' })));
+    await assertFails(setDoc(doc(as('sup'), 'meta', 'app'), app({ apkUrl: 'http://insecure/app.apk' })));
+    await assertFails(setDoc(doc(as('sup'), 'meta', 'app'), app({ source: 'ftp' })));
+    await assertFails(setDoc(doc(as('sup'), 'meta', 'app'), app({ minVersionCode: '5' })));
+    await assertFails(deleteDoc(doc(as('sup'), 'meta', 'app')));
+  });
+});

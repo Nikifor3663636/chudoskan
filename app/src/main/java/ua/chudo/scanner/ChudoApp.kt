@@ -44,6 +44,37 @@ class ChudoApp : Application() {
     /** Интернет-заказы на самовывоз (пока демо-источник). */
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }
+
+    /** Автооновлення: meta/app (Google Диск), запасне — GitHub Releases. */
+    val updates by lazy {
+        val meta: suspend () -> ua.chudo.scanner.update.AppMeta? = {
+            if (auth.configured) ua.chudo.scanner.update.AppMetaStore(FirebaseFirestore.getInstance()).read() else null
+        }
+        ua.chudo.scanner.update.UpdateManager(
+            this,
+            ua.chudo.scanner.update.UpdateSources(ua.chudo.scanner.update.DriveSource(meta), ua.chudo.scanner.update.GitHubSource(okHttp)),
+            ua.chudo.scanner.update.ApkDownloader(okHttp.newBuilder().readTimeout(120, TimeUnit.SECONDS).build()),
+            meta,
+        )
+    }
+
+    private var started = 0
+
+    /** Застосунок на екрані: тихе встановлення оновлення — лише коли ні. */
+    val inForeground: Boolean get() = started > 0
+
+    override fun onCreate() {
+        super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(a: android.app.Activity) { started++ }
+            override fun onActivityStopped(a: android.app.Activity) { started = (started - 1).coerceAtLeast(0) }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) = Unit
+            override fun onActivityResumed(a: android.app.Activity) = Unit
+            override fun onActivityPaused(a: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(a: android.app.Activity) = Unit
+        })
+    }
 }
 
 val Context.chudoApp: ChudoApp get() = applicationContext as ChudoApp
