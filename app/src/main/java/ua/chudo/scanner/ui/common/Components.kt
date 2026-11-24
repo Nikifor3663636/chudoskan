@@ -157,7 +157,7 @@ fun Shimmer(modifier: Modifier = Modifier, shapeRadius: Dp = 12.dp) {
         modifier
             .clip(RoundedCornerShape(shapeRadius))
             .alpha(a)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(Mine.colors.field)
     )
 }
 
