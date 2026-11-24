@@ -138,6 +138,9 @@ private fun AppNav(home: Employee) {
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
     LaunchedEffect(employee.shopId) { ordersRepo.load(employee.shopId) }
+    // Пакет залишків мережі — одразу після входу, у фоні.
+    val appCtx = LocalContext.current.applicationContext
+    LaunchedEffect(home.uid) { ua.chudo.scanner.data.StockPrefetchWorker.schedule(appCtx) }
     val orders by ordersRepo.orders.collectAsStateWithLifecycle()
     val newOrders = orders.count { it.stage == ua.chudo.scanner.data.OrderStage.NEW }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.

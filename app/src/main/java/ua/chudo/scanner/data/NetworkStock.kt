@@ -17,7 +17,25 @@ data class NetworkStock(
     val items: Map<String, NetItem>,
     /** Рядки товарів без штрихкоду (пропущені). */
     val noBarcode: Int,
-)
+) {
+    /** У колонці «Номенклатура» немає «, КОД, артикул» (код 1С [A-Z]{3}\d{6}) — ні в одного товару. */
+    val missingCodes: Boolean get() = items.isNotEmpty() && items.values.none { it.code.isNotEmpty() }
+}
+
+/** Попередження перед завантаженням звіту 1С; завантажити все одно можна. */
+object StockImportWarnings {
+    const val NO_CODES = "У звіті немає коду 1С і артикулу — пошук на сайті за артикулом не працюватиме. Додайте їх у звіт."
+
+    fun of(fresh: NetworkStock, plan: StockPlan): List<String> = buildList {
+        if (fresh.missingCodes) add(NO_CODES)
+        if (plan.shrunk) add(
+            "У файлі ${fmt(plan.items.size)} товарів — менше половини від попереднього (${fmt(plan.previousItems)}). " +
+                "Можливо, це неповний звіт.",
+        )
+    }
+
+    fun fmt(n: Int): String = "%,d".format(java.util.Locale.forLanguageTag("uk"), n).replace(',', ' ')
+}
 
 /**
  * Звіт 1С «Ведомость по партиям товаров на складах» — залишки всієї мережі:

@@ -330,6 +330,21 @@ describe('залишки мережі', () => {
     await assertFails(deleteDoc(doc(as('emp22'), 'stockPacks', '1732440000000_0')));
   });
 
+  test('meta/stock.bytes і лічильник видалення старих stock: лише stockAdmin, ≤ 5 000 на добу', async () => {
+    await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stock'), { pack: '1', parts: 2, bytes: 1100000 }));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'stock'), { pack: '1', parts: 2, bytes: '1 МБ' }));
+    const c = (extra = {}) => ({ day: '2026-11-24', deleted: 450, remaining: 21550, at: serverTimestamp(), by: 'Залишки', ...extra });
+    await assertSucceeds(setDoc(doc(as('stocker'), 'meta', 'stockCleanup'), c()));
+    await assertSucceeds(getDoc(doc(as('stocker'), 'meta', 'stockCleanup')));
+    await assertFails(getDoc(doc(as('emp22'), 'meta', 'stockCleanup')));
+    await assertFails(setDoc(doc(as('adm22'), 'meta', 'stockCleanup'), c()));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'stockCleanup'), c({ deleted: 5001 })));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'stockCleanup'), c({ extra: true })));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'stockCleanup'), c({ day: 'сьогодні' })));
+    await assertFails(setDoc(doc(as('stocker'), 'meta', 'other'), c()));
+    await assertFails(deleteDoc(doc(as('stocker'), 'meta', 'stockCleanup')));
+  });
+
   test('q — map чисел ≥ 0, поля за білим списком', async () => {
     const db = as('stocker');
     await assertFails(setDoc(doc(db, 'stock', '3'), row({ 22: -1 })));

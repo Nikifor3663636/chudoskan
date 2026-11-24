@@ -20,9 +20,9 @@ data class NetworkImportResult(val stores: Int, val items: Int, val changed: Int
 
 /**
  * Залишки мережі (тільки stockAdmin — див. firestore.rules):
- * - `stockPacks/{версія}_{i}` — увесь знімок пакетом ([StockPack]); `stock/{штрихкод}` — старий формат, лише читання;
+ * - `stockPacks/{версія}_{i}` — увесь знімок пакетом ([StockPack]); `stock/{штрихкод}` — старий формат, лише видалення ([LegacyStockCleanup]);
  * - `stores/{код}` = {name, city, shopId?}; `shops/{shopId}.code1C`;
- * - `meta/stock` = {updatedAt, updatedBy, items, stores, pack, parts}.
+ * - `meta/stock` = {updatedAt, updatedBy, items, stores, pack, parts, bytes}.
  * Різниця рахується зі знімком попереднього файлу на телефоні — без читань `stock`.
  */
 class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) {
@@ -92,7 +92,7 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
             db.collection(META).document(STOCK).set(
                 mapOf(
                     "updatedAt" to FieldValue.serverTimestamp(), "updatedBy" to employee.name.take(100),
-                    "items" to plan.items.size, "stores" to storeCount, "pack" to version, "parts" to parts.size,
+                    "items" to plan.items.size, "stores" to storeCount, "pack" to version, "parts" to parts.size, "bytes" to parts.sumOf { it.size },
                 ),
             ).await()
             if (oldPack != null) runCatching {

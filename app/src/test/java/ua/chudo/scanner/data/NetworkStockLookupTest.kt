@@ -21,13 +21,13 @@ class NetworkStockLookupTest {
         "09" to StoreDoc("ЧО 09 Київ", "Київ", null),
     )
 
-    /** Пакет у «Firestore»: дві частини (щоб перевірити склейку), змінені — у частині 0. Стара гілка заборонена. */
+    /** Пакет у «Firestore»: дві частини (щоб перевірити склейку), змінені — у частині 0. */
     private inner class FakeStore(version: String = "v1", changed: List<String> = listOf("2000999154010", "4820000000024")) : StockStore {
         var metaReads = 0
         var partReads = 0
         var storeReads = 0
         val updated = Date(1_700_000_000_000)
-        var meta = StockStore.Meta(updated, null, version, 2)
+        var meta = StockStore.Meta(updated, version, 2)
         val parts: List<ByteArray>
         val changedBytes = StockPack.gzipLines(changed)
 
@@ -46,10 +46,6 @@ class NetworkStockLookupTest {
         override suspend fun stores(): Map<String, StoreDoc> { storeReads++; return this@NetworkStockLookupTest.stores }
         override suspend fun shopCode1C(shopId: String): String? = null
 
-        override suspend fun legacyItem(barcode: String) = error("stock/{bc} не читаємо, коли є пакет")
-        override suspend fun legacyChanged(after: Date, limit: Long) = error("stock/{bc} не читаємо, коли є пакет")
-        override suspend fun legacyWhere(field: String, value: String, limit: Long) = error("stock/{bc} не читаємо, коли є пакет")
-        override suspend fun legacyStoreItems(code: String, limit: Long) = error("stock/{bc} не читаємо, коли є пакет")
     }
 
     private fun dir(): File = Files.createTempDirectory("stockpack").toFile().apply { deleteOnExit() }
@@ -104,7 +100,7 @@ class NetworkStockLookupTest {
 
     @Test fun `старий пакет уже видалено — одразу перечитуємо meta і беремо новий`() = runBlocking {
         val store = object : StockStore by FakeStore("v2") {
-            var meta = StockStore.Meta(null, null, "v1", 2)
+            var meta = StockStore.Meta(null, "v1", 2)
             override suspend fun meta() = meta.also { meta = it.copy(pack = "v2") }
             override suspend fun packPart(version: String, index: Int) =
                 if (version == "v1") StockStore.Part(null, null) else FakeStore("v2").packPart(version, index)
@@ -126,5 +122,43 @@ class NetworkStockLookupTest {
         net.byBarcode("shop-22", "2000999154010")
         assertEquals(4, store.partReads)
         assertTrue(d.list()!!.all { it.startsWith("stockpack_v2.") })
+    }
+
+    @Test fun `без пакета — залишків мережі немає, stock не читаємо`() = runBlocking {
+        val store = FakeStore().apply { meta = meta.copy(pack = null, parts = 0) }
+        val net = NetworkStockLookup(store, dir())
+        assertNull(net.byBarcode("shop-22", "2000999154010"))
+        assertTrue(net.byCode("shop-22", "BOC022446").isEmpty())
+        assertTrue(net.storeItems("22").isEmpty())
+        assertEquals(0, store.partReads)
+    }
+
+    @Test fun `фонове завантаження — Wi-Fi або пакет менше 2 МБ`() {
+        val small = StockStore.Meta(null, "v", 2, bytes = 1_100_000)
+        val big = StockStore.Meta(null, "v", 4, bytes = 2_900_000)
+        assertTrue(StockPrefetch.allowed(small, unmetered = false))
+        assertTrue(!StockPrefetch.allowed(big, unmetered = false))
+        assertTrue(StockPrefetch.allowed(big, unmetered = true))
+        // Старий meta без bytes — оцінка за кількістю частин.
+        assertTrue(StockPrefetch.allowed(StockStore.Meta(null, "v", 2), unmetered = false))
+        assertTrue(!StockPrefetch.allowed(StockStore.Meta(null, "v", 3), unmetered = false))
+    }
+
+    @Test fun `після фонового завантаження перший скан — без читань`() = runBlocking {
+        val store = FakeStore()
+        val net = NetworkStockLookup(store, dir())
+        assertTrue(net.prefetch(unmetered = false))
+        val reads = store.partReads + store.metaReads
+        assertEquals(37.0, net.byBarcode("shop-22", "2000999154010")!!.own)
+        assertEquals(reads, store.partReads + store.metaReads)
+    }
+
+    @Test fun `великий пакет на мобільній мережі — не качаємо`() = runBlocking {
+        val store = FakeStore().apply { meta = meta.copy(bytes = 3_000_000) }
+        val net = NetworkStockLookup(store, dir())
+        assertTrue(!net.prefetch(unmetered = false))
+        assertEquals(0, store.partReads)
+        assertTrue(net.prefetch(unmetered = true))
+        assertEquals(2, store.partReads)
     }
 }

@@ -58,6 +58,7 @@ import ua.chudo.scanner.data.SiteShop
 import ua.chudo.scanner.data.StoreMatcher
 import ua.chudo.scanner.data.StockDiff
 import ua.chudo.scanner.data.StockFileException
+import ua.chudo.scanner.data.StockImportWarnings
 import ua.chudo.scanner.data.StockPlan
 import ua.chudo.scanner.data.StoreDoc
 import ua.chudo.scanner.ui.auth.authMessage
@@ -99,13 +100,44 @@ class NetworkStockViewModel(
     private val onImported: suspend () -> Unit = {},
     /** Магазини з сайту (той самий список, що при реєстрації) — для автоприв'язки складів 1С. */
     private val siteShops: suspend () -> List<SiteShop> = { emptyList() },
+    /** Видалення старих stock/{штрихкод}; `null` — не показуємо. */
+    private val cleanup: ua.chudo.scanner.data.LegacyStockCleanup? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow<NetState>(NetState.Idle)
     val state: StateFlow<NetState> = _state.asStateFlow()
     private val _info = MutableStateFlow<NetworkStockInfo?>(null)
     val info: StateFlow<NetworkStockInfo?> = _info.asStateFlow()
 
-    init { refreshInfo() }
+    private val _cleanup = MutableStateFlow<ua.chudo.scanner.data.CleanupState?>(null)
+    val cleanupState: StateFlow<ua.chudo.scanner.data.CleanupState?> = _cleanup.asStateFlow()
+    private val _cleaning = MutableStateFlow(false)
+    val cleaning: StateFlow<Boolean> = _cleaning.asStateFlow()
+    private val _cleanupError = MutableStateFlow<String?>(null)
+    val cleanupError: StateFlow<String?> = _cleanupError.asStateFlow()
+
+    init {
+        refreshInfo()
+        cleanup?.let { c -> viewModelScope.launch { _cleanup.value = runCatching { c.state() }.getOrNull() } }
+    }
+
+    /** До 5 000 на добу; прогрес — після кожної пачки. */
+    fun deleteLegacy() {
+        val c = cleanup ?: return
+        if (_cleaning.value) return
+        _cleaning.value = true
+        _cleanupError.value = null
+        viewModelScope.launch {
+            try {
+                _cleanup.value = c.run(employee.name) { _cleanup.value = it }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _cleanupError.value = e.authMessage()
+            } finally {
+                _cleaning.value = false
+            }
+        }
+    }
 
     private fun refreshInfo() = viewModelScope.launch { _info.value = runCatching { repo.info() }.getOrNull() }
 
@@ -165,13 +197,7 @@ class NetworkStockViewModel(
     }
 
     private fun confirmOrUpload(p: NetPending) {
-        val plan = p.plan
-        val warnings = buildList {
-            if (plan.shrunk) add(
-                "У файлі ${fmt(plan.items.size)} товарів — менше половини від попереднього (${fmt(plan.previousItems)}). " +
-                    "Можливо, це неповний звіт.",
-            )
-        }
+        val warnings = StockImportWarnings.of(p.fresh, p.plan)
         if (warnings.isEmpty()) upload(p) else _state.value = NetState.Confirm(p, warnings.joinToString("\n\n") + "\n\nЗавантажити?")
     }
 
@@ -221,10 +247,14 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
         factory = viewModelFactory { initializer { NetworkStockViewModel(
                     employee, app.networkStock, onImported = { app.networkLookup.invalidate() },
                     siteShops = { loadSiteShops(app.repository, app.prefs.allRegions.map { it.code to it.name }) },
+                    cleanup = app.legacyCleanup,
                 ) } },
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
+    val cleanup by vm.cleanupState.collectAsStateWithLifecycle()
+    val cleaning by vm.cleaning.collectAsStateWithLifecycle()
+    val cleanupError by vm.cleanupError.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.pick(ctx, it) } }
     val m = Mine.colors
@@ -291,6 +321,7 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
             vm.reset()
             picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "*/*"))
         }, height = 58.dp, enabled = !busy)
+        cleanup?.let { c -> LegacyCleanupCard(c, cleaning, cleanupError, vm::deleteLegacy) }
         Spacer(Modifier.height(24.dp))
     }
 
@@ -357,3 +388,42 @@ suspend fun loadSiteShops(repo: ua.chudo.scanner.data.ChudoRepository, regions: 
 
 /** Будь-який товар: сайт віддає список магазинів міста разом із наявністю (як при реєстрації). */
 private const val SITE_SHOPS_PRODUCT_ID = 1L
+
+/** Старий формат `stock/{штрихкод}`: видалення пачками, до 5 000 на добу. */
+@Composable
+private fun LegacyCleanupCard(s: ua.chudo.scanner.data.CleanupState, busy: Boolean, error: String?, onDelete: () -> Unit) {
+    val m = Mine.colors
+    val daily = ua.chudo.scanner.data.LegacyStockCleanup.DAILY
+    MineCard {
+        Text("Старі залишки (stock/…)", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        val left = s.remaining
+        Text(
+            when {
+                left == 0L -> "Старих залишків немає — усе видалено."
+                left == null -> "Сьогодні видалено ${NetworkStockViewModel.fmt(s.deletedToday)} з ${NetworkStockViewModel.fmt(daily)}."
+                else -> "Лишилося: ${NetworkStockViewModel.fmt(left.toInt())} · сьогодні видалено ${NetworkStockViewModel.fmt(s.deletedToday)} з ${NetworkStockViewModel.fmt(daily)}"
+            },
+            fontSize = 14.sp, lineHeight = 19.sp, color = m.textSecondary,
+        )
+        if (busy) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator({ s.deletedToday.toFloat() / daily }, Modifier.fillMaxWidth())
+        }
+        if (left != 0L && s.leftToday == 0 && !busy) {
+            Spacer(Modifier.height(6.dp))
+            Text("Ліміт на сьогодні вичерпано — продовжте завтра.", fontSize = 14.sp, color = m.warningText)
+        }
+        error?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, fontSize = 14.sp, color = m.warningText)
+        }
+        if (left != 0L) {
+            Spacer(Modifier.height(10.dp))
+            ua.chudo.scanner.ui.common.MineButton(
+                "Видалити старі залишки (stock/…)", onDelete, Modifier.fillMaxWidth(),
+                enabled = !busy && s.leftToday > 0,
+            )
+        }
+    }
+}

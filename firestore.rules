@@ -284,7 +284,8 @@ service cloud.firestore {
     match /meta/{id} {
       allow read: if isApproved() && id == 'stock';
       allow create, update: if isStockAdmin() && id == 'stock'
-        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores', 'changedAfter', 'pack', 'parts'])
+        && request.resource.data.keys().hasOnly(['updatedAt', 'updatedBy', 'items', 'stores', 'changedAfter', 'pack', 'parts', 'bytes'])
+        && (!('bytes' in request.resource.data) || (request.resource.data.bytes is int && request.resource.data.bytes >= 0 && request.resource.data.bytes <= 16000000))
         && (!('changedAfter' in request.resource.data) || request.resource.data.changedAfter is timestamp)
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
         && (!('updatedBy' in request.resource.data) || (request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 100))
@@ -292,6 +293,19 @@ service cloud.firestore {
         && (!('stores' in request.resource.data) || request.resource.data.stores is int)
         && (!('pack' in request.resource.data) || (request.resource.data.pack is string && request.resource.data.pack.size() <= 40))
         && (!('parts' in request.resource.data) || (request.resource.data.parts is int && request.resource.data.parts <= 20));
+      allow delete: if false;
+    }
+
+    // Видалення старих stock/{штрихкод}: скільки видалено сьогодні (≤ 5 000 на добу) і скільки лишилося.
+    match /meta/stockCleanup {
+      allow read: if isStockAdmin();
+      allow create, update: if isStockAdmin()
+        && request.resource.data.keys().hasOnly(['day', 'deleted', 'remaining', 'at', 'by'])
+        && request.resource.data.day is string && request.resource.data.day.size() == 10
+        && request.resource.data.deleted is int && request.resource.data.deleted >= 0 && request.resource.data.deleted <= 5000
+        && (!('remaining' in request.resource.data) || (request.resource.data.remaining is int && request.resource.data.remaining >= 0))
+        && (!('at' in request.resource.data) || request.resource.data.at is timestamp)
+        && (!('by' in request.resource.data) || (request.resource.data.by is string && request.resource.data.by.size() <= 100));
       allow delete: if false;
     }
 

@@ -33,6 +33,8 @@ class ChudoApp : Application() {
     val shopStock by lazy { ShopStockRepository(FirebaseFirestore.getInstance()) }
     /** Залишки мережі (лише stockAdmin); знімок попереднього файлу — у filesDir. */
     val networkStock by lazy { ua.chudo.scanner.data.NetworkStockRepository(FirebaseFirestore.getInstance(), filesDir) }
+    /** Видалення старих stock/{штрихкод} (лише stockAdmin). */
+    val legacyCleanup by lazy { ua.chudo.scanner.data.LegacyStockCleanup(ua.chudo.scanner.data.FirestoreLegacyStockStore(FirebaseFirestore.getInstance())) }
     /** Показ залишків мережі: склади й дата — раз на сесію. */
     val networkLookup by lazy { ua.chudo.scanner.data.NetworkStockLookup(ua.chudo.scanner.data.FirestoreStockStore(FirebaseFirestore.getInstance()), filesDir) }
     /** Интернет-заказы на самовывоз (пока демо-источник). */

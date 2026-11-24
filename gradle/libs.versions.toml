@@ -17,6 +17,7 @@ junit = "4.13.2"
 zxing = "3.5.3"
 firebaseBom = "34.4.0"
 datastore = "1.1.7"
+work = "2.10.1"
 googleServices = "4.4.4"
 # Kotlin Multiplatform (shared/ + iosApp/): версии, совместимые с Kotlin 2.2.21
 composeMultiplatform = "1.9.3"
@@ -55,6 +56,7 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
 
 # --- shared (KMP) ---

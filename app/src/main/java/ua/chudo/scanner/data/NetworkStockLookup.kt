@@ -6,7 +6,6 @@ import java.io.File
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Optional
 
 /** Кількість у магазині мережі. */
 data class StoreQty(val code: String, val name: String, val qty: Double)
@@ -83,12 +82,10 @@ data class CityStock(val city: String, val stores: List<StoreQty>, val own: Bool
 /** Товар у вибраному магазині: штрихкод, дані 1С і кількість саме там. */
 data class StoreItem(val barcode: String, val item: NetItem, val qty: Double)
 
-/**
- * Звідки [NetworkStockLookup] бере дані: Firestore у застосунку, фейк у тестах.
- * Методи `legacy*` — старий формат `stock/{штрихкод}`, коли пакета ще немає.
- */
+/** Звідки [NetworkStockLookup] бере дані: Firestore у застосунку, фейк у тестах. Старий `stock/{штрихкод}` не читаємо. */
 interface StockStore {
-    data class Meta(val updatedAt: Date?, val changedAfter: Date?, val pack: String?, val parts: Int)
+    /** [bytes] — розмір пакета; у старих записах його немає. */
+    data class Meta(val updatedAt: Date?, val pack: String?, val parts: Int, val bytes: Long? = null)
     /** Частина пакета: дані й (лише в частині 0) список змінених штрихкодів, обидва gzip. */
     class Part(val data: ByteArray?, val changed: ByteArray?)
 
@@ -96,16 +93,20 @@ interface StockStore {
     suspend fun packPart(version: String, index: Int): Part
     suspend fun stores(): Map<String, StoreDoc>
     suspend fun shopCode1C(shopId: String): String?
+}
 
-    suspend fun legacyItem(barcode: String): NetItem?
-    suspend fun legacyChanged(after: Date, limit: Long): List<Pair<String, NetItem>>
-    suspend fun legacyWhere(field: String, value: String, limit: Long): List<Pair<String, NetItem>>
-    suspend fun legacyStoreItems(code: String, limit: Long): List<Pair<String, NetItem>>
+/** Коли можна качати пакет у фоні: Wi-Fi (безлімітна мережа) або пакет менший за [LIMIT]. */
+object StockPrefetch {
+    const val LIMIT = 2_000_000L
+
+    fun size(meta: StockStore.Meta): Long = meta.bytes ?: (meta.parts.toLong() * StockPack.PART)
+
+    fun allowed(meta: StockStore.Meta, unmetered: Boolean): Boolean = unmetered || size(meta) < LIMIT
 }
 
 /**
  * Читання залишків мережі: пакет `stockPacks` качається раз на версію (~1 МБ) і зберігається у filesDir,
- * далі пошук локальний; без пакета — старий формат, ОДНЕ читання `stock/{штрихкод}`.
+ * далі пошук локальний. Пакета ще немає — залишків мережі немає (показуємо, як раніше, сайт і свій магазин).
  * Склади (`stores`) і код свого магазину — раз на сесію, `meta/stock` — раз на 30 хв.
  */
 class NetworkStockLookup(
@@ -115,9 +116,9 @@ class NetworkStockLookup(
 ) {
     private val lock = Mutex()
     private val packLock = Mutex()
-    private var packVersion: String? = null
-    private var packParts = 0
+    private var meta: StockStore.Meta? = null
     private var metaAt = 0L
+    private var metaLoaded = false
     private var loaded: Pack? = null
 
     /** Пакет залишків у пам'яті; індекси за кодом і артикулом будуються при першому запиті. */
@@ -127,7 +128,7 @@ class NetworkStockLookup(
     }
 
     /**
-     * `null` — у meta/stock немає пакета (старий формат stock/{bc}). Скачуємо раз на версію, далі — з файлу.
+     * `null` — у meta/stock немає пакета. Скачуємо раз на версію, далі — з файлу.
      * Частин немає — їх щойно замінило нове завантаження, а meta/stock у нас застарів: перечитуємо й пробуємо ще раз.
      */
     private suspend fun pack(): Pack? = try {
@@ -140,15 +141,14 @@ class NetworkStockLookup(
     private class PackGone : java.io.IOException("Пакет залишків неповний")
 
     private suspend fun packOnce(): Pack? {
-        loadMeta()
-        val v = packVersion ?: return null
-        val n = packParts
+        val m = loadMeta() ?: return null
+        val v = m.pack ?: return null
         return packLock.withLock {
             loaded?.takeIf { it.version == v } ?: withContext(Dispatchers.IO) {
                 val f = File(dir, "stockpack_$v.gz")
                 val ch = File(dir, "stockpack_$v.changed")
                 if (!f.exists() || !ch.exists()) {
-                    val docs = (0 until n).map { store.packPart(v, it) }
+                    val docs = (0 until m.parts).map { store.packPart(v, it) }
                     val parts = docs.map { it.data ?: throw PackGone() }
                     ch.writeBytes(docs.firstOrNull()?.changed ?: ByteArray(0))
                     File(dir, "stockpack_$v.tmp").apply { writeBytes(StockPack.join(parts)); renameTo(f) }
@@ -160,9 +160,21 @@ class NetworkStockLookup(
             }
         }
     }
+
+    /**
+     * Фонове завантаження пакета після входу, щоб перший скан не чекав. [unmetered] — Wi-Fi;
+     * на мобільній мережі — лише якщо пакет менший за [StockPrefetch.LIMIT].
+     * `false` — пакет великий, а мережа платна: спробуємо на Wi-Fi.
+     */
+    suspend fun prefetch(unmetered: Boolean): Boolean {
+        val m = loadMeta() ?: return true
+        if (m.pack == null) return true
+        if (!StockPrefetch.allowed(m, unmetered) && !File(dir, "stockpack_${m.pack}.gz").exists()) return false
+        pack()
+        return true
+    }
+
     private var stores: Map<String, StoreDoc>? = null
-    private var updatedAt: Date? = null
-    private var metaLoaded = false
     private val code1C = HashMap<String, String?>()
 
     /** Один запит на всі склади за сесію. */
@@ -170,42 +182,24 @@ class NetworkStockLookup(
         stores ?: store.stores().also { stores = it }
     }
 
-    private var changedAfter: Date? = null
-
     /** meta/stock — раз на [META_TTL]: так новий пакет доходить до магазинів без перезапуску. */
-    private suspend fun loadMeta() = lock.withLock {
+    private suspend fun loadMeta(): StockStore.Meta? = lock.withLock {
         if (!metaLoaded || now() - metaAt > META_TTL) {
-            runCatching { store.meta() }.getOrNull()?.let { m ->
-                updatedAt = m.updatedAt
-                changedAfter = m.changedAfter
-                packVersion = m.pack
-                packParts = m.parts
-                metaAt = now()
-            }
+            runCatching { store.meta() }.getOrNull()?.let { meta = it; metaAt = now() }
             metaLoaded = true
         }
+        meta
     }
 
-    private suspend fun updatedAt(): Date? { loadMeta(); return updatedAt }
-
     /** Коли востаннє завантажували залишки мережі (meta/stock.updatedAt); `null` — ще ні. */
-    suspend fun lastUpdated(): Date? = updatedAt()
+    suspend fun lastUpdated(): Date? = loadMeta()?.updatedAt
 
-    /**
-     * «Змінені з минулого завантаження», які є у своєму магазині. З пакетом — локально;
-     * без пакета — `stock where updatedAt > changedAfter` (до [limit] читань).
-     */
+    /** «Змінені з минулого завантаження», які є у своєму магазині. */
     suspend fun changedSinceLastImport(shopId: String, limit: Long = 500): List<NetAvailability> {
-        pack()?.let { p ->
-            val own = ownCode(shopId) ?: return emptyList()
-            return p.changed.mapNotNull { bc -> p.items[bc]?.takeIf { (it.q[own] ?: 0.0) > 0 }?.let { availability(shopId, bc, it) } }
-                .sortedBy { it.item.name }.take(limit.toInt())
-        }
-        val after = changedAfter ?: return emptyList()
+        val p = pack() ?: return emptyList()
         val own = ownCode(shopId) ?: return emptyList()
-        return store.legacyChanged(after, limit)
-            .mapNotNull { (bc, item) -> item.takeIf { (it.q[own] ?: 0.0) > 0 }?.let { availability(shopId, bc, it) } }
-            .sortedBy { it.item.name }
+        return p.changed.mapNotNull { bc -> p.items[bc]?.takeIf { (it.q[own] ?: 0.0) > 0 }?.let { availability(shopId, bc, it) } }
+            .sortedBy { it.item.name }.take(limit.toInt())
     }
 
     private suspend fun ownCode(shopId: String): String? {
@@ -220,42 +214,26 @@ class NetworkStockLookup(
     }
 
     /** Після завантаження залишків — перечитати склади й дату. */
-    suspend fun invalidate() = lock.withLock { stores = null; metaLoaded = false; metaAt = 0; code1C.clear(); synchronized(items) { items.clear() } }
+    suspend fun invalidate() = lock.withLock { stores = null; metaLoaded = false; metaAt = 0; code1C.clear() }
 
     /** `null` — даних про штрихкод немає (тоді показуємо як раніше: сайт і shops/{shopId}/stock). */
     suspend fun byBarcode(shopId: String, barcode: String): NetAvailability? {
         val bc = barcode.filter(Char::isDigit).ifEmpty { return null }
-        val item = item(bc) ?: return null
+        val item = pack()?.items?.get(bc) ?: return null
         return availability(shopId, bc, item)
-    }
-
-    /** Кеш stock/{bc} на сесію (і «немає» теж): повторний скан — без читання. */
-    private val items = object : LinkedHashMap<String, Optional<NetItem>>(64, 0.75f, true) {
-        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, Optional<NetItem>>?) = size > 300
-    }
-
-    private suspend fun item(bc: String): NetItem? {
-        pack()?.let { return it.items[bc] }
-        synchronized(items) { items[bc] }?.let { return it.orElse(null) }
-        val item = store.legacyItem(bc)
-        synchronized(items) { items[bc] = Optional.ofNullable(item) }
-        return item
     }
 
     /** Пошук за кодом 1С (BOC…) або артикулом. */
     suspend fun byCode(shopId: String, code: String): List<NetAvailability> =
-        query(shopId, "code", code.trim().uppercase())
+        query(shopId, code.trim().uppercase()) { it.byCode }
 
     suspend fun byArticle(shopId: String, article: String): List<NetAvailability> =
-        query(shopId, "article", article.trim())
+        query(shopId, article.trim()) { it.byArticle }
 
-    private suspend fun query(shopId: String, field: String, value: String): List<NetAvailability> {
+    private suspend fun query(shopId: String, value: String, index: (Pack) -> Map<String, List<String>>): List<NetAvailability> {
         if (value.isEmpty()) return emptyList()
-        pack()?.let { p ->
-            val bcs = (if (field == "code") p.byCode[value] else p.byArticle[value]).orEmpty()
-            return bcs.take(10).mapNotNull { bc -> p.items[bc]?.let { availability(shopId, bc, it) } }
-        }
-        return store.legacyWhere(field, value, 10).map { (bc, item) -> availability(shopId, bc, item) }
+        val p = pack() ?: return emptyList()
+        return index(p)[value].orEmpty().take(10).mapNotNull { bc -> p.items[bc]?.let { availability(shopId, bc, it) } }
     }
 
     /** Склади мережі й код свого магазину — для «Залишків» адміна. */
@@ -263,15 +241,13 @@ class NetworkStockLookup(
 
     /** «Що в магазині ЧО NN» (адмін): товари з кількістю > 0 саме там, найбільші залишки першими. */
     suspend fun storeItems(code: String, limit: Long = 100): List<StoreItem> {
-        pack()?.let { p ->
-            return p.items.mapNotNull { (bc, item) -> item.q[code]?.takeIf { q -> q > 0 }?.let { q -> StoreItem(bc, item, q) } }
-                .sortedByDescending { it.qty }.take(limit.toInt())
-        }
-        return store.legacyStoreItems(code, limit).map { (bc, item) -> StoreItem(bc, item, item.q[code] ?: 0.0) }
+        val p = pack() ?: return emptyList()
+        return p.items.mapNotNull { (bc, item) -> item.q[code]?.takeIf { q -> q > 0 }?.let { q -> StoreItem(bc, item, q) } }
+            .sortedByDescending { it.qty }.take(limit.toInt())
     }
 
     private suspend fun availability(shopId: String, bc: String, item: NetItem) =
-        NetworkAvailability.of(bc, item, ownCode(shopId), stores(), updatedAt())
+        NetworkAvailability.of(bc, item, ownCode(shopId), stores(), lastUpdated())
 
     private companion object { const val META_TTL = 30 * 60 * 1000L }
 }

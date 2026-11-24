@@ -194,4 +194,17 @@ class NetworkStockTest {
         assertEquals(listOf("22"), NetworkStockRepository.storesToWrite(s, known).map { it.code })
         assertEquals(emptyList<NetStore>(), NetworkStockRepository.storesToWrite(s.take(1), known))
     }
+
+    @Test fun `звіт без коду 1С і артикулу — попередження, але завантажити можна`() {
+        val noCodes = products.map { (name, bc, q) -> Triple(name.substringBefore(", BOC").substringBefore(", BUK").substringBefore(", ODR").substringBefore(", DPK"), bc, q) }
+        val s = parse(Report1C.report(stores, noCodes))
+        assertTrue(s.items.isNotEmpty())
+        assertTrue(s.missingCodes)
+        val plan = StockDiff.plan(null, s)
+        assertEquals(listOf(StockImportWarnings.NO_CODES), StockImportWarnings.of(s, plan))
+
+        val full = parse(Report1C.report(stores, products))
+        assertFalse(full.missingCodes)
+        assertTrue(StockImportWarnings.of(full, StockDiff.plan(null, full)).isEmpty())
+    }
 }

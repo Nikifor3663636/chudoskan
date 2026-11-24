@@ -96,6 +96,7 @@ import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.NetworkAvailability
 import ua.chudo.scanner.data.NetworkStockLookup
+import ua.chudo.scanner.data.StockDates
 import ua.chudo.scanner.data.StoreDoc
 import ua.chudo.scanner.data.StoreItem
 import ua.chudo.scanner.data.ParsedStock
@@ -303,6 +304,9 @@ class StockViewModel(
     val import = _import.asStateFlow()
     private val _info = MutableStateFlow<ShopStockInfo?>(null)
     val info = _info.asStateFlow()
+    /** Дата залишків мережі (meta/stock.updatedAt). */
+    private val _netAt = MutableStateFlow<java.util.Date?>(null)
+    val netAt = _netAt.asStateFlow()
 
     private var job: Job? = null
     private var last: Pair<String, String?>? = null // urlKey, barcode
@@ -314,6 +318,7 @@ class StockViewModel(
 
     private fun refreshInfo() {
         viewModelScope.launch { _info.value = runCatching { stock.info(employee.shopId) }.getOrNull() }
+        viewModelScope.launch { _netAt.value = netTry { it.lastUpdated() } }
     }
 
     fun search(raw: String) {
@@ -473,6 +478,7 @@ fun StockScreen(
     )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
+    val netAt by vm.netAt.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val changedLoading by vm.changedLoading.collectAsStateWithLifecycle()
     val batchNote by vm.batchNote.collectAsStateWithLifecycle()
@@ -499,6 +505,7 @@ fun StockScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ShopHeader(employee, onBack) }
+        netAt?.let { at -> item { Text(StockDates.label(at), Modifier.padding(horizontal = 4.dp), fontSize = 14.sp, color = Mine.colors.textSecondary) } }
         // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
         if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }
         else item { UploadCard(info) { picker.launch(FILE_TYPES) } }
