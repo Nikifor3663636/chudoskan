@@ -169,6 +169,23 @@ class DesignSnapshots {
         ua.chudo.scanner.data.HistoryItem("xs", "X-Shot бластер Purple Blaze", "36882R", null),
     )
 
+    /** Кошик покупця: акція, кілька штук, товар без ціни, ще шукаємо, більше ніж є в магазині. */
+    @Test fun cartMine() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.bg) {
+                ua.chudo.scanner.ui.cart.CartContent(listOf(
+                    ua.chudo.scanner.data.CartLine("4823077601999", "Шукаю…", loading = true),
+                    ua.chudo.scanner.data.CartLine(
+                        "4823077601234", "Конструктор LEGO Duplo Потяг із цифрами – вчимося рахувати (10954)", article = "10954",
+                        code1C = "BOC022446", priceKop = 64900, regularKop = 96900, qty = 2, inShop = 5.0,
+                    ),
+                    ua.chudo.scanner.data.CartLine("4820000000103", "М'яч гумовий 23 см, рожевий", article = "A-3", code1C = "BOC100003", priceKop = 12950, qty = 3, inShop = 1.0),
+                    ua.chudo.scanner.data.CartLine("4820000000999", "Пазл 1000 елементів", code1C = "ODR000123"),
+                ))
+            }
+        }
+    }
+
     @Test fun homeLight() = home(false)
 
     @Test fun homeDark() = home(true)

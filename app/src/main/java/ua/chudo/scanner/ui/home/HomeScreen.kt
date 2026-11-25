@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,8 +69,10 @@ fun HomeScreen(
     onLabels: () -> Unit,
     onOrders: () -> Unit,
     onStock: () -> Unit,
+    onCart: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
+    val cartLines by app.cart.lines.collectAsStateWithLifecycle()
     val prefs = app.prefs
     val region by prefs.region.collectAsStateWithLifecycle()
     val history by prefs.history.collectAsStateWithLifecycle()
@@ -89,11 +92,13 @@ fun HomeScreen(
         HomeUi(
             region = region.name, employee = employee.name, stockAt = stockAt, query = query, history = history,
             newOrders = orders.count { it.stage == OrderStage.NEW },
+            cartUnits = ua.chudo.scanner.data.Cart.units(cartLines),
+            cartTotal = ua.chudo.scanner.data.Cart.total(cartLines),
         ),
         onQuery = { query = it },
         onSubmit = { if (query.isNotBlank()) { keyboard?.hide(); onSearch(query.trim()) } },
         onRegion = { showRegions = true },
-        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock,
+        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock, onCart = onCart,
         onOpenProduct = onOpenProduct, onClearHistory = prefs::clearHistory,
     )
 
@@ -114,6 +119,9 @@ data class HomeUi(
     val query: String,
     val history: List<HistoryItem>,
     val newOrders: Int,
+    /** Кошик покупця: штук і сума в копійках (0 — порожній). */
+    val cartUnits: Int = 0,
+    val cartTotal: Long = 0,
 )
 
 /** «оновлено о 12:20» сегодня, иначе «оновлено 14.11». */
@@ -136,6 +144,7 @@ fun HomeContent(
     onLabels: () -> Unit = {},
     onOrders: () -> Unit = {},
     onStock: () -> Unit = {},
+    onCart: () -> Unit = {},
     onOpenProduct: (String) -> Unit = {},
     onClearHistory: () -> Unit = {},
 ) {
@@ -174,6 +183,12 @@ fun HomeContent(
                     accent = ui.newOrders > 0, onClick = onOrders, modifier = Modifier.weight(1f),
                 )
             }
+            // Кошик покупця: скан товарів підряд → сума.
+            MineTile(
+                Icons.Outlined.ShoppingCart, "Кошик покупця",
+                if (ui.cartUnits > 0) "${ui.cartUnits} шт · ${ua.chudo.scanner.data.Cart.money(ui.cartTotal)}" else "Скануй товари — порахую суму",
+                accent = ui.cartUnits > 0, onClick = onCart, modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+            )
         }
         if (ui.history.isEmpty()) {
             item {

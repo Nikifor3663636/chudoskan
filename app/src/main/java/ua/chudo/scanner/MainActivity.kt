@@ -92,6 +92,8 @@ private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
 private const val ORDERS_MODE = "orders"
 private const val ORDERS_CODE = "orders_code"
+/** Кошик: сканер не закривається, кожен код одразу йде в кошик. */
+private const val CART_MODE = "cart"
 
 private object Routes {
     const val HOME = "home"
@@ -104,6 +106,8 @@ private object Routes {
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
+    const val SCAN_CART = "scan?mode=$CART_MODE"
+    const val CART = "cart"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
     const val NETWORK_STOCK = "network-stock"
@@ -120,8 +124,9 @@ private object Routes {
     fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
 }
 
-// Сканер, настройки принтеров и карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще») — без нижней навигации.
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT)
+// Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
+// и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации.
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART)
 
 
 @Composable
@@ -145,6 +150,8 @@ private fun AppNav(home: Employee) {
         printing.attach(employee.shopId)
         printing.syncOnStart()
     }
+    val cart = LocalContext.current.chudoApp.cart
+    LaunchedEffect(employee.shopId) { cart.attach(employee.shopId) }
     // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS
@@ -258,13 +265,23 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onLabels = { nav.navigate(Routes.STOCK) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
                 onStock = { nav.navigate(Routes.STOCK) },
+                onCart = { nav.navigate(Routes.CART) },
             )
+        }
+        composable(Routes.CART) {
+            ua.chudo.scanner.ui.cart.CartScreen(onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.SCAN_CART) })
         }
         composable(
             Routes.SCAN,
             arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "barcode" }),
         ) { entry ->
             val arg = entry.arguments?.getString("mode").orEmpty()
+            if (arg == CART_MODE) {
+                val cart = LocalContext.current.chudoApp.cart
+                val last by cart.last.collectAsStateWithLifecycle()
+                ScannerScreen(onBarcode = cart::add, onClose = { nav.popBackStack() }, continuous = true, status = last)
+                return@composable
+            }
             // mode=stock / mode=orders — код повертаємо на попередній екран («Залишки» / «Замовлення»).
             val returnKey = when (arg) {
                 STOCK_MODE -> STOCK_CODE

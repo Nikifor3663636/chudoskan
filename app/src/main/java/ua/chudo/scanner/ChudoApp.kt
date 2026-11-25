@@ -38,6 +38,8 @@ class ChudoApp : Application() {
     /** Интернет-заказы на самовывоз (пока демо-источник). */
     val orders by lazy { ua.chudo.scanner.data.OrdersRepository() }
     val printing by lazy { ua.chudo.scanner.print.PrintService(this) }
+    /** Кошик продавця: скан товарів покупця → сума (далі — оплата через ПРРО). */
+    val cart by lazy { ua.chudo.scanner.data.CartRepository(this, repository, networkLookup) }
 }
 
 val Context.chudoApp: ChudoApp get() = applicationContext as ChudoApp

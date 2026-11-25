@@ -90,10 +90,16 @@ import com.google.mlkit.vision.common.InputImage
 import ua.chudo.scanner.ui.common.MessageState
 import java.util.concurrent.Executors
 
+/**
+ * [continuous] — сканувати підряд (кошик): камера не закривається, кожен код віддаємо в [onBarcode];
+ * [status] — що вже додано («LEGO · 2 шт»). Той самий код, поки він у кадрі, — один раз.
+ */
 @Composable
 fun ScannerScreen(
     onBarcode: (String) -> Unit,
     onClose: () -> Unit,
+    continuous: Boolean = false,
+    status: String? = null,
 ) {
     val ctx = LocalContext.current
     var granted by remember {
@@ -108,7 +114,7 @@ fun ScannerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            CameraScreen(onBarcode, onClose)
+            CameraScreen(onBarcode, onClose, continuous, status)
         } else if (askedOnce) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 MessageState(
@@ -132,6 +138,8 @@ fun ScannerScreen(
 private fun CameraScreen(
     onBarcode: (String) -> Unit,
     onClose: () -> Unit,
+    continuous: Boolean,
+    status: String?,
 ) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -160,6 +168,9 @@ private fun CameraScreen(
         val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
         // Один и тот же код в двух кадрах подряд — защита от случайного misread.
         var last: String? = null
+        // Подряд (кошик): только что добавленный код не считаем снова, пока он не пропадёт из кадра на ~0,8 с.
+        var blocked: String? = null
+        var blockedSeenAt = 0L
         val analysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
@@ -173,7 +184,17 @@ private fun CameraScreen(
                     scanner.process(image)
                         .addOnSuccessListener { codes ->
                             val value = codes.firstNotNullOfOrNull { it.rawValue?.trim()?.takeIf(String::isNotEmpty) }
-                            if (value != null && value == last && !done) {
+                            if (continuous) {
+                                val now = System.currentTimeMillis()
+                                if (blocked != null && value == blocked) blockedSeenAt = now
+                                else if (blocked != null && now - blockedSeenAt > REPEAT_GAP_MS) blocked = null
+                                if (value != null && value == last && value != blocked) {
+                                    blocked = value
+                                    blockedSeenAt = now
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    currentOnBarcode(value)
+                                }
+                            } else if (value != null && value == last && !done) {
                                 done = true
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 currentOnBarcode(value)
@@ -220,25 +241,35 @@ private fun CameraScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "Наведи рамку на штрихкод",
+                if (continuous) "Скануй товари покупця" else "Наведи рамку на штрихкод",
                 color = MineDark.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
             )
             Text(
-                "Телефон сам прочитає код і відкриє товар",
+                if (continuous) status?.let { "Додано: $it" } ?: "Кожен код додається в кошик; ще один такий самий — прибери й наведи знову"
+                else "Телефон сам прочитає код і відкриє товар",
                 Modifier.padding(top = 6.dp),
-                color = MineDark.textSecondary, fontSize = 15.sp, textAlign = TextAlign.Center,
+                color = if (continuous && status != null) MineDark.accent else MineDark.textSecondary,
+                fontSize = 15.sp, fontWeight = if (continuous && status != null) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center, maxLines = 2,
             )
-            // Код не читається (пом'ятий, без штрихкоду) — повертаємось і вводимо артикул.
+            // Код не читається (пом'ятий, без штрихкоду) — повертаємось і вводимо артикул; у кошику — «Готово».
             Surface(
                 onClick = onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(26.dp), color = MineDark.card.copy(alpha = 0.92f), contentColor = MineDark.text,
-                border = BorderStroke(1.dp, MineDark.outline),
+                shape = RoundedCornerShape(26.dp),
+                color = if (continuous) MineDark.accent else MineDark.card.copy(alpha = 0.92f),
+                contentColor = if (continuous) MineDark.onAccent else MineDark.text,
+                border = if (continuous) null else BorderStroke(1.dp, MineDark.outline),
             ) {
-                Box(contentAlignment = Alignment.Center) { Text("Ввести артикул вручну", fontSize = 16.sp, fontWeight = FontWeight.Medium) }
+                Box(contentAlignment = Alignment.Center) {
+                    Text(if (continuous) "Готово — до кошика" else "Ввести артикул вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
+                }
             }
         }
     }
 }
+
+/** Подряд: столько код должен пропасть из кадра, чтобы засчитать его снова (второй такой же товар). */
+private const val REPEAT_GAP_MS = 800L
 
 /** Круглая кнопка 48 dp поверх камеры. */
 @Composable
