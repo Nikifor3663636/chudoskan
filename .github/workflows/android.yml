@@ -66,7 +66,22 @@ jobs:
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then echo "$GOOGLE_SERVICES_JSON" > app/google-services.json; fi
 
+      # Постійний ключ підпису (секрети): кожен реліз ставиться поверх попереднього — й оновлюється із застосунку.
+      - name: Ключ підпису
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::Немає секрету ANDROID_KEYSTORE_B64 — реліз без постійного ключа не встане поверх старої версії"; exit 1
+          fi
+
       - name: Lint, тесты, APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: ./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest :app:assembleRelease --console=plain
 
       - uses: actions/upload-artifact@v7

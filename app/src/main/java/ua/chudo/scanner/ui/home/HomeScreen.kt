@@ -54,6 +54,7 @@ import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.common.StatusDot
 import ua.chudo.scanner.ui.theme.Mine
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -100,6 +101,11 @@ fun HomeScreen(
         onRegion = { showRegions = true },
         onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock, onCart = onCart,
         onOpenProduct = onOpenProduct, onClearHistory = prefs::clearHistory,
+        banner = {
+            val update by app.updater.state.collectAsStateWithLifecycle()
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            UpdateBanner(update) { scope.launch { app.updater.download() } }
+        },
     )
 
     if (showRegions) {
@@ -123,6 +129,41 @@ data class HomeUi(
     val cartUnits: Int = 0,
     val cartTotal: Long = 0,
 )
+
+/** «Доступна нова версія 3.2.0 · Оновити» → завантаження з прогресом → системне встановлення. */
+@Composable
+fun UpdateBanner(state: ua.chudo.scanner.data.UpdateState, onUpdate: () -> Unit) {
+    val m = Mine.colors
+    val (title, note, button, progress) = when (state) {
+        is ua.chudo.scanner.data.UpdateState.Available -> Quad("Доступна нова версія ${state.info.version}", "Оновлення займе хвилину", "Оновити", null)
+        is ua.chudo.scanner.data.UpdateState.Downloading -> Quad("Завантажую ${state.info.version}…", "${(state.progress * 100).toInt()}%", null, state.progress)
+        is ua.chudo.scanner.data.UpdateState.NeedPermission -> Quad(
+            "Дозволь встановлення", "У налаштуваннях увімкни «Дозволити з цього джерела» для ЧудоСкан і повернись", "Встановити", null,
+        )
+        is ua.chudo.scanner.data.UpdateState.Ready -> Quad("Версія ${state.info.version} завантажена", "Натисни «Встановити» у вікні Android", "Встановити", null)
+        is ua.chudo.scanner.data.UpdateState.Failed -> Quad("Оновлення не завантажилось", state.message, "Ще раз", null)
+        ua.chudo.scanner.data.UpdateState.None -> return
+    }
+    Surface(Modifier.padding(top = 14.dp).fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = m.accentTone, contentColor = m.text) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text(note, fontSize = 14.sp, lineHeight = 19.sp, color = m.textSecondary)
+                }
+                if (button != null) {
+                    Spacer(Modifier.width(10.dp))
+                    ua.chudo.scanner.ui.common.MineButton(button, onUpdate, tone = ua.chudo.scanner.ui.common.MineTone.ACCENT)
+                }
+            }
+            if (progress != null) androidx.compose.material3.LinearProgressIndicator(
+                progress = { progress }, modifier = Modifier.padding(top = 10.dp).fillMaxWidth(), color = m.accent, trackColor = m.line,
+            )
+        }
+    }
+}
+
+private data class Quad(val a: String, val b: String, val c: String?, val d: Float?)
 
 /** «Кошик покупця»: оранжева кнопка на всю ширину; є товари — кількість і сума. */
 @Composable
@@ -167,6 +208,8 @@ fun HomeContent(
     onCart: () -> Unit = {},
     onOpenProduct: (String) -> Unit = {},
     onClearHistory: () -> Unit = {},
+    /** Над усім — «Доступна нова версія» (оновлення застосунку). */
+    banner: @Composable () -> Unit = {},
 ) {
     val m = Mine.colors
     LazyColumn(
@@ -180,6 +223,7 @@ fun HomeContent(
                 Spacer(Modifier.weight(1f))
                 Avatar(ui.employee, size = 44.dp, onClick = onProfile)
             }
+            banner()
             Row(Modifier.padding(top = 18.dp)) { MinePlacePill(ui.region, onRegion) }
             Text("Що шукаємо?", Modifier.padding(top = 18.dp), fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Black, color = m.text)
             updatedText(ui.stockAt)?.let {

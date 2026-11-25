@@ -152,6 +152,9 @@ private fun AppNav(home: Employee) {
     }
     val cart = LocalContext.current.chudoApp.cart
     LaunchedEffect(employee.shopId) { cart.attach(employee.shopId) }
+    // Нова версія на GitHub — банер «Оновити» на головній (перевірка не частіше ніж раз на 3 години).
+    val updater = LocalContext.current.chudoApp.updater
+    LaunchedEffect(Unit) { updater.check() }
     // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS

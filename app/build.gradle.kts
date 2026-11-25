@@ -21,9 +21,22 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "3.1.0"
+        versionCode = 19
+        versionName = "3.2.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+    }
+
+    // Постійний ключ підпису: без нього кожна збірка CI підписана новим debug-ключем, і Android не ставить
+    // нову версію поверх старої (а отже, й оновлення із застосунку). Ключ — у секретах GitHub
+    // (ANDROID_KEYSTORE_B64 → файл, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS), у git його немає.
+    val releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = releaseKeystore
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "chudoskan"
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+        }
     }
 
     buildTypes {
@@ -31,8 +44,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Для личного APK подписываем debug-ключом; для Play — свой keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            // Постійний ключ, якщо є; інакше (локальна збірка) — debug.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
