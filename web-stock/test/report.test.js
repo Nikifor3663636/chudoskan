@@ -196,6 +196,16 @@ test('id магазину як AuthRepository.shopId (місто + SHA-1 адр�
   assert.equal(await shopId('stryi', '  вул.  Богдана Хмельницького, 4, ТРЦ "CТРИЙ CITY" '), 'stryi_ce6f4a877f0c');
 });
 
+test('знімок у браузері годиться лише після власного завантаження', async () => {
+  const { useSnapshot } = await import('../src/snapshot.js');
+  const snap = { mark: 1000, items: new Map() };
+  assert.equal(useSnapshot(snap, 1000), true);
+  assert.equal(useSnapshot(snap, null), true);
+  // Після нашого знімка завантажували з телефона — читаємо Firestore.
+  assert.equal(useSnapshot(snap, 2000), false);
+  assert.equal(useSnapshot(null, 1000), false);
+});
+
 const real = process.env.STOCK_XLSX;
 test('справжній звіт 1С (STOCK_XLSX)', { skip: !real || !existsSync(real) }, async () => {
   const buf = new Uint8Array(readFileSync(real));

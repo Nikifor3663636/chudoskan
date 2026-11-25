@@ -46,6 +46,8 @@ export async function loadSiteShops(onProgress = () => {}) {
       try {
         const r = await fetch(`${PROXY}/chudo-ostriv.com.ua/ua/multiwarehouse/shops/index/?id=1&region=${code}`, {
           headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          // Місто, що не відповіло за 15 с, пропускаємо — інакше вся сторінка чекала б без кінця.
+          signal: AbortSignal.timeout(15_000),
         });
         if (!r.ok) return [];
         const html = (await r.json())?.html ?? '';

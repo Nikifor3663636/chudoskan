@@ -8,10 +8,27 @@ import {
 } from 'firebase/firestore';
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
 import { loadSiteShops } from './siteShops.js';
+import { loadSnapshot, saveSnapshot, useSnapshot } from './snapshot.js';
 
 const BATCH = 450; // Firestore — до 500 операцій у пачці
 const PAGE = 2000;
 const FREE_WRITES = 20000;
+// Firestore при вичерпаному ліміті чи без зв'язку не падає, а повторює запит без кінця — тому кожен запит обмежуємо.
+const READ_TIMEOUT = 45_000;
+const WRITE_TIMEOUT = 120_000;
+
+class TimeoutError extends Error {
+  constructor(what) { super(what); this.code = 'timeout'; this.what = what; }
+}
+
+/** Проміс, який не чекає вічно: за [ms] — TimeoutError з описом кроку. */
+function timed(promise, ms, what) {
+  let t;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { t = setTimeout(() => reject(new TimeoutError(what)), ms); }),
+  ]).finally(() => clearTimeout(t));
+}
 
 const $ = (sel) => document.querySelector(sel);
 const app = $('#app');
@@ -27,13 +44,27 @@ if (!cfg?.apiKey || !cfg?.projectId) {
 const fb = initializeApp({ apiKey: cfg.apiKey, projectId: cfg.projectId, authDomain: `${cfg.projectId}.firebaseapp.com` });
 const auth = getAuth(fb);
 const db = getFirestore(fb);
+const SNAP_KEY = `stock:${cfg.projectId}`;
 
 let me = null; // {uid, name}
 
 function render(html) { app.innerHTML = html; }
 
+// Лічильник секунд на екрані прогресу — видно, що сторінка працює, а не зависла.
+let stepTitle = '';
+let stepStart = 0;
+setInterval(() => {
+  const el = document.getElementById('elapsed');
+  if (el) el.textContent = `${Math.round((Date.now() - stepStart) / 1000)} с`;
+}, 1000);
+
 function errorText(e) {
   if (e instanceof StockFileError) return e.message;
+  if (e?.code === 'timeout') {
+    return `Firestore не відповідає (${e.what}). Найчастіше — вичерпано безкоштовний добовий ліміт `
+      + '(50 000 читань / 20 000 записів); він оновлюється щодня близько 10:00 за Києвом. Або пропав інтернет. '
+      + 'Нічого не зламалось — спробуй пізніше.';
+  }
   const code = e?.code ?? '';
   if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found') || code.includes('invalid-email')) return 'Невірний номер або пароль.';
   if (code.includes('too-many-requests')) return 'Забагато спроб. Спробуй за кілька хвилин.';
@@ -72,7 +103,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) { me = null; loginView(); return; }
   render('<div class="card"><p class="muted">Перевіряю права…</p></div>');
   try {
-    const u = (await getDoc(doc(db, 'users', user.uid))).data() ?? {};
+    const u = (await timed(getDoc(doc(db, 'users', user.uid)), READ_TIMEOUT, 'перевірка прав')).data() ?? {};
     const allowed = u.approved === true && (u.stockAdmin === true || u.superAdmin === true);
     if (!allowed) {
       render(`<div class="card"><h2>Немає прав</h2><p>Завантажувати залишки мережі може лише адмін залишків. Права видаються в консолі Firebase.</p><button id="out">Вийти</button></div>`);
@@ -90,7 +121,7 @@ onAuthStateChanged(auth, async (user) => {
 // ---------- Головна: стан і вибір файлу ----------
 
 async function homeView(note = '') {
-  const meta = (await getDoc(doc(db, 'meta', 'stock')).catch(() => null))?.data();
+  const meta = (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data();
   render(`
     <div class="card">
       <div class="row between"><h2>Залишки мережі</h2><button class="link" id="out">Вийти (${esc(me.name)})</button></div>
@@ -116,10 +147,11 @@ async function homeView(note = '') {
 }
 
 function progressView(title, frac, detail = '') {
+  if (title !== stepTitle) { stepTitle = title; stepStart = Date.now(); }
   const pct = Math.round((frac ?? 0) * 100);
   render(`<div class="card"><h2>${esc(title)}</h2>
     <div class="bar"><div style="width:${frac == null ? 100 : pct}%" class="${frac == null ? 'busy' : ''}"></div></div>
-    <p class="muted">${frac == null ? '' : `${pct}%`} ${esc(detail)}</p></div>`);
+    <p class="muted">${frac == null ? '' : `${pct}%`} ${esc(detail)} · <span id="elapsed">${Math.round((Date.now() - stepStart) / 1000)} с</span></p></div>`);
 }
 
 function failView(e) {
@@ -137,7 +169,7 @@ async function readCurrentStock(onCount) {
     const q = last
       ? query(collection(db, 'stock'), orderBy(documentId()), startAfter(last), limit(PAGE))
       : query(collection(db, 'stock'), orderBy(documentId()), limit(PAGE));
-    const snap = await getDocs(q);
+    const snap = await timed(getDocs(q), READ_TIMEOUT, `читання залишків, ${fmt(out.size)} уже прочитано`);
     for (const d of snap.docs) {
       const x = d.data();
       out.set(d.id, { name: x.name ?? '', code: x.code ?? '', article: x.article ?? '', q: x.q ?? {} });
@@ -149,6 +181,25 @@ async function readCurrentStock(onCount) {
   return out;
 }
 
+/**
+ * З чим порівнювати файл: знімок у браузері, якщо після нього ніхто не завантажував (1 читання meta/stock),
+ * інакше — усе stock/ (~22 000 читань).
+ */
+async function baseline(onCount) {
+  const metaAt = (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків')).get('updatedAt')?.toMillis() ?? null;
+  const snap = await loadSnapshot(SNAP_KEY);
+  if (useSnapshot(snap, metaAt)) return snap.items;
+  return readCurrentStock(onCount);
+}
+
+/** Після запису: знімок = те, що тепер у stock/, з позначкою meta/stock.updatedAt. */
+async function rememberUpload(items) {
+  try {
+    const at = (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків')).get('updatedAt')?.toMillis();
+    if (at != null) await saveSnapshot(SNAP_KEY, at, items);
+  } catch { /* не вийшло — наступного разу просто прочитаємо Firestore */ }
+}
+
 async function start(file) {
   const startedAt = Date.now();
   try {
@@ -158,8 +209,8 @@ async function start(file) {
     const fresh = await parseReport(buf, (p) => progressView('Розбираю звіт 1С…', p, file.name));
     progressView('Порівнюю з тим, що вже завантажено…', null);
     const [old, knownSnap] = await Promise.all([
-      readCurrentStock((n) => progressView('Порівнюю з тим, що вже завантажено…', null, `прочитано ${fmt(n)} товарів`)),
-      getDocs(collection(db, 'stores')),
+      baseline((n) => progressView('Порівнюю з тим, що вже завантажено…', null, `прочитано ${fmt(n)} товарів`)),
+      timed(getDocs(collection(db, 'stores')), READ_TIMEOUT, 'список складів'),
     ]);
     const known = new Map(knownSnap.docs.map((d) => [d.id, { name: d.get('name') ?? '', city: d.get('city') ?? '', shopId: d.get('shopId') || null }]));
     const p = plan(old, fresh);
@@ -196,7 +247,7 @@ async function link(code, shopId) {
   const b = writeBatch(db);
   b.set(doc(db, 'stores', code), { shopId }, { merge: true });
   b.set(doc(db, 'shops', shopId), { code1C: code }, { merge: true });
-  await b.commit();
+  await timed(b.commit(), WRITE_TIMEOUT, 'привʼязка складу');
 }
 
 function linkView(pending, rest, shops, candidates) {
@@ -269,13 +320,15 @@ async function upload(pending) {
   try {
     progressView('Завантажую…', 0, `0 з ${fmt(total)}`);
     // Серверний час кінця попереднього завантаження — «змінені з минулого завантаження» для пакетного друку цінників.
-    const previousEnd = total > 0 ? (await getDoc(doc(db, 'meta', 'stock')).catch(() => null))?.get('updatedAt') ?? null : null;
+    const previousEnd = total > 0
+      ? (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків').catch(() => null))?.get('updatedAt') ?? null
+      : null;
 
     const sw = storesToWrite(fresh.stores, known);
     if (sw.length) {
       const b = writeBatch(db);
       for (const s of sw) b.set(doc(db, 'stores', s.code), { name: s.name.slice(0, 200), city: s.city.slice(0, 100) }, { merge: true });
-      await b.commit();
+      await timed(b.commit(), WRITE_TIMEOUT, 'запис складів');
     }
 
     const ops = [...p.changed.map((bc) => [bc, p.items.get(bc)]), ...p.removed.map((bc) => [bc, null])];
@@ -286,7 +339,7 @@ async function upload(pending) {
         const ref = doc(db, 'stock', bc);
         if (it) b.set(ref, toDoc(it)); else b.delete(ref);
       }
-      await b.commit();
+      await timed(b.commit(), WRITE_TIMEOUT, `запис товарів, ${fmt(done)} з ${fmt(total)} уже записано`);
       done = Math.min(i + BATCH, ops.length);
       progressView('Завантажую…', done / ops.length, `${fmt(done)} з ${fmt(total)}`);
     }
@@ -296,12 +349,14 @@ async function upload(pending) {
     if (total > 0) {
       const meta = { updatedAt: serverTimestamp(), updatedBy: me.name, items: p.items.size, stores: storeCount };
       if (previousEnd) meta.changedAfter = previousEnd;
-      await setDoc(doc(db, 'meta', 'stock'), meta);
-      await addDoc(collection(db, 'adminLog'), {
+      await timed(setDoc(doc(db, 'meta', 'stock'), meta), WRITE_TIMEOUT, 'підсумок завантаження');
+      await timed(addDoc(collection(db, 'adminLog'), {
         by: me.uid, at: serverTimestamp(), action: 'stockImport',
         details: `магазинів ${storeCount} · товарів ${p.items.size} · змінено ${p.changed.length} · видалено ${p.removed.length} · ${seconds} с`,
-      });
+      }), WRITE_TIMEOUT, 'журнал');
     }
+    // Наступного разу порівнюємо з цим знімком — без ~22 000 читань.
+    await rememberUpload(p.items);
     await homeView(`<p class="ok"><span class="dot ok"></span>Готово за ${seconds} с: змінено ${fmt(p.changed.length)}, видалено ${fmt(p.removed.length)}${pending.autoLinked ? `, складів привʼязано автоматично: ${pending.autoLinked}` : ''}.</p>`);
   } catch (e) { console.error(e); failView(e); }
 }
