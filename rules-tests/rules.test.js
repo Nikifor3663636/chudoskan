@@ -354,8 +354,6 @@ describe('shops', () => {
   test('застосунок і далі пише зведення, підмережі й принтери', async () => {
     const db = as('emp22');
     await assertSucceeds(setDoc(doc(as('adm22'), 'shops', '22'), { code1C: '22' }, { merge: true }));
-    await assertSucceeds(setDoc(doc(db, 'shops', '22'),
-      { region: 'Київ', address: 'вул. Тестова, 1', rows: 5, updatedAt: serverTimestamp(), updatedBy: 'Оля' }, { merge: true }));
     await assertFails(setDoc(doc(db, 'shops', '22'), { rows: 5, updatedAt: serverTimestamp(), code1C: 'інший' }, { merge: true }));
     await assertSucceeds(setDoc(doc(db, 'shops', '22'), { printerSubnets: ['192.0.2.0/24'] }, { merge: true }));
     await assertSucceeds(setDoc(doc(db, 'shops', '22', 'printers', 'g'),
@@ -364,6 +362,33 @@ describe('shops', () => {
     await assertFails(updateDoc(doc(db, 'shops', '22', 'printers', 'g'), { name: 'Каса', lastSeen: serverTimestamp() }));
     await assertSucceeds(updateDoc(doc(as('adm22'), 'shops', '22', 'printers', 'g'), { name: 'Каса', lastSeen: serverTimestamp() }));
     await assertSucceeds(deleteDoc(doc(as('sup'), 'shops', '22', 'printers', 'g')));
+  });
+});
+
+describe('залишки магазину', () => {
+  const summary = { region: 'Київ', address: 'вул. Тестова, 1', rows: 5, updatedAt: serverTimestamp(), updatedBy: 'Х' };
+  const item = { article: '1', barcode: '1', name: 'x', qty: 2 };
+
+  test('консультант і адмін магазину лише читають свій магазин', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'shops', '22', 'stock', 'bc_1'), item));
+    for (const who of ['emp22', 'adm22']) {
+      const db = as(who);
+      await assertSucceeds(getDoc(doc(db, 'shops', '22', 'stock', 'bc_1')));
+      await assertSucceeds(getDocs(collection(db, 'shops', '22', 'stock')));
+      await assertFails(setDoc(doc(db, 'shops', '22', 'stock', 'bc_2'), item));
+      await assertFails(updateDoc(doc(db, 'shops', '22', 'stock', 'bc_1'), { qty: 99 }));
+      await assertFails(deleteDoc(doc(db, 'shops', '22', 'stock', 'bc_1')));
+      await assertFails(setDoc(doc(db, 'shops', '22'), summary, { merge: true }));
+    }
+  });
+
+  test('завантажує лише stockAdmin / superAdmin', async () => {
+    for (const who of ['stocker', 'sup']) {
+      const db = as(who);
+      await assertSucceeds(setDoc(doc(db, 'shops', '22', 'stock', 'bc_1'), item));
+      await assertSucceeds(setDoc(doc(db, 'shops', '22'), summary, { merge: true }));
+      await assertSucceeds(deleteDoc(doc(db, 'shops', '22', 'stock', 'bc_1')));
+    }
   });
 });
 

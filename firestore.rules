@@ -94,12 +94,13 @@ service cloud.firestore {
       // stockAdmin бачить список магазинів, щоб прив'язати склад 1С («Який це магазин?»).
       allow read: if canSee(shopId) || isStockAdmin();
 
-      // Зведення останнього вивантаження залишків магазину; printerSubnets і code1C тут не змінюються.
-      allow create: if canSee(shopId)
+      // Зведення останнього вивантаження залишків магазину — лише stockAdmin / superAdmin
+      // (консультанти тільки читають); printerSubnets і code1C тут не змінюються.
+      allow create: if isStockAdmin()
         && request.resource.data.keys().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
         && request.resource.data.rows is int
         && request.resource.data.updatedAt == request.time;
-      allow update: if canSee(shopId)
+      allow update: if isStockAdmin()
         && changed().hasOnly(['region', 'address', 'rows', 'updatedAt', 'updatedBy'])
         && request.resource.data.rows is int
         && request.resource.data.updatedAt == request.time;
@@ -144,10 +145,12 @@ service cloud.firestore {
         allow delete: if canManage(shopId);
       }
 
-      // Старі залишки магазину (до залишків мережі). Адмін мережі — теж («Працювати як у магазині»).
+      // Старі залишки магазину (до залишків мережі): читає свій магазин і адмін мережі,
+      // завантажує й видаляє лише stockAdmin / superAdmin.
       match /stock/{item} {
-        allow read, delete: if canSee(shopId);
-        allow create, update: if canSee(shopId)
+        allow read: if canSee(shopId);
+        allow delete: if isStockAdmin();
+        allow create, update: if isStockAdmin()
           && request.resource.data.keys().hasOnly(['article', 'barcode', 'name', 'qty'])
           && request.resource.data.qty is number
           && item.size() <= 200;

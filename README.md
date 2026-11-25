@@ -185,6 +185,10 @@ sequenceDiagram
 Захист від помилок: магазин без жодного товару у файлі **не обнуляється**; товарів менше половини від
 минулого разу — застосунок **перепитає**; новий склад — питання **«Який це магазин?»** з підказкою.
 
+**З комп'ютера:** [nikifor3663636.github.io/chudoskan/stock](https://nikifor3663636.github.io/chudoskan/stock/) —
+увійти тим самим номером і паролем і перетягнути звіт .xlsx. Завантажувати можуть лише адміни залишків;
+продавці залишки тільки бачать.
+
 ## 👥 Ролі
 
 ```mermaid
@@ -239,6 +243,7 @@ flowchart TB
 | [`printer/`](printer) | 💻 «ЧудоСкан Друк»: Core, тести, WinForms, установник Inno Setup |
 | [`rules-tests/`](rules-tests) | 🔒 Тести `firestore.rules` на емуляторі |
 | [`proxy/`](proxy) | ☁️ Посередник Cloudflare Workers (сайт мережі не віддає CORS) |
+| [`web-stock/`](web-stock) | 📤 Сторінка «Залишки мережі» для ПК: звіт 1С .xlsx → Firestore (`npm test`, `npm run build`) |
 | [`docs/`](docs) | Сторінка встановлення, відео, знімки екрана |
 
 <details>

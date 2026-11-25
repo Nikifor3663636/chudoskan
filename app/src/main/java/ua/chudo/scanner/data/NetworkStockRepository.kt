@@ -27,6 +27,38 @@ data class NetworkImportResult(val stores: Int, val items: Int, val changed: Int
 class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) {
     val snapshot = StockSnapshot(File(filesDir, StockSnapshot.NAME))
 
+    /** `meta/stock.updatedAt` (мс) на момент запису знімка — щоб помітити завантаження з іншого місця (сторінка на ПК). */
+    private val snapshotMark = File(filesDir, SNAPSHOT_MARK_NAME)
+
+    /**
+     * З чим порівнювати новий файл: знімок на телефоні, якщо після нього ніхто інший не завантажував
+     * (сторінка «Залишки мережі» на ПК, інший телефон); інакше — те, що зараз у `stock/` (~24 000 читань).
+     */
+    suspend fun baseline(): Map<String, NetItem>? {
+        val snap = snapshot.read()
+        val metaAt = runCatching { db.collection(META).document(STOCK).get().await().getTimestamp("updatedAt") }
+            .getOrElse { return snap } // без мережі — як раніше
+            ?.toDate()?.time
+        val mark = runCatching { snapshotMark.readText().trim().toLong() }.getOrNull()
+        if (useSnapshot(snap != null, mark, metaAt)) return snap
+        return readAll().ifEmpty { null }
+    }
+
+    /** Усі `stock/` сторінками по [PAGE], щоб не тримати тисячі знімків Firestore одночасно. */
+    private suspend fun readAll(): Map<String, NetItem> {
+        val out = HashMap<String, NetItem>()
+        var last: com.google.firebase.firestore.DocumentSnapshot? = null
+        while (true) {
+            var q = db.collection(STOCK).orderBy(com.google.firebase.firestore.FieldPath.documentId()).limit(PAGE.toLong())
+            last?.let { q = q.startAfter(it) }
+            val page = q.get().await()
+            for (d in page.documents) out[d.id] = fromDoc(d.getString("name"), d.getString("code"), d.getString("article"), d.get("q"))
+            if (page.size() < PAGE) break
+            last = page.documents.last()
+        }
+        return out
+    }
+
     suspend fun info(): NetworkStockInfo? {
         val d = db.collection(META).document(STOCK).get().await()
         if (!d.exists()) return null
@@ -105,6 +137,10 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
             ).await()
         }
         snapshot.write(plan.items)
+        // Позначка «знімок = ось це завантаження»; не вийшло — наступного разу просто прочитаємо Firestore.
+        runCatching {
+            db.collection(META).document(STOCK).get().await().getTimestamp("updatedAt")?.toDate()?.time
+        }.getOrNull()?.let { at -> runCatching { snapshotMark.writeText(at.toString()) } } ?: snapshotMark.delete()
         return NetworkImportResult(storeCount, plan.items.size, plan.changed.size, plan.removed.size, plan.keptStores, seconds)
     }
 
@@ -118,6 +154,25 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
 
         /** Firestore — до 500 операцій у пачці; лишаємо запас. */
         const val BATCH = 450
+        private const val PAGE = 2000
+        const val SNAPSHOT_MARK_NAME = "last-stock.mark"
+
+        /**
+         * Знімок годиться, якщо він є і записаний саме після останнього завантаження ([mark] == [metaAt]).
+         * Завантажень ще не було ([metaAt] == null) — теж знімок (або перше завантаження).
+         */
+        fun useSnapshot(hasSnapshot: Boolean, mark: Long?, metaAt: Long?): Boolean =
+            hasSnapshot && (metaAt == null || mark == metaAt)
+
+        /** Документ `stock/{штрихкод}` → [NetItem]; кількості з Firestore бувають Long — переводимо в Double. */
+        fun fromDoc(name: String?, code: String?, article: String?, q: Any?): NetItem = NetItem(
+            name.orEmpty(), code.orEmpty(), article.orEmpty(),
+            (q as? Map<*, *>)?.entries?.mapNotNull { (k, v) ->
+                val key = k as? String ?: return@mapNotNull null
+                val n = (v as? Number)?.toDouble() ?: return@mapNotNull null
+                key to n
+            }?.toMap() ?: emptyMap(),
+        )
 
         fun toDoc(item: NetItem): Map<String, Any> = mapOf(
             "q" to item.q.mapValues { (_, v) -> if (v == Math.floor(v) && v < 1e15) v.toLong() else v },

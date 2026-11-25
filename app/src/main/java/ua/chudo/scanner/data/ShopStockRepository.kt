@@ -20,7 +20,7 @@ data class ImportResult(val total: Int, val changed: Int, val removed: Int)
 
 /**
  * Остатки одного магазина: `shops/{shopId}/stock/{key}`, где key — `bc_<штрихкод>` (или артикул без штрихкода).
- * Читать и писать может только подтверждённый сотрудник этого магазина — см. firestore.rules.
+ * Читает подтверждённый сотрудник этого магазина; загружает только stockAdmin / superAdmin — см. firestore.rules.
  */
 class ShopStockRepository(private val db: FirebaseFirestore) {
 

@@ -119,7 +119,8 @@ class NetworkStockViewModel(
                 val fresh = NetworkStockParser.parse(
                     { resolver.openInputStream(uri) ?: throw StockFileException("Не вдалося відкрити файл.") }, size,
                 ) { p -> _state.value = NetState.Parsing(p) }
-                fresh to StockDiff.plan(repo.snapshot.read(), fresh)
+                // Знімок на телефоні — або Firestore, якщо після знімка завантажували з ПК.
+                fresh to StockDiff.plan(repo.baseline(), fresh)
             }
             val known = repo.stores()
             val pending = NetPending(fresh, plan, known, startedAt)

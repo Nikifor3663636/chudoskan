@@ -499,8 +499,9 @@ fun StockScreen(
     ) {
         item { ShopHeader(employee, onBack) }
         // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
+        // Решта (консультанти, адмін магазину) лише бачать, коли оновлено, — завантажує тільки stockAdmin (див. firestore.rules).
         if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }
-        else item { UploadCard(info) { picker.launch(FILE_TYPES) } }
+        else item { UploadCard(info, onUpload = if (employee.stockAdmin) ({ picker.launch(FILE_TYPES) }) else null) }
         item {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MineSearchField(
@@ -607,9 +608,9 @@ private fun ShopHeader(e: Employee, onBack: () -> Unit) {
     }
 }
 
-/** Вивантаження з 1С: коли оновлено, скільки позицій і кнопка завантажити новий файл. */
+/** Вивантаження з 1С: коли оновлено, скільки позицій; кнопка завантаження — лише якщо [onUpload] не null. */
 @Composable
-private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
+private fun UploadCard(info: ShopStockInfo?, onUpload: (() -> Unit)?) {
     val m = Mine.colors
     Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
@@ -628,11 +629,18 @@ private fun UploadCard(info: ShopStockInfo?, onUpload: () -> Unit) {
                     Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.textSecondary,
                 )
             }
-            MineButton("Завантажити файл з 1С", onUpload, Modifier.padding(top = 14.dp).fillMaxWidth(), tone = if (info == null) MineTone.ACCENT else MineTone.OUTLINE)
-            Text(
-                "Excel (.xlsx) або CSV з колонками «Артикул» чи «Штрихкод» і «Кількість» чи «Залишок».",
-                Modifier.padding(top = 8.dp), fontSize = 13.sp, lineHeight = 18.sp, color = m.textSecondary,
-            )
+            if (onUpload != null) {
+                MineButton("Завантажити файл з 1С", onUpload, Modifier.padding(top = 14.dp).fillMaxWidth(), tone = if (info == null) MineTone.ACCENT else MineTone.OUTLINE)
+                Text(
+                    "Excel (.xlsx) або CSV з колонками «Артикул» чи «Штрихкод» і «Кількість» чи «Залишок».",
+                    Modifier.padding(top = 8.dp), fontSize = 13.sp, lineHeight = 18.sp, color = m.textSecondary,
+                )
+            } else if (info == null) {
+                Text(
+                    "Залишки завантажує адміністратор мережі.",
+                    Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary,
+                )
+            }
         }
     }
 }
@@ -682,7 +690,7 @@ private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
                     Text(" шт", Modifier.padding(bottom = 8.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
                 st.stockError != null -> Text(st.stockError, Modifier.padding(top = 6.dp), fontSize = 15.sp, color = m.warningText)
-                !uploaded -> Text("Завантаж файл з 1С, щоб бачити кількість.", Modifier.padding(top = 6.dp), fontSize = 16.sp)
+                !uploaded -> Text("Залишки ще не завантажені адміністратором.", Modifier.padding(top = 6.dp), fontSize = 16.sp)
                 else -> Text(
                     "Цього товару немає у вивантаженні (0 шт або інший артикул).",
                     Modifier.padding(top = 6.dp), fontSize = 16.sp, color = m.textSecondary,

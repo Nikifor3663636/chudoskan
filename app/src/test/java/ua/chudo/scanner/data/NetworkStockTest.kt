@@ -188,6 +188,26 @@ class NetworkStockTest {
         assertNull(StockSnapshot(f).read())
     }
 
+    @Test fun snapshotOnlyIfNobodyUploadedSince() {
+        // Завантажень ще не було — знімок (або перше завантаження).
+        assertTrue(NetworkStockRepository.useSnapshot(hasSnapshot = true, mark = null, metaAt = null))
+        // Останнє завантаження — з цього телефона.
+        assertTrue(NetworkStockRepository.useSnapshot(hasSnapshot = true, mark = 1_000L, metaAt = 1_000L))
+        // Після знімка завантажили зі сторінки на ПК — порівнюємо з Firestore.
+        assertFalse(NetworkStockRepository.useSnapshot(hasSnapshot = true, mark = 1_000L, metaAt = 2_000L))
+        // Стара версія застосунку не писала позначку — один раз читаємо Firestore.
+        assertFalse(NetworkStockRepository.useSnapshot(hasSnapshot = true, mark = null, metaAt = 2_000L))
+        assertFalse(NetworkStockRepository.useSnapshot(hasSnapshot = false, mark = 2_000L, metaAt = 2_000L))
+    }
+
+    @Test fun firestoreDocToItem() {
+        val it = NetworkStockRepository.fromDoc("LEGO", "BOC1", null, mapOf("22" to 3L, "09" to 1.5, "x" to "багато"))
+        assertEquals(NetItem("LEGO", "BOC1", "", mapOf("22" to 3.0, "09" to 1.5)), it)
+        // Те, що щойно записали з файлу, після читання з Firestore — те саме: повтор нічого не пише.
+        val fresh = NetItem("LEGO", "BOC1", "", mapOf("22" to 3.0, "09" to 1.5))
+        assertEquals(0, StockDiff.plan(mapOf("1" to it), NetworkStock(emptyList(), mapOf("1" to fresh), 0)).writes)
+    }
+
     @Test fun storesWrittenOnlyWhenNewOrChanged() {
         val s = listOf(NetStore("09", "ЧО 09 Біла Церква", "Біла Церква"), NetStore("22", "ЧО 22 Київ", "Київ"))
         val known = mapOf("09" to StoreDoc("ЧО 09 Біла Церква", "Біла Церква", "kyiv_1"), "22" to StoreDoc("ЧО 22 Київ (старий)", "Київ", null))

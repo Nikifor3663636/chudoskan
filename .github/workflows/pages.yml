@@ -50,12 +50,32 @@ jobs:
       - name: Web app (Kotlin/Wasm + core.wasm)
         run: ./gradlew :shared:wasmJsBrowserDistribution --console=plain
 
+      # Сторінка «Залишки мережі» для ПК (/stock/): звіт 1С .xlsx → Firestore, лише для stockAdmin.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Stock upload page (тести розбору звіту + збірка)
+        working-directory: web-stock
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: Site
         run: |
           mkdir -p site
           cp -r docs/. site/
           cp -r shared/build/dist/wasmJs/productionExecutable site/app
           rm -f site/app/*.map
+          mkdir -p site/stock
+          cp web-stock/index.html web-stock/dist/app.js site/stock/
+          # Публічний ключ Web API і id проєкту (доступ до даних вирішують firestore.rules).
+          if [ -f app/google-services.json ]; then
+            python3 -c 'import json; g=json.load(open("app/google-services.json")); print("window.CHUDO_FIREBASE=" + json.dumps({"apiKey": g["client"][0]["api_key"][0]["current_key"], "projectId": g["project_info"]["project_id"]}) + ";")' > site/stock/config.js
+          else
+            echo "window.CHUDO_FIREBASE=null;" > site/stock/config.js
+          fi
 
       - uses: actions/upload-pages-artifact@v5
         with:

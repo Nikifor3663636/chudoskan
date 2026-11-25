@@ -20,6 +20,12 @@ proxy/.wrangler/
 # Тести правил Firestore.
 rules-tests/node_modules/
 rules-tests/*.log
+firebase-debug.log
+
+# Сторінка завантаження залишків: збірка й ключ проєкту створюються в CI (pages.yml).
+web-stock/node_modules/
+web-stock/dist/
+web-stock/config.js
 
 # «ЧудоСкан Друк» (.NET).
 printer/**/bin/
