@@ -124,6 +124,26 @@ data class HomeUi(
     val cartTotal: Long = 0,
 )
 
+/** «Кошик покупця»: оранжева кнопка на всю ширину; є товари — кількість і сума. */
+@Composable
+private fun CartButton(units: Int, totalKop: Long, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val m = Mine.colors
+    Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = m.accent, contentColor = m.onAccent) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Icon(Icons.Outlined.ShoppingCart, null, Modifier.size(30.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Кошик покупця", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (units > 0) "$units шт у кошику" else "Скануй товари — порахую суму",
+                    fontSize = 15.sp, color = m.onAccent.copy(alpha = 0.85f),
+                )
+            }
+            if (units > 0) Text(ua.chudo.scanner.data.Cart.money(totalKop), fontSize = 20.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
 /** «оновлено о 12:20» сегодня, иначе «оновлено 14.11». */
 fun updatedText(at: Date?): String? {
     at ?: return null
@@ -170,6 +190,8 @@ fun HomeContent(
                 }
             }
             MineSearchField(ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit, Modifier.padding(top = 18.dp))
+            // Кошик покупця (термінал продавця) — головна дія: одразу під пошуком, великою кнопкою.
+            CartButton(ui.cartUnits, ui.cartTotal, onCart, Modifier.padding(top = 12.dp))
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 // Друк — у нижній панелі; тут — залишки магазину з 1С.
                 MineTile(
@@ -183,12 +205,6 @@ fun HomeContent(
                     accent = ui.newOrders > 0, onClick = onOrders, modifier = Modifier.weight(1f),
                 )
             }
-            // Кошик покупця: скан товарів підряд → сума.
-            MineTile(
-                Icons.Outlined.ShoppingCart, "Кошик покупця",
-                if (ui.cartUnits > 0) "${ui.cartUnits} шт · ${ua.chudo.scanner.data.Cart.money(ui.cartTotal)}" else "Скануй товари — порахую суму",
-                accent = ui.cartUnits > 0, onClick = onCart, modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
-            )
         }
         if (ui.history.isEmpty()) {
             item {
