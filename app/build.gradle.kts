@@ -33,9 +33,11 @@ android {
     signingConfigs {
         if (releaseKeystore != null) create("release") {
             storeFile = releaseKeystore
-            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "chudoskan"
-            keyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            // trim(): секрети, записані з Windows, бувають із \r\n у кінці.
+            val pw = System.getenv("ANDROID_KEYSTORE_PASSWORD")?.trim()
+            storePassword = pw
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")?.trim()?.ifEmpty { null } ?: "chudoskan"
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")?.trim()?.ifEmpty { null } ?: pw
         }
     }
 

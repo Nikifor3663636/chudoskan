@@ -72,7 +72,8 @@ jobs:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
           if [ -n "$ANDROID_KEYSTORE_B64" ]; then
-            echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            # Секрет, записаний із Windows, може мати \r\n у кінці — прибираємо пробіли й переноси.
+            printf '%s' "$ANDROID_KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "::error::Немає секрету ANDROID_KEYSTORE_B64 — реліз без постійного ключа не встане поверх старої версії"; exit 1
