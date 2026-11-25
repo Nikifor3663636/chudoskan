@@ -21,8 +21,8 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "3.2.0"
+        versionCode = 20
+        versionName = "3.2.1"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
