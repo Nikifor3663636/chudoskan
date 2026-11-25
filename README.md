@@ -23,6 +23,8 @@
   <a href="https://nikifor3663636.github.io/chudoskan/"><img src="https://img.shields.io/badge/%E2%AC%87%20%D0%92%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%B8%D1%82%D0%B8-FF7500?style=for-the-badge" alt="Встановити"></a>
   &nbsp;
   <a href="ARCHITECTURE.md"><img src="https://img.shields.io/badge/%D0%90%D1%80%D1%85%D1%96%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%B0-2B2B2B?style=for-the-badge" alt="Архітектура"></a>
+  &nbsp;
+  <a href="https://nikifor3663636.github.io/chudoskan/prezentaciya/"><img src="https://img.shields.io/badge/%D0%9F%D1%80%D0%B5%D0%B7%D0%B5%D0%BD%D1%82%D0%B0%D1%86%D1%96%D1%8F-FF7500?style=for-the-badge" alt="Презентація"></a>
 </p>
 
 <p align="center">
@@ -53,6 +55,9 @@
 </td>
 </tr>
 </table>
+
+> **Презентація для керівництва й магазинів:** [nikifor3663636.github.io/chudoskan/prezentaciya](https://nikifor3663636.github.io/chudoskan/prezentaciya/)
+> (13 слайдів: що вміє, скріни, чому вигідно й скільки коштує) · [PDF](docs/prezentaciya/ChudoSkan-prezentaciya.pdf)
 
 **Зміст** · [Як це працює](#-як-це-працює) · [Встановлення](#-встановлення) · [Можливості](#-можливості) ·
 [Друк](#-друк) · [Залишки мережі](#-залишки-мережі) · [Ролі](#-ролі) · [Для розробника](#-для-розробника) ·

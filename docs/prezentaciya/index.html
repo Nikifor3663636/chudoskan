@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ЧудоСкан — презентація</title>
+<meta name="description" content="ЧудоСкан — помічник продавця «Чудо Острів»: скан, залишки з 1С, цінники, кошик покупця. Що вміє, чому вигідно і скільки коштує.">
+<link rel="icon" href="../apple-touch-icon.png">
+<meta name="theme-color" content="#FF7500">
+<style>
+/* Презентація: кожен слайд — на весь екран; стрілки / пробіл / колесо; друк — слайд на сторінку (A4 альбомна). */
+:root{
+  --brand:#FF7500;--brand-2:#FF9A3D;--ink:#17181B;--ink-2:#22242A;--line:#33363D;
+  --text:#F3F3F4;--muted:#A6A9B0;--ok:#3DD68C;--warn:#F2C766;--paper:#FFF6EC;
+}
+*{box-sizing:border-box}
+html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+body{margin:0;background:var(--ink);color:var(--text);font:18px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+section{min-height:100vh;scroll-snap-align:start;display:flex;align-items:center;padding:56px 7vw;position:relative;overflow:hidden}
+section:nth-child(even){background:var(--ink-2)}
+.wrap{width:100%;max-width:1180px;margin:0 auto}
+.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:56px;align-items:center}
+.grid.rev{grid-template-columns:.85fr 1.15fr}
+h1{font-size:clamp(44px,6vw,84px);line-height:1;margin:0 0 18px;letter-spacing:-.02em}
+h2{font-size:clamp(32px,3.6vw,50px);line-height:1.08;margin:0 0 18px;letter-spacing:-.01em}
+h3{font-size:22px;margin:0 0 6px}
+p{margin:0 0 14px}
+.lead{font-size:clamp(20px,1.8vw,26px);color:var(--muted);max-width:760px}
+.kicker{display:inline-block;font-weight:700;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--brand);margin-bottom:14px}
+.accent{color:var(--brand)}
+ul.points{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:14px}
+ul.points li{padding-left:34px;position:relative}
+ul.points li::before{content:"";position:absolute;left:0;top:.35em;width:20px;height:20px;border-radius:6px;background:var(--brand)}
+ul.points.bad li::before{background:#5A5D66}
+ul.points b{color:var(--text)}
+ul.points span{color:var(--muted)}
+.phone{justify-self:center;width:min(330px,80%);border-radius:36px;padding:10px;background:#0B0B0D;box-shadow:0 30px 80px rgba(0,0,0,.45),0 0 0 2px #2C2E34}
+.phone img{display:block;width:100%;border-radius:28px}
+.phones{display:flex;gap:22px;justify-content:center}
+.phones .phone{width:min(260px,45%)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:34px;max-width:760px}
+.stat{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:18px}
+.stat b{display:block;font-size:34px;line-height:1.1;color:var(--brand)}
+.stat span{color:var(--muted);font-size:16px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:28px}
+.card{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:20px;padding:22px}
+.card p{color:var(--muted);margin:0;font-size:16px}
+.card .ic{font-size:30px;margin-bottom:10px}
+.flow{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:28px}
+.flow div{background:var(--brand);color:#1A0D00;font-weight:800;border-radius:16px;padding:14px 18px;font-size:19px}
+.flow i{color:var(--muted);font-style:normal;font-size:24px}
+table{width:100%;border-collapse:collapse;margin-top:22px;font-size:17px}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.06em}
+td.zero{color:var(--ok);font-weight:800;white-space:nowrap}
+td small{color:var(--muted);display:block}
+.note{color:var(--muted);font-size:15px;margin-top:14px}
+.tag{display:block;max-width:100%;border-radius:6px;box-shadow:0 20px 60px rgba(0,0,0,.4);background:#fff}
+.web{background:#FAF8F6;color:#2B2B2B;border-radius:20px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.45);font-size:15px}
+.web .drop{border:2px dashed #FF7500;background:#FFF3E8;border-radius:16px;padding:24px;text-align:center;margin-top:12px}
+.web .row{display:flex;gap:8px;margin-top:12px}
+.web .s{flex:1;background:#fff;border-radius:12px;padding:10px;border:1px solid #E7E2DD}
+.web .s b{display:block;font-size:20px}
+.web .btn{background:#FF7500;color:#fff;font-weight:700;border-radius:12px;padding:10px 14px;display:inline-block;margin-top:12px}
+.road{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:26px}
+.road .card b{color:var(--brand)}
+.done{color:var(--ok);font-weight:700}
+.qr{background:#fff;border-radius:20px;padding:16px;width:220px}
+.qr img{display:block;width:100%}
+.big-link{font-size:clamp(22px,2.4vw,32px);font-weight:800;color:var(--brand);text-decoration:none;word-break:break-all}
+.counter{position:fixed;right:18px;bottom:14px;color:var(--muted);font-size:14px;background:rgba(0,0,0,.35);padding:6px 10px;border-radius:10px;z-index:5}
+.hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);color:var(--muted);font-size:14px}
+.logo{height:58px;margin-bottom:26px}
+@media (max-width:900px){
+  section{padding:48px 22px}
+  .grid,.grid.rev{grid-template-columns:1fr;gap:34px}
+  .cards,.stats,.road{grid-template-columns:1fr}
+  .phone{width:min(300px,86%)}
+}
+@media print{
+  @page{size:A4 landscape;margin:0}
+  html{scroll-snap-type:none}
+  body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  section{min-height:auto;height:210mm;page-break-after:always;break-after:page;padding:14mm 16mm}
+  .counter,.hint{display:none}
+  .phone{width:62mm}.phones .phone{width:52mm}
+  h1{font-size:54px}h2{font-size:36px}.lead{font-size:19px}body{font-size:15px}
+}
+</style>
+</head>
+<body>
+
+<!-- 1. Титул -->
+<section id="s1">
+  <div class="wrap grid">
+    <div>
+      <img class="logo" src="../logo.svg" alt="Чудо Острів">
+      <span class="kicker">Застосунок для магазинів мережі</span>
+      <h1>Чудо<span class="accent">Скан</span></h1>
+      <p class="lead">Помічник продавця в кишені: навів камеру на коробку — і за секунду бачиш ціну, скільки товару у своєму магазині й у магазинах міста. Цінник — однією кнопкою. Сума покупки — без калькулятора.</p>
+      <div class="stats">
+        <div class="stat"><b>46</b><span>магазинів у мережі</span></div>
+        <div class="stat"><b>~22 000</b><span>товарів із залишками з 1С</span></div>
+        <div class="stat"><b>0 ₴</b><span>на місяць за сервери</span></div>
+      </div>
+    </div>
+    <div class="phone"><img src="img/home.png" alt="Головний екран ЧудоСкан"></div>
+  </div>
+  <div class="hint">↓ гортай або натисни → </div>
+</section>
+
+<!-- 2. Проблема -->
+<section id="s2">
+  <div class="wrap">
+    <span class="kicker">Як було</span>
+    <h2>Продавець витрачає час не на покупця</h2>
+    <p class="lead">Щоб відповісти на просте «скільки коштує й чи є?», продавцю треба відійти до каси, шукати в 1С або дзвонити в інші магазини.</p>
+    <ul class="points bad">
+      <li><b>Ціна й наявність — лише на касі.</b> <span>Покупець чекає, поки продавець ходить туди-назад.</span></li>
+      <li><b>«Немає» — і покупець іде.</b> <span>Хоча товар лежить у сусідньому ТЦ того ж міста — просто ніхто про це не знає.</span></li>
+      <li><b>Цінники — вручну.</b> <span>Переписати назву, код, ціну зі знижкою — довго, а помилка в ціннику коштує грошей і довіри.</span></li>
+      <li><b>Суму великої покупки рахують на калькуляторі.</b> <span>Покупець питає «скільки разом?» ще до каси.</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 3. Рішення -->
+<section id="s3">
+  <div class="wrap">
+    <span class="kicker">Що змінилось</span>
+    <h2>Усе — з телефона продавця, за секунди</h2>
+    <p class="lead">Один застосунок замість походів до каси й дзвінків. Звичайний Android-телефон, без спеціальних терміналів.</p>
+    <div class="flow">
+      <div>📷 Скан штрихкоду</div><i>→</i><div>💰 Ціна як на сайті</div><i>→</i><div>📦 Залишок із 1С</div><i>→</i><div>🏷 Цінник</div><i>→</i><div>🛒 Сума покупки</div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="ic">⚡</div><h3>Швидко</h3><p>Камера сама читає код — без набору цифр. Пошук і за артикулом, кодом 1С чи назвою.</p></div>
+      <div class="card"><div class="ic">✅</div><h3>Точно</h3><p>Ціна й назва — з сайту мережі, штрихкод, код і кількість — з 1С. Одне джерело правди.</p></div>
+      <div class="card"><div class="ic">🙂</div><h3>Без навчання</h3><p>Картка товару — як на сайті. Новий продавець розбирається за п'ять хвилин.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Скан і картка -->
+<section id="s4">
+  <div class="wrap grid">
+    <div>
+      <span class="kicker">Скан</span>
+      <h2>Картка товару — як на сайті</h2>
+      <ul class="points">
+        <li><b>Ціна, акція, знижка у відсотках.</b> <span>Стара ціна закреслена — продавець одразу бачить вигоду для покупця.</span></li>
+        <li><b>Фото, опис, категорії.</b> <span>Можна показати покупцю з екрана.</span></li>
+        <li><b>«Друкувати цінник»</b> <span>просто з картки — без переписування.</span></li>
+        <li><b>Не знайшли за штрихкодом?</b> <span>Шукаємо за артикулом, кодом 1С або назвою; знайдене запам'ятовуємо.</span></li>
+      </ul>
+    </div>
+    <div class="phone"><img src="img/product.png" alt="Картка товару"></div>
+  </div>
+</section>
+
+<!-- 5. Залишки -->
+<section id="s5">
+  <div class="wrap grid rev">
+    <div class="phone"><img src="img/stock.png" alt="Залишки: свій магазин і магазини міста"></div>
+    <div>
+      <span class="kicker">Залишки з 1С</span>
+      <h2>«Є 5 штук у ТЦ Рів'єра» — і продаж не втрачено</h2>
+      <ul class="points">
+        <li><b>У вашому магазині — точне число з 1С.</b> <span>Не «є / немає», а скільки саме.</span></li>
+        <li><b>Магазини міста з кількостями.</b> <span>Покупця не відпускаємо — направляємо в сусідній магазин мережі.</span></li>
+        <li><b>Оновлення раз на день одним файлом.</b> <span>Адмін кидає звіт 1С — за хвилину залишки бачать усі 46 магазинів.</span></li>
+        <li><b>Дата оновлення видно завжди.</b> <span>Продавець знає, наскільки свіжі дані.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Цінники -->
+<section id="s6">
+  <div class="wrap grid">
+    <div>
+      <span class="kicker">Цінники</span>
+      <h2>Цінник — однією кнопкою, як у 1С</h2>
+      <ul class="points">
+        <li><b>Brother по Wi-Fi</b> <span>— аркуш A4: 20 цінників 68×38 альбомно, крупногабарит 140×100 і 148×105.</span></li>
+        <li><b>Godex 40×24 через ПК магазину</b> <span>— програма «ЧудоСкан Друк» сама бере етикетки з черги.</span></li>
+        <li><b>Акційний цінник</b> <span>— стара ціна закреслена, на жовтому папері.</span></li>
+        <li><b>Пакетом:</b> <span>«змінені з минулого завантаження» — один документ на всі нові ціни.</span></li>
+        <li><b>Захист від помилок:</b> <span>немає ціни на сайті — цінник не друкується; принтер не відповідає — застосунок питає, а не друкує мовчки на іншому.</span></li>
+      </ul>
+    </div>
+    <div style="display:grid;gap:22px;justify-items:center">
+      <img class="tag" src="img/tag-promo.png" alt="Акційний цінник 68×38" style="width:min(300px,100%)">
+      <div class="phone" style="width:min(250px,70%)"><img src="img/print.png" alt="Вікно друку цінника"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. Кошик -->
+<section id="s7">
+  <div class="wrap grid">
+    <div>
+      <span class="kicker">Новинка · версія 3.2</span>
+      <h2>Кошик покупця: сума ще до каси</h2>
+      <ul class="points">
+        <li><b>Скан підряд</b> <span>— камера не закривається, товари додаються один за одним.</span></li>
+        <li><b>Кількість, ціни з сайту, знижки</b> <span>— і сума «Разом» до копійки.</span></li>
+        <li><b>Підказки:</b> <span>«Немає ціни на сайті», «За 1С у магазині лише 1 шт».</span></li>
+        <li><b>«Показати касиру»</b> <span>— штрихкоди по одному на весь екран: касир сканує, не шукаючи товари.</span></li>
+        <li><b>Далі — оплата з телефона</b> <span>з фіскальним чеком через ПРРО: суми вже рахуються в копійках, як потрібно для чека.</span></li>
+      </ul>
+    </div>
+    <div class="phone"><img src="img/cart.png" alt="Кошик покупця"></div>
+  </div>
+</section>
+
+<!-- 8. Адміну -->
+<section id="s8">
+  <div class="wrap grid rev">
+    <div class="web" aria-label="Сторінка «Залишки мережі» на ПК">
+      <b style="font-size:20px">Залишки мережі</b>
+      <div style="color:#6B6B6B">Оновлено сьогодні, 09:30 · 21 816 товарів · 46 магазинів</div>
+      <div class="drop"><b>Перетягни сюди звіт 1С (.xlsx)</b><br><span style="color:#6B6B6B">або натисни, щоб вибрати файл</span></div>
+      <div class="row"><div class="s"><b>46</b>магазинів</div><div class="s"><b>21 816</b>товарів</div><div class="s"><b>1 204</b>змінено</div><div class="s"><b>37</b>видалено</div></div>
+      <span class="btn">Завантажити</span>
+    </div>
+    <div>
+      <span class="kicker">Адміністратору</span>
+      <h2>Керування мережею — без програміста</h2>
+      <ul class="points">
+        <li><b>Залишки з ПК:</b> <span>перетягнути звіт 1С на сторінку — і готово. Пишуться лише зміни.</span></li>
+        <li><b>Захист від помилок у файлі:</b> <span>магазин без товарів не обнуляється; товарів менше половини — перепитаємо; новий склад — «Який це магазин?» з підказкою.</span></li>
+        <li><b>Співробітники й ролі:</b> <span>реєстрація за телефоном, підтвердження адміном, журнал дій.</span></li>
+        <li><b>Оновлення застосунку саме:</b> <span>нова версія — кнопка «Оновити» на головному екрані.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 9. Безпека -->
+<section id="s9">
+  <div class="wrap">
+    <span class="kicker">Безпека</span>
+    <h2>Доступ вирішує сервер, а не телефон</h2>
+    <div class="cards">
+      <div class="card"><div class="ic">👤</div><h3>Лише свої</h3><p>Вхід за номером і паролем; працювати можна лише після підтвердження адміном магазину.</p></div>
+      <div class="card"><div class="ic">🔒</div><h3>Продавці лише бачать</h3><p>Залишки завантажує тільки адмін залишків. Це перевіряють правила бази даних — обійти з телефона неможливо.</p></div>
+      <div class="card"><div class="ic">🧾</div><h3>Усе записано</h3><p>Дії адмінів — у журналі. Жодних паролів і ключів у застосунку чи на комп'ютерах магазинів.</p></div>
+    </div>
+    <p class="note">Кожне правило доступу перевіряється автоматичними тестами перед кожною зміною.</p>
+  </div>
+</section>
+
+<!-- 10. Чому вигідно -->
+<section id="s10">
+  <div class="wrap">
+    <span class="kicker">Чому це вигідно</span>
+    <h2>Більше продажів, менше втраченого часу</h2>
+    <div class="cards">
+      <div class="card"><div class="ic">🛍</div><h3>Не втрачаємо покупця</h3><p>«Немає в нас — є в сусідньому ТЦ, 5 шт» замість «немає». Продаж лишається в мережі.</p></div>
+      <div class="card"><div class="ic">⏱</div><h3>Швидше обслуговування</h3><p>Відповідь на «скільки коштує й чи є?» — за секунди, біля полиці, без походу до каси.</p></div>
+      <div class="card"><div class="ic">🏷</div><h3>Менше помилок у цінниках</h3><p>Дані беруться з 1С і сайту автоматично — нічого не переписується вручну.</p></div>
+      <div class="card"><div class="ic">📞</div><h3>Менше дзвінків</h3><p>Магазини не телефонують один одному, щоб дізнатися залишок.</p></div>
+      <div class="card"><div class="ic">🧮</div><h3>Сума до каси</h3><p>Покупець знає суму покупки одразу — легше вирішити, що брати.</p></div>
+      <div class="card"><div class="ic">🎓</div><h3>Легкий старт</h3><p>Новий продавець одразу бачить ціни й залишки, навіть не знаючи асортименту.</p></div>
+    </div>
+    <p class="note"><b>Приклад розрахунку</b> (оцінка, не вимір): якщо кожен продавець економить хоча б 10 хвилин на день, то в 46 магазинах це ~7,5 години робочого часу щодня — майже повна зміна, яку можна віддати покупцям.</p>
+  </div>
+</section>
+
+<!-- 11. Чому дешево -->
+<section id="s11">
+  <div class="wrap">
+    <span class="kicker">Чому це дешево</span>
+    <h2>0 ₴ на місяць — на безкоштовних тарифах</h2>
+    <table>
+      <tr><th>Що потрібно</th><th>Чим зроблено</th><th>Ціна</th></tr>
+      <tr><td>База даних, вхід продавців</td><td>Firebase, безкоштовний тариф<small>до 50 000 читань і 20 000 записів на добу</small></td><td class="zero">0 ₴</td></tr>
+      <tr><td>Сторінка встановлення й завантаження залишків</td><td>GitHub Pages</td><td class="zero">0 ₴</td></tr>
+      <tr><td>Веб-версія (доступ до сайту мережі)</td><td>Cloudflare Workers, безкоштовний тариф<small>до 100 000 запитів на добу</small></td><td class="zero">0 ₴</td></tr>
+      <tr><td>Пристрої</td><td>Телефони продавців (Android 8+)<small>без спеціальних терміналів збору даних</small></td><td class="zero">0 ₴</td></tr>
+      <tr><td>Принтери</td><td>Наявні Brother і Godex</td><td class="zero">0 ₴</td></tr>
+      <tr><td>Ліцензії, Google Play, абонплата</td><td>Власний код; встановлення з сайту, оновлення в застосунку</td><td class="zero">0 ₴</td></tr>
+    </table>
+    <p class="note">Пишемо в базу лише зміни, а не весь файл щодня — тому мережа з 46 магазинів вміщається в безкоштовні ліміти. Якщо мережа виросте, Firebase бере плату лише за перевищення — центи за сотні тисяч операцій. Оплата з телефона (ПРРО) — окрема послуга за тарифом обраного сервісу.</p>
+  </div>
+</section>
+
+<!-- 12. Що далі -->
+<section id="s12">
+  <div class="wrap">
+    <span class="kicker">Дорожня карта</span>
+    <h2>Що вже є і що далі</h2>
+    <div class="road">
+      <div class="card"><h3><span class="done">✓</span> Зроблено</h3><p>Скан, ціни й наявність із сайту · залишки всієї мережі з 1С · цінники Brother і Godex, пакетний друк · ролі й адміністрування · завантаження залишків з ПК · кошик покупця · автооновлення застосунку</p></div>
+      <div class="card"><h3><b>1.</b> Оплата з кошика</h3><p>Готівка або картка, фіскальний чек через ПРРО (Checkbox або інший сервіс) — потрібне рішення мережі та бухгалтерії.</p></div>
+      <div class="card"><h3><b>2.</b> Залишки без інтернету</h3><p>Локальна база на телефоні — працює навіть у ТЦ без зв'язку.</p></div>
+      <div class="card"><h3><b>3.</b> Замовлення з сайту та iPhone</h3><p>Інтернет-замовлення на самовивіз зі збиранням сканером; iPhone-версія в TestFlight.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 13. Як почати -->
+<section id="s13">
+  <div class="wrap grid">
+    <div>
+      <span class="kicker">Як почати</span>
+      <h2>Встановити — дві хвилини</h2>
+      <ul class="points">
+        <li><b>Відкрити сторінку</b> <span>на телефоні або навести камеру на QR-код.</span></li>
+        <li><b>Зареєструватися:</b> <span>ім'я, телефон, пароль, свій магазин.</span></li>
+        <li><b>Адмін підтверджує</b> <span>— і можна працювати. Без SMS і без Google Play.</span></li>
+      </ul>
+      <p style="margin-top:26px"><a class="big-link" href="https://nikifor3663636.github.io/chudoskan/">nikifor3663636.github.io/chudoskan</a></p>
+    </div>
+    <div class="qr" style="justify-self:center"><img src="../qr-install.svg" alt="QR-код сторінки встановлення"></div>
+  </div>
+</section>
+
+<div class="counter" id="counter">1 / 13</div>
+<script>
+// Навігація: ← → PageUp/PageDown пробіл Home End; лічильник слайдів.
+const slides = [...document.querySelectorAll('section')];
+const counter = document.getElementById('counter');
+let current = 0;
+const io = new IntersectionObserver((es) => es.forEach((e) => {
+  if (e.isIntersecting) { current = slides.indexOf(e.target); counter.textContent = `${current + 1} / ${slides.length}`; }
+}), { threshold: 0.6 });
+slides.forEach((s) => io.observe(s));
+const go = (i) => slides[Math.max(0, Math.min(slides.length - 1, i))].scrollIntoView({ behavior: 'smooth' });
+addEventListener('keydown', (e) => {
+  if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(current + 1); }
+  else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(current - 1); }
+  else if (e.key === 'Home') go(0); else if (e.key === 'End') go(slides.length - 1);
+});
+</script>
+</body>
+</html>

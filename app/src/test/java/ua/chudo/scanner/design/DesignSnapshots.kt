@@ -186,6 +186,32 @@ class DesignSnapshots {
         }
     }
 
+    /** Залишки мережі: свій магазин великим шрифтом і магазини міста — як після скану. */
+    @Test fun networkStockMine() = paparazzi.snapshot {
+        val item = ua.chudo.scanner.data.NetItem(
+            "Конструктор LEGO Duplo Потяг із цифрами", "BOC022446", "10954",
+            mapOf("22" to 3.0, "62" to 5.0, "69" to 1.0, "77" to 2.0),
+        )
+        val av = ua.chudo.scanner.data.NetAvailability(
+            "5702017417912", item, ownCode = "22", own = 3.0,
+            city = listOf(
+                ua.chudo.scanner.data.StoreQty("62", "ЧО 62 Одеса (ТЦ Рів'єра)", 5.0),
+                ua.chudo.scanner.data.StoreQty("77", "ЧО 77 Одеса (ТЦ Острів)", 2.0),
+                ua.chudo.scanner.data.StoreQty("69", "ЧО 69 Одеса (ТЦ Маяк)", 1.0),
+            ),
+            cityName = "Одеса", updatedAt = java.util.Calendar.getInstance().apply { set(2026, 10, 25, 9, 30, 0) }.time,
+        )
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.bg) {
+                Column(Modifier.fillMaxSize().statusBarsPadding().padding(16.dp)) {
+                    Text("Залишки магазину", fontSize = 26.sp, color = Mine.colors.text)
+                    Text("ЧО 22 · ТРЦ Gagarin Plaza", fontSize = 15.sp, color = Mine.colors.textSecondary)
+                    ua.chudo.scanner.ui.stock.NetworkStockCard(av, Modifier.padding(top = 16.dp))
+                }
+            }
+        }
+    }
+
     @Test fun homeLight() = home(false)
 
     @Test fun homeDark() = home(true)
