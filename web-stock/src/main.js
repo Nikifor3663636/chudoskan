@@ -7,6 +7,7 @@ import {
   setDoc, startAfter, writeBatch,
 } from 'firebase/firestore';
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
+import { loadSiteShops } from './siteShops.js';
 
 const BATCH = 450; // Firestore — до 500 операцій у пачці
 const PAGE = 2000;
@@ -166,9 +167,15 @@ async function start(file) {
 
     const unknown = fresh.stores.filter((s) => !known.get(s.code)?.shopId);
     if (!unknown.length) { confirmView(pending); return; }
-    progressView('Звіряю склади 1С з магазинами…', null);
-    const shops = (await getDocs(collection(db, 'shops'))).docs
-      .map((d) => ({ id: d.id, address: d.get('address') ?? '', region: d.get('region') ?? '' }))
+    progressView('Звіряю склади 1С з магазинами…', 0, 'список магазинів із сайту');
+    // Магазини з сайту (як у застосунку — з тими самими id) + ті, що вже є у Firestore, але зникли з сайту.
+    const [site, fsShops] = await Promise.all([
+      loadSiteShops((p) => progressView('Звіряю склади 1С з магазинами…', p, 'список магазинів із сайту')),
+      getDocs(collection(db, 'shops')).then((s) => s.docs.map((d) => ({ id: d.id, address: d.get('address') ?? '', region: d.get('region') ?? '' }))),
+    ]);
+    const byId = new Map(site.map((s) => [s.id, s]));
+    for (const s of fsShops) if (!byId.has(s.id) && s.address) byId.set(s.id, s);
+    const shops = [...byId.values()]
       .sort((a, b) => a.region.localeCompare(b.region, 'uk') || a.address.localeCompare(b.address, 'uk'));
     const linked = new Set([...known.values()].map((k) => k.shopId).filter(Boolean));
     const matches = match(unknown, shops, linked);

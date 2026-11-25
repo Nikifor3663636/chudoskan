@@ -189,6 +189,13 @@ test('склад 1С ↔ магазин за назвою ТЦ і містом',
   assert.equal(m[0].candidates[0].id, 'odesa_1');
 });
 
+test('id магазину як AuthRepository.shopId (місто + SHA-1 адреси)', async () => {
+  const { shopId } = await import('../src/siteShops.js');
+  assert.equal(await shopId('stryi', 'вул. Богдана Хмельницького, 4, ТРЦ "Cтрий City"'), 'stryi_ce6f4a877f0c');
+  // Регістр і зайві пробіли не змінюють id.
+  assert.equal(await shopId('stryi', '  вул.  Богдана Хмельницького, 4, ТРЦ "CТРИЙ CITY" '), 'stryi_ce6f4a877f0c');
+});
+
 const real = process.env.STOCK_XLSX;
 test('справжній звіт 1С (STOCK_XLSX)', { skip: !real || !existsSync(real) }, async () => {
   const buf = new Uint8Array(readFileSync(real));
