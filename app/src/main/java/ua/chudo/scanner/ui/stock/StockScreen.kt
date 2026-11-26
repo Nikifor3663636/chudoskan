@@ -312,7 +312,11 @@ class StockViewModel(
     }
 
     private fun refreshInfo() {
-        viewModelScope.launch { _info.value = runCatching { stock.info(employee.shopId) }.getOrNull() }
+        // Залишки мережі (завантажує адмін одним файлом на всю мережу) — бачать усі; старі залишки магазину — запасний варіант.
+        viewModelScope.launch {
+            _info.value = runCatching { net?.info() }.getOrNull()?.let { ShopStockInfo(it.updatedAt, it.updatedBy, it.items) }
+                ?: runCatching { stock.info(employee.shopId) }.getOrNull()
+        }
     }
 
     fun search(raw: String) {

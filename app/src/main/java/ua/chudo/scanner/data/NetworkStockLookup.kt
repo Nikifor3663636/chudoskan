@@ -118,6 +118,16 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
 
     private suspend fun updatedAt(): Date? { loadMeta(); return updatedAt }
 
+    /**
+     * Підсумок останнього завантаження залишків мережі (коли, хто, скільки товарів і магазинів) — для всіх
+     * підтверджених співробітників, не лише адміна. `null` — ще не завантажували.
+     */
+    suspend fun info(): NetworkStockInfo? =
+        if (Backend.isSupabase) SupabaseStock.info()
+        else db.collection(NetworkStockRepository.META).document(NetworkStockRepository.STOCK).get().await().takeIf { it.exists() }?.let { d ->
+            NetworkStockInfo(d.getTimestamp("updatedAt")?.toDate(), d.getString("updatedBy"), d.getLong("items")?.toInt() ?: 0, d.getLong("stores")?.toInt() ?: 0)
+        }
+
     /** Коли востаннє завантажували залишки мережі (meta/stock.updatedAt); `null` — ще ні. */
     suspend fun lastUpdated(): Date? = updatedAt()
 
