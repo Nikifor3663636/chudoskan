@@ -43,6 +43,8 @@ class ProductViewModel(
     /** Штрихкод, по которому открыли товар (для ценника). */
     val barcode: String? = handle.get<String>("bc")?.takeIf { it.isNotBlank() }
 
+    val highlightBarcode: String? = handle.get<String>("scanned") ?: barcode
+
     private val _state = MutableStateFlow(
         ProductUiState(barcodeToRemember = barcode?.takeIf { prefs.rememberedProduct(it) != urlKey })
     )

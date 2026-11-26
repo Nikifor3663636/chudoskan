@@ -241,7 +241,27 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
 
     // ---------- Supabase (PostgREST з Firebase ID token) ----------
 
+    val hasHighlights get() = supabase
     private val supabase get() = FirebaseConfig.BACKEND == "supabase"
+
+    suspend fun productHighlights(barcode: String?, article: String?): List<ProductHighlight> =
+        readHighlights("product_highlights_for", buildJsonObject {
+            put("p_barcode", barcode.orEmpty())
+            put("p_article", article.orEmpty())
+        })
+
+    suspend fun highlightPage(kind: String, query: String, offset: Int): List<ProductHighlight> =
+        readHighlights("list_product_highlights", buildJsonObject {
+            put("p_kind", kind)
+            put("p_query", query)
+            put("p_offset", offset)
+        })
+
+    private suspend fun readHighlights(function: String, params: JsonObject): List<ProductHighlight> {
+        val response = rest("POST", "rpc/$function", params)
+        if (response.status.value !in 200..299) throw AuthException("HIGHLIGHTS_${response.status.value}")
+        return json.decodeFromString(response.bodyAsText())
+    }
 
     private suspend fun rest(method: String, path: String, body: JsonObject? = null): HttpResponse =
         http.request("${FirebaseConfig.SUPABASE_URL}/rest/v1/$path") {

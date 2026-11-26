@@ -4,7 +4,7 @@
   "description": "Сторінка завантаження залишків мережі (звіт 1С .xlsx → Firestore) для stockAdmin",
   "type": "module",
   "scripts": {
-    "test": "node --test test/report.test.js test/supabase.test.js",
+    "test": "node --test",
     "build": "esbuild src/main.js --bundle --format=esm --minify --target=es2020 --outfile=dist/app.js"
   },
   "engines": {

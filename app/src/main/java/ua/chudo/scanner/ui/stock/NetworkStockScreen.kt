@@ -251,7 +251,7 @@ class NetworkStockViewModel(
 
 /** «Профіль → Залишки мережі»: звіт 1С з усіма складами → `stock/{штрихкод}`. Лише для stockAdmin. */
 @Composable
-fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
+fun NetworkStockScreen(employee: Employee, onBack: () -> Unit, onHighlights: (() -> Unit)? = null) {
     val app = LocalContext.current.chudoApp
     val vm: NetworkStockViewModel = viewModel(
         key = "network-stock-${employee.uid}",
@@ -272,6 +272,7 @@ fun NetworkStockScreen(employee: Employee, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         MineHeader("Залишки мережі", onBack)
+        onHighlights?.let { TextButton(it, enabled = !busy) { Text("Завантажити новинки або акції") } }
         MineCard {
             Text("Звіт 1С «Ведомость по партиям товаров на складах» (.xlsx) з усіма складами.", fontSize = 15.sp, lineHeight = 21.sp)
             Spacer(Modifier.height(6.dp))

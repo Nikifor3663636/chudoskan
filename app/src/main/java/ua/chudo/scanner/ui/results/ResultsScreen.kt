@@ -60,7 +60,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.ChudoApp
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.data.Backend
 import ua.chudo.scanner.data.ChudoRepository
+import ua.chudo.scanner.data.ProductHighlight
+import ua.chudo.scanner.data.ProductHighlights
+import ua.chudo.scanner.data.HighlightKind
+import ua.chudo.scanner.ui.stock.highlightPrice
 import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.data.Via
 import ua.chudo.scanner.ui.common.ErrorState
@@ -110,7 +115,7 @@ class ResultsViewModel(
 @Composable
 fun ResultsScreen(
     onBack: () -> Unit,
-    onOpenProduct: (urlKey: String, barcode: String?, replace: Boolean) -> Unit,
+    onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
     onScanAgain: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
@@ -125,7 +130,7 @@ fun ResultsScreen(
         val r = (state as? ResultsState.Done)?.result
         if (r is LookupResult.Single) {
             val bc = r.barcode.takeIf { r.via is Via.UpcArticle || r.via is Via.UpcTitle }
-            onOpenProduct(r.urlKey, bc, true)
+            onOpenProduct(r.urlKey, bc, r.barcode, true)
         }
     }
 
@@ -142,12 +147,13 @@ fun ResultsScreen(
                         is LookupResult.Single -> Loading("Відкриваємо товар…")
                         is LookupResult.Many -> ManyList(r) { urlKey ->
                             val bc = r.barcode.takeIf { r.via !is Via.Direct }
-                            onOpenProduct(urlKey, bc, false)
+                            onOpenProduct(urlKey, bc, null, false)
                         }
                         is LookupResult.NotFound -> Column(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.Center,
                         ) {
+                            HighlightMatches(r.query, r.barcode)
                             MessageState(
                                 icon = Icons.Rounded.SearchOff,
                                 title = "Не знайшли «${r.query}»",
@@ -165,6 +171,26 @@ fun ResultsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HighlightMatches(query: String, barcode: String?) {
+    val matches by androidx.compose.runtime.produceState<List<ProductHighlight>>(emptyList(), query, barcode) {
+        if (Backend.isSupabase) {
+            try {
+                value = ProductHighlights.forProduct(barcode, query.takeIf { barcode == null })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                value = emptyList()
+            }
+        }
+    }
+    matches.forEach { match ->
+        val kind = HighlightKind.entries.firstOrNull { it.key == match.kind }
+        val price = match.promoPrice?.let { " · ${highlightPrice(it)}" }.orEmpty()
+        Text("${match.name} · ${kind?.badge.orEmpty()}$price", Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
     }
 }
 

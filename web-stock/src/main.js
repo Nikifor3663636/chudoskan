@@ -7,6 +7,8 @@ import {
   setDoc, startAfter, writeBatch,
 } from 'firebase/firestore';
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
+import { highlightReport } from './highlights.js';
+import { readXlsx } from './xlsx.js';
 import { loadSiteShops } from './siteShops.js';
 import { loadSnapshot, saveSnapshot, useSnapshot } from './snapshot.js';
 import { asError, backend, commitStock, ensureRole, supabaseFor, uploadStock } from './supabase.js';
@@ -151,14 +153,54 @@ async function homeView(note = '') {
       <b>Перетягни сюди звіт 1С (.xlsx)</b>
       <span class="muted">або натисни, щоб вибрати файл</span>
       <small class="muted">«Ведомость по партиям товаров на складах», склади в колонках, період «по» — сьогодні.</small>
-    </label>`);
+    </label>
+    ${sb ? '<div class="card"><h2>Новинки й акції</h2><button id="highlights-new">Завантажити новинки</button> <button id="highlights-promo">Завантажити акції</button></div>' : ''}`);
   $('#out').onclick = () => signOut(auth);
+  if (sb) {
+    $('#highlights-new').onclick = () => highlightsView('new');
+    $('#highlights-promo').onclick = () => highlightsView('promo');
+  }
   const input = $('#file');
   const drop = $('#drop');
   input.onchange = () => input.files[0] && start(input.files[0]);
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) start(f); };
+}
+
+function highlightsView(kind) {
+  const title = kind === 'new' ? 'Новинки' : 'Акції';
+  render(`<form class="card" id="highlight-form">
+    <h2>${title}</h2>
+    <p>Вибери повний звіт .xlsx. Потрібні «Назва» та «Штрихкод» або «Артикул».</p>
+    <p class="muted">Додаткові колонки: «Початок», «Кінець» та для акцій «Акційна ціна».</p>
+    <label>Звіт <input id="highlight-file" type="file" accept=".xlsx" required></label>
+    <button class="primary" type="submit">Перевірити файл</button>
+    <button type="button" id="back">Назад</button>
+  </form>`);
+  $('#back').onclick = () => homeView();
+  $('#highlight-form').onsubmit = async (event) => {
+    event.preventDefault();
+    const file = $('#highlight-file').files[0];
+    try {
+      if (!/\.xlsx$/i.test(file.name) || file.size > 10 * 1024 * 1024) throw new Error('Потрібен файл .xlsx до 10 МБ.');
+      progressView('Перевіряю звіт…', 0, file.name);
+      const report = highlightReport(kind);
+      await readXlsx(new Uint8Array(await file.arrayBuffer()), report.row, (p) => progressView('Перевіряю звіт…', p, file.name));
+      const rows = report.finish();
+      render(`<div class="card"><h2>${title}</h2><p>${esc(file.name)} · ${fmt(rows.length)} товарів</p>
+        <p>Публікація замінить поточний список цієї категорії для всієї мережі.</p>
+        <button class="primary" id="publish">Опублікувати</button> <button id="cancel">Скасувати</button></div>`);
+      $('#cancel').onclick = () => highlightsView(kind);
+      $('#publish').onclick = async () => {
+        progressView('Публікую…', null, file.name);
+        try {
+          const count = must(await timed(sb.rpc('publish_product_highlights', { p_kind: kind, p_rows: rows }), WRITE_TIMEOUT, 'публікація'));
+          await homeView(`<p>${title}: опубліковано ${fmt(count)} товарів.</p>`);
+        } catch (error) { failView(error); }
+      };
+    } catch (error) { failView(error); }
+  };
 }
 
 function progressView(title, frac, detail = '') {

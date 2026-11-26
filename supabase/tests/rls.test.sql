@@ -478,5 +478,32 @@ select is(acting_shop(), '22', 'співробітник заголовком м
 reset role;
 select is((select shop_id from users where uid = 'sup'), '1', 'users.shop_id у sup не змінився');
 
+-- ===================== Новинки й акції =====================
+select tests.login('stocker');
+select is(publish_product_highlights('new',
+  '[{"barcode":"0012345678901","article":"A1","name":"Гра"}]'), 1, 'адмін публікує новинки');
+select is(publish_product_highlights('promo',
+  '[{"barcode":"0012345678901","article":"A1","name":"Гра","promo_price":199.50},
+    {"article":"EXPIRED","name":"Минуле","ends_on":"2000-01-01"},
+    {"article":"FUTURE","name":"Майбутнє","starts_on":"2099-01-01"}]'), 3, 'адмін публікує окремий список акцій');
+select is(tests.rows($q$select publish_product_highlights('promo',
+  '[{"article":"BAD","name":"Дублікат"},{"article":"BAD","name":"Дублікат"}]')$q$),
+  -1, 'дублікати блокують публікацію');
+
+select tests.login('emp22');
+select is((select count(*)::int from list_product_highlights('promo')), 1, 'консультант бачить лише чинні акції після невдалого імпорту');
+select is((select count(*)::int from product_highlights_for('0012345678901', '')),
+  2, 'скан повертає обидві позначки');
+select is((select count(*)::int from product_highlights_for('', 'a1')),
+  2, 'пошук артикула не залежить від регістру');
+select is(tests.rows($q$select publish_product_highlights('new',
+  '[{"article":"NEW","name":"Товар"}]')$q$), -1, 'консультант не публікує');
+select is(tests.rows($q$delete from product_highlights$q$), -1, 'прямий запис заборонено');
+select tests.login('new22');
+select is((select count(*)::int from list_product_highlights('new')), 0, 'непідтверджений працівник не бачить список');
+select tests.login('emp22', 'foreign');
+select is((select count(*)::int from list_product_highlights('new')), 0, 'чужий Firebase проєкт не бачить список');
+reset role;
+
 select * from finish();
 rollback;

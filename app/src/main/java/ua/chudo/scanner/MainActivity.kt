@@ -50,6 +50,8 @@ import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
+import ua.chudo.scanner.data.Backend
+import ua.chudo.scanner.ui.stock.HighlightsScreen
 import ua.chudo.scanner.ui.stock.NetworkStockScreen
 import ua.chudo.scanner.ui.admin.AdminHistoryScreen
 import ua.chudo.scanner.ui.admin.NetworkAdminScreen
@@ -99,7 +101,7 @@ private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
     const val RESULTS = "results/{q}"
-    const val PRODUCT = "product/{urlKey}?bc={bc}"
+    const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}"
     const val STOCK = "stock"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
@@ -111,6 +113,7 @@ private object Routes {
     const val LABELS = "labels"
     const val PRINTERS = "printers"
     const val NETWORK_STOCK = "network-stock"
+    const val HIGHLIGHTS = "highlights"
     const val ADMIN = "admin"
     const val ADMIN_SHOPS = "admin-shops"
     const val ADMIN_STAFF = "admin-staff?shop={shop}"
@@ -121,7 +124,10 @@ private object Routes {
 
     fun scan() = "scan?mode=barcode"
     fun results(q: String) = "results/${Uri.encode(q)}"
-    fun product(urlKey: String, bc: String?) = "product/${Uri.encode(urlKey)}" + (bc?.let { "?bc=$it" } ?: "")
+    fun product(urlKey: String, bc: String?, scanned: String? = null): String {
+        val query = listOfNotNull(bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" })
+        return "product/${Uri.encode(urlKey)}" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+    }
 }
 
 // Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
@@ -158,7 +164,7 @@ private fun AppNav(home: Employee) {
     // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
         Routes.ORDERS -> MainTab.ORDERS
-        Routes.STOCK -> MainTab.STOCK
+        Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
         Routes.PROFILE -> MainTab.PROFILE
         else -> MainTab.SEARCH
     }
@@ -207,6 +213,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.HIGHLIGHTS) }) else null,
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
         }
@@ -242,7 +249,18 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         // «Залишки мережі» — лише stockAdmin / superAdmin (те саме перевіряють правила).
         composable(Routes.NETWORK_STOCK) {
-            if (employee.stockAdmin) NetworkStockScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack()
+            if (employee.stockAdmin) NetworkStockScreen(
+                employee, onBack = { nav.popBackStack() },
+                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.HIGHLIGHTS) }) else null,
+            ) else nav.popBackStack()
+        }
+        composable(Routes.HIGHLIGHTS) {
+            if (Backend.isSupabase) HighlightsScreen(
+                canUpload = employee.stockAdmin || employee.superAdmin,
+                onBack = { nav.popBackStack() },
+                onProduct = { key, barcode -> nav.navigate(Routes.product(key, barcode)) },
+                onSearch = { nav.navigate(Routes.results(it)) },
+            )
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
@@ -306,8 +324,8 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) {
             ResultsScreen(
                 onBack = { nav.popBackStack() },
-                onOpenProduct = { urlKey, bc, replace ->
-                    nav.navigate(Routes.product(urlKey, bc)) {
+                onOpenProduct = { urlKey, bc, scanned, replace ->
+                    nav.navigate(Routes.product(urlKey, bc, scanned)) {
                         if (replace) popUpTo(Routes.RESULTS) { inclusive = true }
                     }
                 },
@@ -321,6 +339,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             arguments = listOf(
                 navArgument("urlKey") { type = NavType.StringType },
                 navArgument("bc") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("scanned") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) {
             ProductScreen(employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) })

@@ -95,7 +95,7 @@ import ua.chudo.shared.res.logo_wordmark
 // ---------- Общие элементы ----------
 
 @Composable
-private fun TopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
+internal fun TopBar(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -239,6 +239,11 @@ fun HomeScreen(nav: Navigator) {
                 keyboardActions = KeyboardActions(onSearch = { submit() }),
             )
         }
+        if (graph.auth.hasHighlights) item {
+            OutlinedButton(onClick = { nav.go(Screen.Highlights) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Новинки й акції")
+            }
+        }
         if (history.isNotEmpty()) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -315,7 +320,7 @@ fun ResultsScreen(query: String, nav: Navigator) {
             val r = graph.repo.lookup(query) { step = it }
             if (r is LookupResult.Single) {
                 val bc = r.barcode.takeIf { r.via is Via.UpcArticle || r.via is Via.UpcTitle }
-                nav.replace(Screen.Product(r.urlKey, bc))
+                nav.replace(Screen.Product(r.urlKey, bc, r.barcode))
             } else result = r
         } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.uiMessage() }
     }
@@ -335,14 +340,36 @@ fun ResultsScreen(query: String, nav: Navigator) {
                 viaNote(r.via)?.let { note -> item { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.tertiaryContainer) { Text(note, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) } } }
                 items(r.items, key = { it.id }) { p -> ProductCard(p) { nav.go(Screen.Product(p.urlKey, r.barcode.takeIf { r.via !is Via.Direct })) } }
             }
-            is LookupResult.NotFound -> Message(
-                Icons.Rounded.SearchOff, "Не знайшли «${r.query}»",
-                "Спробуй ввести артикул з цінника — він зазвичай у дужках у назві." +
-                    if (r.triedArticles.isNotEmpty()) "\n\nПеревірили артикули: ${r.triedArticles.joinToString()}" else "",
-                "Шукати на сайті" to { openUrl(Core.siteSearchUrl(r.query)) },
-            )
+            is LookupResult.NotFound -> Column {
+                HighlightMatches(r.query, r.barcode)
+                Message(
+                    Icons.Rounded.SearchOff, "Не знайшли «${r.query}»",
+                    "Спробуй ввести артикул з цінника — він зазвичай у дужках у назві." +
+                        if (r.triedArticles.isNotEmpty()) "\n\nПеревірили артикули: ${r.triedArticles.joinToString()}" else "",
+                    "Шукати на сайті" to { openUrl(Core.siteSearchUrl(r.query)) },
+                )
+            }
             is LookupResult.Single -> Unit
         }
+    }
+}
+
+@Composable
+private fun HighlightMatches(query: String, barcode: String?) {
+    val auth = LocalGraph.current.auth
+    val matches by androidx.compose.runtime.produceState<List<ua.chudo.shared.auth.ProductHighlight>>(emptyList(), query, barcode) {
+        if (auth.hasHighlights) {
+            try {
+                value = auth.productHighlights(barcode, query.takeIf { barcode == null })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                value = emptyList()
+            }
+        }
+    }
+    matches.forEach { match ->
+        Text("${match.name} · ${match.label}", Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
     }
 }
 
@@ -368,10 +395,23 @@ private fun Message(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 // ---------- Карточка товара ----------
 
 @Composable
-fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator) {
+fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: String? = null) {
     val graph = LocalGraph.current
     val region by graph.prefs.region.collectAsStateWithLifecycle()
     var product by remember { mutableStateOf<ProductDetails?>(null) }
+    var highlights by remember { mutableStateOf(emptyList<ua.chudo.shared.auth.ProductHighlight>()) }
+    LaunchedEffect(urlKey, barcode, scanned, product?.id) {
+        val current = product ?: return@LaunchedEffect
+        if (graph.auth.hasHighlights) {
+            try {
+                highlights = graph.auth.productHighlights(scanned ?: barcode, current.article)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                highlights = emptyList()
+            }
+        }
+    }
     var error by remember { mutableStateOf<String?>(null) }
     var shops by remember { mutableStateOf<List<ShopAvailability>?>(null) }
     var shopsError by remember { mutableStateOf(false) }
@@ -412,6 +452,9 @@ fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(p.name, style = MaterialTheme.typography.titleLarge)
+                        highlights.forEach { highlight ->
+                            Text(highlight.label, color = MaterialTheme.colorScheme.primary)
+                        }
                         p.article?.let { Text("Артикул: $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         PriceLine(p.price, big = true)
                         StockBadge(p.stock)

@@ -46,8 +46,9 @@ sealed interface Screen {
     data object Home : Screen
     data object Scan : Screen
     data class Results(val query: String) : Screen
-    data class Product(val urlKey: String, val barcode: String?) : Screen
+    data class Product(val urlKey: String, val barcode: String?, val scanned: String? = null) : Screen
     data object Profile : Screen
+    data object Highlights : Screen
     data object Layout : Screen
 
     /** Сканер для «Планування»: код возвращается через [Navigator.layoutCode]. */
@@ -100,8 +101,9 @@ private fun MainScreens(employee: Employee) {
             Screen.Home -> HomeScreen(nav)
             Screen.Scan -> ScanScreen(nav)
             is Screen.Results -> ResultsScreen(screen.query, nav)
-            is Screen.Product -> ProductScreen(screen.urlKey, screen.barcode, nav)
+            is Screen.Product -> ProductScreen(screen.urlKey, screen.barcode, nav, screen.scanned)
             Screen.Profile -> ProfileScreen(employee, nav)
+            Screen.Highlights -> HighlightsScreen(nav)
             Screen.Layout -> LayoutScreen(employee, nav)
             Screen.ScanLayout -> ScanScreen(nav) { code -> nav.layoutCode = code; nav.back() }
         }

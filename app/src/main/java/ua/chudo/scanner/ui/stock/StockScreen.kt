@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
+import ua.chudo.scanner.ui.common.MinePrimaryButton
 import ua.chudo.scanner.ui.common.MineSearchField
 import ua.chudo.scanner.ui.common.MineTone
 import ua.chudo.scanner.ui.common.PriceFont
@@ -468,6 +469,7 @@ fun StockScreen(
     onScannedConsumed: () -> Unit,
     /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
     onNetworkUpload: (() -> Unit)? = null,
+    onHighlights: (() -> Unit)? = null,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
@@ -502,6 +504,9 @@ fun StockScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ShopHeader(employee, onBack) }
+        onHighlights?.let { open ->
+            item { MinePrimaryButton("Новинки й акції", open, height = 48.dp) }
+        }
         // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
         // Решта (консультанти, адмін магазину) лише бачать, коли оновлено, — завантажує тільки stockAdmin (див. firestore.rules).
         if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }

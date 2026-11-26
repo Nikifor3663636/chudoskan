@@ -73,6 +73,11 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.data.Backend
+import ua.chudo.scanner.data.HighlightKind
+import ua.chudo.scanner.data.ProductHighlight
+import ua.chudo.scanner.data.ProductHighlights
+import ua.chudo.scanner.ui.stock.highlightPrice
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.StockItem
@@ -127,6 +132,18 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
     val p = s.product
     val url = productUrl(Lang.UA, p?.urlKey ?: vm.urlKey, p?.urlSuffix ?: ".html")
 
+    var highlights by remember(p?.id) { mutableStateOf(emptyList<ProductHighlight>()) }
+    LaunchedEffect(p?.id, s.refreshing, employee.uid) {
+        if (Backend.isSupabase && p != null && !s.refreshing) {
+            try {
+                highlights = ProductHighlights.forProduct(vm.highlightBarcode, p.article)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                highlights = emptyList()
+            }
+        }
+    }
     var net by remember { mutableStateOf<NetAvailability?>(null) }
     // Залишки мережі: ОДНЕ читання stock/{штрихкод} (без штрихкоду — за артикулом).
     // Немає даних — як раніше: залишок свого магазину з shops/{shopId}/stock у списку наявності сайту.
@@ -151,7 +168,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
                         p, s.shops, employee.shop, own, region.name, vm.barcode, s.barcodeToRemember,
                         onPrint = { printSheet = true }, onScan = onScan, onCity = { showRegions = true },
                         onRetryShops = vm::loadShops, onMap = ctx::openMap, onSite = { ctx.openUrl(url) },
-                        onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net,
+                        onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net, highlights = highlights,
                     )
                 }
             }
@@ -204,10 +221,22 @@ fun ProductPage(
     onForget: () -> Unit = {},
     /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, лише наявність із сайту. */
     net: NetAvailability? = null,
+    highlights: List<ProductHighlight> = emptyList(),
 ) {
     LazyColumn(Modifier.background(pageBg()), contentPadding = PaddingValues(bottom = 32.dp)) {
         item { Breadcrumbs(p.categories) }
         item { Title(p) }
+        if (highlights.isNotEmpty()) item {
+            Row(Modifier.padding(horizontal = H), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                highlights.forEach { highlight ->
+                    val kind = HighlightKind.entries.firstOrNull { it.key == highlight.kind }
+                    if (kind != null) {
+                        val price = highlight.promoPrice?.let { " · ${highlightPrice(it)}" }.orEmpty()
+                        Text(kind.badge + price, color = Mine.colors.accent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         item { Gallery(p.images, p.price?.discountPercent ?: 0.0) }
         item { Availability(p.stock) }
         item { PriceBox(p, onPrint = onPrint, onScan = onScan) }
