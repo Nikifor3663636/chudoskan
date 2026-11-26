@@ -73,16 +73,17 @@ flowchart LR
     admin(["🧑‍💼 Адмін мережі"]) -->|"звіт 1С .xlsx<br/>раз на день"| app
 
     app -->|"ціна · фото · наявність"| site[("🌐 chudo-ostriv.com.ua")]
-    app <-->|"вхід · залишки · принтери"| fb[("🔥 Firebase<br/>Auth + Firestore")]
+    app <-->|"вхід"| fb[("🔥 Firebase Auth")]
+    app <-->|"залишки · принтери · анкети"| sb[("🐘 Supabase<br/>Postgres + RLS")]
     app -->|"Wi-Fi · порт 9100"| brother["🖨 Brother<br/>цінники A4"]
-    fb -->|"завдання друку"| pc["💻 ЧудоСкан Друк<br/>ПК магазину"]
+    sb -->|"завдання друку"| pc["💻 ЧудоСкан Друк<br/>ПК магазину"]
     pc -->|USB| godex["🏷 Godex<br/>етикетки 40×24"]
 
     classDef brand fill:#FF7500,stroke:#C25500,color:#fff;
     classDef store fill:#FFF3E8,stroke:#FF7500,color:#5A2A00;
     classDef dev fill:#F4F4F4,stroke:#888,color:#222;
     class app brand;
-    class site,fb store;
+    class site,fb,sb store;
     class brother,godex,pc dev;
 ```
 
@@ -248,9 +249,11 @@ flowchart TB
 | [`app/`](app) | 🤖 Android: `data/` · `print/` · `ui/{home,scan,results,product,stock,orders,admin,auth,profile}` |
 | [`shared/`](shared) | 🍏🌐 Kotlin Multiplatform: екрани iPhone і веб-версія, Firebase через REST |
 | [`printer/`](printer) | 💻 «ЧудоСкан Друк»: Core, тести, WinForms, установник Inno Setup |
-| [`rules-tests/`](rules-tests) | 🔒 Тести `firestore.rules` на емуляторі |
+| [`supabase/`](supabase) | 🐘 Supabase: схема й RLS (`migrations/`), pgTAP-тести прав (`tests/`), Edge Function `ensure-role` |
+| [`scripts/`](scripts) | Перенесення Firestore → Supabase, `backfill-role`, вигрузка 1С `upload-stock-csv` (`npm test`) |
+| [`rules-tests/`](rules-tests) | 🔒 Тести `firestore.rules` на емуляторі (до вимкнення Firestore) |
 | [`proxy/`](proxy) | ☁️ Посередник Cloudflare Workers (сайт мережі не віддає CORS) |
-| [`web-stock/`](web-stock) | 📤 Сторінка «Залишки мережі» для ПК: звіт 1С .xlsx → Firestore (`npm test`, `npm run build`) |
+| [`web-stock/`](web-stock) | 📤 Сторінка «Залишки мережі» для ПК: звіт 1С .xlsx → Supabase / Firestore (`npm test`, `npm run build`) |
 | [`docs/`](docs) | Сторінка встановлення, відео, знімки екрана |
 
 <details>
@@ -278,6 +281,25 @@ dotnet publish printer/ChudoScan.Print -c Release -r win-x64 --self-contained -p
 ```
 
 Тег `printer-vX.Y.Z` — установники x64 і x86 у релізі. Деталі — [printer/README.md](printer/README.md).
+
+</details>
+
+<details>
+<summary><b>🐘 Supabase</b></summary>
+
+Проєкт `chudoskan` (eu-central-1), Firebase як Third-Party Auth. Пароль бази й секретні ключі — у `.env.local` (не в git).
+
+```bash
+supabase link --project-ref wbboztsxzuxfocdqjyzk
+supabase db push                                  # міграції supabase/migrations
+supabase start && supabase test db                # pgTAP-тести прав (як у CI, потрібен Docker)
+supabase functions deploy ensure-role --no-verify-jwt
+supabase secrets set --env-file <файл з FIREBASE_SERVICE_ACCOUNT>
+```
+
+Де дані — **`BACKEND = firestore | supabase`**: Android `./gradlew :app:assembleDebug -Pbackend=supabase`,
+ЧудоСкан Друк — `appsettings.json` «backend», у CI — змінна репозиторію `BACKEND`. Адмін мережі / залишків —
+у Supabase Dashboard: `users.super_admin` / `stock_admin` = true.
 
 </details>
 
@@ -316,6 +338,7 @@ bash scripts/build-ios-core.sh                    # ядро для iPhone
 | CI | Що перевіряє |
 |---|---|
 | [`android.yml`](.github/workflows/android.yml) | Rust fmt · clippy · test → lint → unit-тести → APK |
+| [`supabase.yml`](.github/workflows/supabase.yml) | Міграції Supabase + pgTAP-тести прав на локальній базі |
 | [`rules.yml`](.github/workflows/rules.yml) | Правила Firestore на емуляторі |
 | [`printer.yml`](.github/workflows/printer.yml) | .NET-тести → установники x64/x86 → перевірка на приватні ключі |
 | [`ios.yml`](.github/workflows/ios.yml) · [`pages.yml`](.github/workflows/pages.yml) | Збірка iPhone · публікація веб-версії |
@@ -324,12 +347,13 @@ bash scripts/build-ios-core.sh                    # ядро для iPhone
 
 ## 🔒 Безпека
 
-- Доступ вирішує **сервер**: [`firestore.rules`](firestore.rules) — ролі, свій магазин, поля за білим списком;
-  кожне правило перевірене [тестами на емуляторі](rules-tests/rules.test.js).
+- Доступ вирішує **сервер**: RLS-політики Supabase ([`supabase/migrations`](supabase/migrations)) — ролі, свій магазин,
+  колонки за білим списком, лише токени нашого проєкту Firebase; перевірені [pgTAP-тестами](supabase/tests/rls.test.sql).
+  До вимкнення Firestore — так само [`firestore.rules`](firestore.rules) з [тестами на емуляторі](rules-tests/rules.test.js).
 - ПК з Godex входить **анонімно** й отримує права лише свого магазину після підключення кодом;
   «Відключити» одразу закриває доступ.
 - Жодних ключів сервісних акаунтів, паролів і токенів у репозиторії, програмах і журналах.
-- Дії адмінів пишуться в журнал `adminLog`.
+- Дії адмінів пишуться в журнал `admin_log` (`adminLog` у Firestore).
 - Знайшли вразливість? Повідомте приватно — **[SECURITY.md](SECURITY.md)**.
 
 ## 🗺 Дорожня карта

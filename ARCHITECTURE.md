@@ -197,7 +197,45 @@ flowchart TD
 | Наявність | `GET /ua/multiwarehouse/shops/index/?id={id}&region={код}` |
 | Штрихкод → товар | збережена прив'язка, далі `api.upcitemdb.com` (≈100 запитів на добу) |
 
-## 8. Дані у Firestore
+## 8. Дані: Supabase (Postgres), вхід — Firebase Auth
+
+Перехід з Firestore на Supabase. **Firebase лишається тільки для входу** (номер + пароль, анонімний вхід ПК);
+усі дані — у Postgres проєкту Supabase `chudoskan` (eu-central-1). Перемикач **`BACKEND = firestore | supabase`**
+(Android: `-Pbackend=` / `BuildConfig.BACKEND`; shared: `FirebaseConfig.BACKEND`; `/stock/`: `window.CHUDO_BACKEND`;
+ЧудоСкан Друк: `appsettings.json` «backend»; у CI — змінна репозиторію `BACKEND`). Порожньо — `firestore`.
+
+```mermaid
+flowchart LR
+    fbauth["🔥 Firebase Auth<br/>ID token"] -->|"ensure-role → role=authenticated"| fbauth
+    fbauth -->|"Third-Party Auth<br/>iss/aud = chudoostriv"| pg[("🐘 Supabase Postgres<br/>RLS")]
+    app["📱 Android · iOS · веб"] --> pg
+    web["💻 /stock/"] -->|"stock_upload_begin / chunk / commit"| pg
+    pc["🖨 ЧудоСкан Друк"] -->|"PostgREST + Realtime"| pg
+    cron["⏱ pg_cron"] --> pg
+```
+
+| Таблиця | Що | Хто пише | Хто читає |
+|---|---|---|---|
+| `users` | анкета, `approved`, `admin`, `super_admin`, `stock_admin` | сам (анкета), адмін (права); `super_admin`/`stock_admin` — Dashboard | сам, адмін свого магазину, адмін мережі |
+| `shops` · `printers` | адреса, `code1c`, `printer_subnets`; реєстр принтерів (pk `shop_id, id`) | телефони магазину (upsert ip/last_seen), адмін (назва, щільність, швидкість, видалення) | співробітники магазину |
+| `stock` · `stores` · `stock_uploads` (view `meta_stock`) | `q jsonb` «код магазину → кількість» | лише RPC `stock_upload_*`, `stores_upsert`, `store_link` | усі підтверджені |
+| `device_pairing` · `devices` | код ПК (16 хв); підключений ПК | ПК (код), адмін — RPC `device_pair`; «Відключити» = `delete devices` | ПК — лише своє |
+| `agents` · `print_jobs` | пульс ПК; завдання `queued → printing → done/error` | ПК (пульс, статус), співробітник (завдання) | магазин; завдання — автор і ПК-адресат |
+| `admin_log` | журнал дій | адміни від свого імені (stockAdmin — `stockImport`) | адмін мережі |
+
+- **Права** — RLS 1:1 з `firestore.rules` (`supabase/migrations`), хелпери `app.uid()`, `me()`, `is_approved()`,
+  `works_at()`, `is_shop_admin()`, `is_super()`, `is_stock_admin()`, `device_shop()`; поля, які RLS не бачить
+  (старе й нове значення), — тригери й GRANT на колонки. На кожній таблиці restrictive-політика: токен лише
+  `iss = https://securetoken.google.com/chudoostriv`, `aud = chudoostriv`. Тести — `supabase/tests` (pgTAP, ті самі
+  випадки, що `rules-tests`, + чужий `aud`), CI — `supabase.yml`.
+- **Роль у токені без Blaze:** Edge Function `ensure-role` перевіряє Firebase ID token (підпис Google, iss/aud) і ставить
+  лише `role = authenticated`; клієнт викликає її, якщо claim немає, і бере новий токен. Наявні акаунти —
+  `scripts/backfill-role.js`.
+- **«Працювати як у магазині ЧО NN»** — superAdmin і так бачить усі магазини; поточний магазин клієнт тримає в сесії,
+  для запитів є заголовок `x-act-shop` (`acting_shop()`), `users.shop_id` не змінюється.
+- **Не переносяться:** `shops/{id}/stock` (замінили залишки мережі) і `layoutPins` (план працює без них).
+
+### Як було у Firestore (до вимкнення)
 
 ```mermaid
 flowchart LR
@@ -281,6 +319,12 @@ flowchart LR
   далі пишуться лише зміни.
 - **Хто завантажує:** лише `stockAdmin` / `superAdmin` (ставляться в консолі Firebase). Продавці й адмін магазину
   залишки тільки читають — і мережі, і старі `shops/{id}/stock`; це перевіряють `firestore.rules`.
+- **Supabase:** `stock_upload_begin` → `stock_upload_chunk` (пачки по 2 000) → `stock_upload_commit(id, shops, confirm)` —
+  одна транзакція на сервері: `q` змінюється лише для магазинів із файлу, у яких є товари; товару немає у файлі — його
+  кількість для цих магазинів 0 (порожній `q` — рядок видаляється); < 50% від наявних — `confirm_required` (той самий
+  сеанс, повтор лише commit); невідомий склад — `unknown_stores`. Ліміту записів немає; 24 000 × 46 — ~11 с на сервері.
+  Знімок на телефоні не потрібен. Вигрузка 1С — `scripts/upload-stock-csv.js` (`Склад;Штрихкод;Артикул;Залишок`,
+  серверний ключ; назви не чіпає).
 - **З ПК — сторінка [`/stock/`](https://nikifor3663636.github.io/chudoskan/stock/)** (`web-stock/`, без Cloud Functions
   і тарифу Blaze): вхід тим самим номером і паролем, перетягнути .xlsx → розбір у браузері → ті самі записи, що з телефона.
   Розбір — копія Kotlin-коду 1:1 (`web-stock/test` — ті самі випадки, що `NetworkStockTest`); порівнює з тим, що зараз
@@ -345,6 +389,10 @@ sequenceDiagram
   «Відключити» видаляє `devices/{uid}` — доступ закривається одразу.
 - **Надійність:** завдання забирається транзакцією; зависле `printing` > 2 хв повертається в чергу один раз;
   `done/error` старші 7 днів видаляються.
+- **Supabase:** анонімний вхід Firebase → `ensure-role` → `device_pairing`; пульс — upsert `agents` (час ставить сервер);
+  черга — Realtime на `print_jobs` свого ПК + резервне опитування кожні 15 с; взяття —
+  `UPDATE … SET status='printing' WHERE id=? AND status='queued' RETURNING`; завислі й старі завдання прибирає
+  `pg_cron` (`app.print_jobs_maintain`, щохвилини). Код — `IAgentStore` (`FirestoreAgentStore` / `SupabaseAgentStore`).
 - **Вікно:** 🟢 Працює · 🔵 Підключіть комп'ютер · 🔴 Потрібна увага · ⚪ Немає зв'язку; значок біля годинника.
 - **Збірка:** `printer.yml` — .NET-тести → установники x64 і x86 (Inno Setup, `PrivilegesRequired=lowest`).
 
