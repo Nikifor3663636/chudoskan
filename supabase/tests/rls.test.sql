@@ -455,6 +455,20 @@ select is((select (q ->> '02')::int from stock where barcode = '4820000000001'),
 select is((select by_uid from stock_uploads where id = current_setting('t.up4')::bigint), 'service:1c', 'хто завантажив: service:1c');
 reset role;
 
+-- ===================== Черга друку (pg_cron) =====================
+insert into devices (uid, shop_id, name, approved_by) values ('pcM', '22', 'M', 'adm22');
+insert into print_jobs (id, agent_id, printer, shop_id, by_uid, status, data, attempts, started_at, done_at, created_at) values
+  ('00000000-0000-0000-0000-0000000000a1', 'pcM', 'G', '22', 'emp22', 'printing', '\x01', 1, now() - interval '3 min', null, now()),
+  ('00000000-0000-0000-0000-0000000000a2', 'pcM', 'G', '22', 'emp22', 'printing', '\x01', 2, now() - interval '3 min', null, now()),
+  ('00000000-0000-0000-0000-0000000000a3', 'pcM', 'G', '22', 'emp22', 'printing', '\x01', 1, now() - interval '1 min', null, now()),
+  ('00000000-0000-0000-0000-0000000000a4', 'pcM', 'G', '22', 'emp22', 'done', '\x01', 1, null, now() - interval '8 days', now() - interval '8 days');
+select app.print_jobs_maintain();
+select is((select status from print_jobs where id = '00000000-0000-0000-0000-0000000000a1'), 'queued', 'зависле > 2 хв — знову в черзі');
+select is((select status from print_jobs where id = '00000000-0000-0000-0000-0000000000a2'), 'error', 'зависле вдруге — error');
+select is((select status from print_jobs where id = '00000000-0000-0000-0000-0000000000a3'), 'printing', 'друкується < 2 хв — не чіпаємо');
+select is((select count(*)::int from print_jobs where id = '00000000-0000-0000-0000-0000000000a4'), 0, 'done старше 7 днів — видалено');
+select isnt((select jobid from cron.job where jobname = 'print-jobs-maintain'), null, 'pg_cron: щохвилини');
+
 -- ===================== «Працювати як у магазині» =====================
 select tests.login('sup');
 select set_config('request.headers', '{"x-act-shop": "62"}', true);

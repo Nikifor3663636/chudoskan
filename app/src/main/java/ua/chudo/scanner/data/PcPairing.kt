@@ -52,6 +52,7 @@ class PcRepository(private val db: FirebaseFirestore) {
     suspend fun pair(employee: Employee, rawCode: String): String {
         PcPairing.formatError(rawCode)?.let { throw PcPairingException(it) }
         val code = PcPairing.normalize(rawCode)
+        if (Backend.isSupabase) return pairSupabase(employee, code)
         try {
             val p = db.collection("devicePairing").document(code).get().await()
             val uid = p.getString("uid")
@@ -74,8 +75,42 @@ class PcRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    /** Supabase: код читає лише адмін (device_pairing_get); devices створює RPC device_pair (і пише журнал). */
+    private suspend fun pairSupabase(employee: Employee, code: String): String {
+        val p = ua.chudo.scanner.print.SupabasePrint.pairing(code)
+        PcPairing.pairingError(p != null, p?.let { "ok" }, p?.expiresAt?.let(::parseTime), Date())?.let { throw PcPairingException(it) }
+        try {
+            ua.chudo.scanner.print.SupabasePrint.pair(code, employee.shopId)
+        } catch (e: io.github.jan.supabase.postgrest.exception.PostgrestRestException) {
+            throw when {
+                e.message?.contains("not allowed") == true || e.code == "42501" ->
+                    PcPairingException("Немає прав підключати комп'ютер до цього магазину (потрібен адмін магазину або мережі).")
+                e.message?.contains("expired") == true -> PcPairingException("Код минув — у вікні програми вже новий код.")
+                else -> e
+            }
+        }
+        return p!!.pcName.ifBlank { "Комп'ютер" }
+    }
+
     /** Комп'ютери магазину: devices where shopId == … + пульс agents/{uid}. */
     suspend fun pcs(shopId: String): List<PcCard> {
+        if (Backend.isSupabase) {
+            val now = Date()
+            val agents = ua.chudo.scanner.print.SupabasePrint.agents(shopId).associateBy { it.uid }
+            return ua.chudo.scanner.print.SupabasePrint.devices(shopId).map { d ->
+                val a = agents[d.uid]
+                val printers = a?.printerMaps().orEmpty()
+                val main = printers.firstOrNull { it["isDefault"] == true } ?: printers.firstOrNull()
+                PcCard(
+                    uid = d.uid, pcName = a?.pcName?.ifBlank { null } ?: d.name,
+                    online = PcPairing.online(parseTime(a?.lastSeen), a?.online, now),
+                    printer = main?.get("name") as? String, printerText = main?.get("text") as? String,
+                    printerOk = (main?.get("state") as? String ?: "ok") == "ok",
+                    queue = a?.queue ?: 0, lastError = a?.lastError.orEmpty(), version = a?.version.orEmpty(),
+                    lastSeen = parseTime(a?.lastSeen),
+                )
+            }.sortedBy { it.pcName }
+        }
         val devices = db.collection("devices").whereEqualTo("shopId", shopId).get().await().documents
         val now = Date()
         return devices.map { d ->
@@ -100,6 +135,11 @@ class PcRepository(private val db: FirebaseFirestore) {
 
     /** «Відключити»: видалити devices/{uid} — ПК знову покаже код, друк через нього зупиниться. */
     suspend fun unpair(employee: Employee, pc: PcCard) {
+        if (Backend.isSupabase) {
+            ua.chudo.scanner.print.SupabasePrint.unpair(pc.uid)
+            runCatching { SupabaseUsers.log("unpairPc", pc.pcName, employee.shopId, null) }
+            return
+        }
         db.collection("devices").document(pc.uid).delete().await()
         runCatching { NetworkAdminRepository(db).log(employee.uid, "unpairPc", pc.pcName, employee.shopId) }
     }

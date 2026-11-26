@@ -35,14 +35,16 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
     private val shop get() = db.collection("shops").document(shopId)
     private val printers get() = shop.collection("printers")
 
-    fun listen(): Flow<List<PrinterRecord>> = callbackFlow {
+    private val sb get() = ua.chudo.scanner.data.Backend.isSupabase
+
+    fun listen(): Flow<List<PrinterRecord>> = if (sb) SupabasePrint.printers(shopId) else callbackFlow {
         val reg = printers.addSnapshotListener { snap, _ ->
             if (snap != null) trySend(snap.documents.mapNotNull { it.toRecord() })
         }
         awaitClose { reg.remove() }
     }
 
-    fun subnets(): Flow<List<String>> = callbackFlow {
+    fun subnets(): Flow<List<String>> = if (sb) SupabasePrint.subnets(shopId) else callbackFlow {
         val reg = shop.addSnapshotListener { snap, _ ->
             @Suppress("UNCHECKED_CAST")
             val list = (snap?.get("printerSubnets") as? List<Any?>).orEmpty().filterIsInstance<String>()
@@ -54,6 +56,11 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
     /** Найден или напечатал: адрес, время, кто. Поля администратора (density/speed) не трогаем. */
     suspend fun upsert(r: PrinterRecord, uid: String, ok: Boolean = false) {
         if (r.transport == Link.USB) return // USB — только этот телефон
+        if (sb) {
+            SupabasePrint.upsert(shopId, r, uid, ok)
+            if (r.transport == Link.TCP) Cidr.slash24(r.ip)?.let { addSubnet(it) }
+            return
+        }
         val data = mutableMapOf<String, Any>(
             "model" to r.model, "kind" to r.kind.wire, "ip" to r.ip, "port" to r.port,
             "transport" to r.transport.wire, "lastSeen" to FieldValue.serverTimestamp(),
@@ -68,16 +75,19 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
     /** Принтер жив: обновляем только lastSeen (и IP, если сменился). */
     suspend fun touch(r: PrinterRecord) {
         if (r.transport == Link.USB) return
+        if (sb) { SupabasePrint.touch(shopId, r); return }
         printers.document(r.id).set(mapOf("ip" to r.ip, "lastSeen" to FieldValue.serverTimestamp()), SetOptions.merge()).await()
     }
 
     suspend fun addSubnet(cidr: String) {
         val norm = Cidr.normalize(cidr) ?: return
+        if (sb) { SupabasePrint.addSubnet(shopId, norm); return }
         shop.set(mapOf("printerSubnets" to FieldValue.arrayUnion(norm)), SetOptions.merge()).await()
     }
 
     /** Только администратор (правила Firestore). */
     suspend fun setTuning(id: String, density: Int?, speed: Int?) {
+        if (sb) { SupabasePrint.setTuning(shopId, id, density, speed); return }
         printers.document(id).set(
             mapOf(
                 "density" to (density ?: FieldValue.delete()), "speed" to (speed ?: FieldValue.delete()),
@@ -89,10 +99,12 @@ class PrinterRegistry(private val db: FirebaseFirestore, val shopId: String) {
     }
 
     suspend fun delete(id: String) {
+        if (sb) { SupabasePrint.delete(shopId, id); return }
         printers.document(id).delete().await()
     }
 
     suspend fun rename(id: String, name: String) {
+        if (sb) { SupabasePrint.rename(shopId, id, cleanName(name)); return }
         printers.document(id).update(mapOf("name" to cleanName(name), "lastSeen" to FieldValue.serverTimestamp())).await()
     }
 

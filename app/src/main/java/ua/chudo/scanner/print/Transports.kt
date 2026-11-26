@@ -222,6 +222,7 @@ class AgentTransport(
     private val lang: PrintLang,
 ) : PrinterTransport {
     override suspend fun isAlive(): Boolean = runCatching {
+        if (ua.chudo.scanner.data.Backend.isSupabase) return@runCatching SupabasePrint.online(SupabasePrint.agent(agentId))
         val doc = db.collection("agents").document(agentId).get().await()
         AgentDirectory.online(doc.getTimestamp("lastSeen")) && doc.getBoolean("online") != false
     }.getOrDefault(false)
@@ -230,6 +231,14 @@ class AgentTransport(
         if (shopId.isEmpty() || uid.isEmpty()) throw PrintException("Друк через комп'ютер доступний після входу співробітника.")
         if (bytes.size > MAX_BYTES) throw PrintException("Завдання завелике для друку через комп'ютер (${bytes.size / 1024} КБ). Друкуй меншими частинами.")
         if (!isAlive()) throw PrintException("Комп'ютер магазину не на зв'язку понад 3 хв. Перевір, що він увімкнений і програма «ЧудоСкан Друк» запущена.")
+        if (ua.chudo.scanner.data.Backend.isSupabase) {
+            val (st, err) = SupabasePrint.printJob(agentId, printer, shopId, lang.name, bytes, AGENT_WAIT_MS)
+            when (st) {
+                "done" -> return
+                "error" -> throw PrintException(err ?: "Комп'ютер не зміг надрукувати завдання.")
+                else -> throw PrintException("Комп'ютер не взяв завдання за ${AGENT_WAIT_MS / 1000} с. Перевір програму «ЧудоСкан Друк» на ПК.")
+            }
+        }
         val ref = db.collection("printJobs").add(
             mapOf(
                 "agentId" to agentId, "printer" to printer, "shopId" to shopId, "by" to uid,
@@ -268,8 +277,9 @@ class AgentTransport(
  */
 class AgentDirectory(private val db: () -> FirebaseFirestore?) {
     suspend fun printers(shopId: String, includeOffline: Boolean = false, strict: Boolean = false): List<PrinterRecord> {
-        val fs = db() ?: return emptyList()
         if (shopId.isEmpty()) return emptyList()
+        if (ua.chudo.scanner.data.Backend.isSupabase) return supabasePrinters(shopId, includeOffline, strict)
+        val fs = db() ?: return emptyList()
         // Лише ПК, підключені до магазину (devices/{uid}): задання іншим агентам правила не приймуть.
         val (docs, paired) = try {
             fs.collection("agents").whereEqualTo("shopId", shopId).get().await().documents to
@@ -288,6 +298,24 @@ class AgentDirectory(private val db: () -> FirebaseFirestore?) {
                     computerName = d.getString("pcName").orEmpty(),
                     // Принтер по умолчанию на ПК — первым.
                     lastSeen = if (m["isDefault"] == true) 1 else 0,
+                )
+            }
+        }.sortedByDescending { it.lastSeen }
+    }
+
+    private suspend fun supabasePrinters(shopId: String, includeOffline: Boolean, strict: Boolean): List<PrinterRecord> {
+        val (list, paired) = try {
+            SupabasePrint.agents(shopId) to SupabasePrint.pairedIds(shopId)
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (strict) throw e else emptyList<AgentFull>() to emptySet() }
+        return list.filter { it.uid in paired }.filter { includeOffline || SupabasePrint.online(it) }.flatMap { a ->
+            a.printerMaps().mapNotNull { m ->
+                val name = m["name"] as? String ?: return@mapNotNull null
+                val kind = LabelKind.ofWire(m["kind"] as? String) ?: guessByModel(name)?.first ?: return@mapNotNull null
+                PrinterRecord(
+                    id = PrinterIds.agent(a.uid, name), model = name, kind = kind, transport = Link.AGENT,
+                    agentId = a.uid, printerName = name, computerName = a.pcName,
+                    lastSeen = if (m["isDefault"] == true || m["isDefault"] == "true") 1 else 0,
                 )
             }
         }.sortedByDescending { it.lastSeen }

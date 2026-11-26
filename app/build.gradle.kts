@@ -27,7 +27,7 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
 
         // Де дані: firestore | supabase (-Pbackend=supabase або змінна BACKEND). Вхід — завжди Firebase Auth.
-        val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND") ?: "firestore").trim().lowercase()
+        val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND")).orEmpty().trim().lowercase().ifEmpty { "firestore" }
         require(backend in setOf("firestore", "supabase")) { "backend: firestore | supabase, а не $backend" }
         buildConfigField("String", "BACKEND", "\"$backend\"")
         // Публічні: URL проєкту й publishable key (доступ вирішують RLS-політики, supabase/migrations).

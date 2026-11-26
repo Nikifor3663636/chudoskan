@@ -4,17 +4,28 @@ using System.Text.Json;
 
 namespace ChudoScan.Print;
 
-/// <summary>appsettings.json поруч з програмою: Web API key і projectId Firebase (без секретів).</summary>
-public sealed record AppSettings(string FirebaseApiKey, string ProjectId)
+/// <summary>
+/// appsettings.json поруч з програмою (без секретів): Web API key і projectId Firebase (вхід),
+/// backend = firestore | supabase (де дані), URL і publishable key Supabase.
+/// </summary>
+public sealed record AppSettings(string FirebaseApiKey, string ProjectId, string Backend = "firestore",
+    string SupabaseUrl = AppSettings.DefaultSupabaseUrl, string SupabaseKey = AppSettings.DefaultSupabaseKey)
 {
-    public static AppSettings Load()
+    public const string DefaultSupabaseUrl = "https://wbboztsxzuxfocdqjyzk.supabase.co";
+    public const string DefaultSupabaseKey = "sb_publishable_pXZn08SVg5og-I9_PuX5LA_qdTmydyk";
+
+    public bool IsSupabase => Backend.Equals("supabase", StringComparison.OrdinalIgnoreCase);
+
+    public static AppSettings Load() => Parse(Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+
+    public static AppSettings Parse(string path)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         if (!File.Exists(path)) return new AppSettings("", "chudoostriv");
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         string Str(string name, string fallback) =>
-            doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
-        return new AppSettings(Str("firebaseApiKey", ""), Str("projectId", "chudoostriv"));
+            doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString()! : fallback;
+        return new AppSettings(Str("firebaseApiKey", ""), Str("projectId", "chudoostriv"), Str("backend", "firestore").Trim().ToLowerInvariant(),
+            Str("supabaseUrl", DefaultSupabaseUrl), Str("supabaseKey", DefaultSupabaseKey));
     }
 }
 
@@ -114,6 +125,21 @@ public sealed class FirebaseAuthClient(HttpClient http, AppSettings settings)
             if (_auth == null) await SignUpAsync(ct);
             else await RefreshAsync(ct);
             return _idToken!;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <summary>Новий ID-токен зараз (після ensure-role — щоб у ньому з'явився claim role).</summary>
+    public async Task ForceRefreshAsync(CancellationToken ct)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            if (_auth == null) await SignUpAsync(ct);
+            else await RefreshAsync(ct);
         }
         finally
         {

@@ -83,6 +83,8 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          # Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — firestore).
+          BACKEND: ${{ vars.BACKEND }}
         run: ./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest :app:assembleRelease --console=plain
 
       - uses: actions/upload-artifact@v7

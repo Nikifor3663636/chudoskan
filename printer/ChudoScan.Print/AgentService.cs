@@ -19,16 +19,16 @@ public sealed record AgentStatus(
 
 /// <summary>
 /// Підключення ПК до магазину (devicePairing → devices/{uid}), пульс agents/{uid} кожні 60 с, друк printJobs
-/// по одному (опитування кожні 5 с), обслуговування черги кожні 5 хв. Вхід — анонімний користувач Firebase.
+/// по одному, обслуговування черги кожні 5 хв. Вхід — анонімний користувач Firebase. Дані — Firestore (опитування
+/// кожні 5 с) або Supabase (Realtime + резервне опитування кожні 15 с) — див. <see cref="IAgentStore"/>.
 /// </summary>
 public sealed class AgentService : IDisposable
 {
-    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan HeartbeatEvery = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MaintenanceEvery = TimeSpan.FromMinutes(5);
 
     private readonly FirebaseAuthClient _auth;
-    private readonly FirestoreGateway _fs;
+    private readonly IAgentStore _store;
     private readonly CancellationTokenSource _stop = new();
     private readonly SemaphoreSlim _printLock = new(1, 1);
     private Task? _loop;
@@ -54,8 +54,14 @@ public sealed class AgentService : IDisposable
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"ChudoScanPrint/{Version}");
         _auth = new FirebaseAuthClient(http, settings);
-        _fs = new FirestoreGateway(http, _auth, settings);
+        _store = settings.IsSupabase
+            ? new SupabaseAgentStore(http, _auth, settings)
+            : new FirestoreAgentStore(new FirestoreGateway(http, _auth, settings), _auth);
+        _store.JobsChanged += () => { try { _wake.Cancel(); } catch (ObjectDisposedException) { } };
+        Log.Info($"Сховище: {(settings.IsSupabase ? "Supabase" : "Firestore")}");
     }
+
+    private TimeSpan PollEvery => _store.PollEvery;
 
     public void Start() => _loop = Task.Run(() => RunAsync(_stop.Token));
 
@@ -76,7 +82,7 @@ public sealed class AgentService : IDisposable
             try
             {
                 RefreshPrinters();
-                await _auth.TokenAsync(ct);
+                await _store.PrepareAsync(ct);
                 var device = await DeviceAsync(ct);
                 SetConnected(true);
                 if (device == null) await PairAsync(ct);
@@ -109,11 +115,12 @@ public sealed class AgentService : IDisposable
         }
     }
 
-    private async Task<FsDoc?> DeviceAsync(CancellationToken ct)
+    /// <summary>Магазин підключеного ПК; null — ще не підключено.</summary>
+    private async Task<string?> DeviceAsync(CancellationToken ct)
     {
         try
         {
-            return await _fs.GetAsync($"devices/{_auth.Uid}", ct);
+            return await _store.DeviceShopAsync(ct);
         }
         catch (PermissionDeniedException)
         {
@@ -136,10 +143,10 @@ public sealed class AgentService : IDisposable
             SetConnected(true);
             if (device != null)
             {
-                if (_code != null) await TryAsync(() => _fs.DeleteAsync($"devicePairing/{_code}", ct));
+                if (_code != null) await TryAsync(() => _store.DeletePairingAsync(_code, ct));
                 _code = null;
                 _codeExpires = null;
-                Log.Info($"ПК підключено до магазину {device.Str("shopId")}");
+                Log.Info($"ПК підключено до магазину {device}");
                 return;
             }
         }
@@ -147,27 +154,13 @@ public sealed class AgentService : IDisposable
 
     private async Task NewCodeAsync(CancellationToken ct)
     {
-        if (_code != null) await TryAsync(() => _fs.DeleteAsync($"devicePairing/{_code}", ct));
+        if (_code != null) await TryAsync(() => _store.DeletePairingAsync(_code, ct));
         for (var attempt = 0; attempt < 5; attempt++)
         {
             var code = PairingCode.New();
             var expires = PairingCode.ExpiresAt(DateTimeOffset.UtcNow);
-            var fields = new JsonObject
-            {
-                ["uid"] = FirestoreGateway.S(_auth.Uid!),
-                ["pcName"] = FirestoreGateway.S(PcName),
-                ["expires"] = FirestoreGateway.T(expires),
-            };
-            bool created;
-            try
-            {
-                created = await _fs.CreateAsync("devicePairing", code, fields, ct);
-            }
-            catch (PermissionDeniedException)
-            {
-                created = false; // такий код уже зайнятий іншим ПК
-            }
-            if (!created) continue;
+            // false — такий код уже зайнятий іншим ПК.
+            if (!await _store.CreatePairingAsync(code, PcName, expires, ct)) continue;
             _code = code;
             _codeExpires = expires;
             Log.Info("Новий код підключення");
@@ -177,9 +170,9 @@ public sealed class AgentService : IDisposable
     }
 
     /// <summary>Підключено: пульс, друк, обслуговування черги.</summary>
-    private async Task WorkAsync(FsDoc device, CancellationToken ct)
+    private async Task WorkAsync(string shopId, CancellationToken ct)
     {
-        _shopId = device.Str("shopId");
+        _shopId = shopId;
         var nextBeat = DateTimeOffset.MinValue;
         var nextMaintenance = DateTimeOffset.MinValue;
         while (!ct.IsCancellationRequested)
@@ -202,53 +195,29 @@ public sealed class AgentService : IDisposable
                 await MaintainAsync(ct);
                 nextMaintenance = now + MaintenanceEvery;
             }
-            var jobs = await _fs.JobsAsync(_auth.Uid!, "queued", 1, ct);
+            var job = await _store.NextQueuedAsync(ct);
             SetConnected(true);
-            if (jobs.Count > 0) await PrintJobAsync(jobs[0], ct);
+            if (job != null) await PrintJobAsync(job, ct);
             else await SleepAsync(PollEvery, ct);
         }
     }
 
-    private async Task HeartbeatAsync(bool online, CancellationToken ct)
-    {
+    private Task HeartbeatAsync(bool online, CancellationToken ct) =>
         // Стан Godex для картки ПК у застосунку: state (ok / offline / error) і текст українською.
-        var printers = _godex.Select(p => FirestoreGateway.M(new JsonObject
-        {
-            ["name"] = FirestoreGateway.S(p.Name),
-            ["isDefault"] = FirestoreGateway.B(p.IsDefault),
-            ["kind"] = FirestoreGateway.S("label_40x24"),
-            ["state"] = FirestoreGateway.S(p.State.ToString().ToLowerInvariant()),
-            ["text"] = FirestoreGateway.S(p.Text),
-        }));
-        var fields = new JsonObject
-        {
-            ["shopId"] = FirestoreGateway.S(_shopId ?? ""),
-            ["pcName"] = FirestoreGateway.S(PcName),
-            ["online"] = FirestoreGateway.B(online),
-            ["version"] = FirestoreGateway.S(Version),
-            ["queue"] = FirestoreGateway.I(_queue),
-            ["lastError"] = FirestoreGateway.S(_lastError ?? ""),
-            ["printers"] = FirestoreGateway.A(printers),
-        };
-        await _fs.SetWithServerTimeAsync($"agents/{_auth.Uid}", fields, ["lastSeen"], ct);
-    }
-
+        _store.HeartbeatAsync(new AgentBeat(_shopId ?? "", PcName, online, Version, _queue, _lastError ?? "", _godex), ct);
     /// <summary>Одне завдання: забрати (printing, startedAt, attempts+1), надрукувати RAW, done / error.</summary>
-    private async Task PrintJobAsync(FsDoc job, CancellationToken ct)
+    private async Task PrintJobAsync(PrintJob job, CancellationToken ct)
     {
-        var path = $"printJobs/{job.Id}";
-        var claimed = await _fs.UpdateAsync(path, new JsonObject { ["status"] = FirestoreGateway.S("printing") }, ["startedAt"], job.UpdateTime, ct,
-            new Dictionary<string, long> { ["attempts"] = 1 });
-        if (!claimed) return; // уже взято
+        if (!await _store.ClaimAsync(job, ct)) return; // уже взято
         string? error = null;
-        if (job.Str("shopId") != _shopId)
+        if (job.ShopId != _shopId)
         {
             error = "Завдання іншого магазину";
         }
         else
         {
-            var target = PickPrinter(job.Str("printer"));
-            var data = job.Bytes("data");
+            var target = PickPrinter(job.Printer);
+            var data = job.Data;
             if (target == null) error = "Godex не знайдено. Перевірте кабель і драйвер.";
             else if (data == null || data.Length == 0) error = "Порожнє завдання";
             else
@@ -268,9 +237,7 @@ public sealed class AgentService : IDisposable
                 }
             }
         }
-        var fields = new JsonObject { ["status"] = FirestoreGateway.S(error == null ? "done" : "error") };
-        if (error != null) fields["error"] = FirestoreGateway.S(error.Length > 500 ? error[..500] : error);
-        await _fs.UpdateAsync(path, fields, ["doneAt"], null, ct);
+        await _store.FinishAsync(job, error is { Length: > 500 } ? error[..500] : error, ct);
         if (error == null)
         {
             CountPrinted();
@@ -285,34 +252,29 @@ public sealed class AgentService : IDisposable
         Publish();
     }
 
-    /// <summary>Кожні 5 хв: завислі — знову в чергу або error; старі done/error — видалити.</summary>
+    /// <summary>
+    /// Кожні 5 хв: лічильник черги; Firestore — ще й завислі знову в чергу або error, старі done/error — видалити
+    /// (у Supabase це робить pg_cron на сервері).
+    /// </summary>
     private async Task MaintainAsync(CancellationToken ct)
     {
-        var all = await _fs.JobsAsync(_auth.Uid!, null, 200, ct);
+        var all = await _store.AllJobsAsync(200, ct);
         var now = DateTimeOffset.UtcNow;
-        _queue = all.Count(j => j.Str("status") == "queued");
-        foreach (var j in all)
+        _queue = all.Count(j => j.Status == "queued");
+        if (_store.SelfMaintain)
         {
-            var info = new JobInfo(j.Id, j.Str("status") ?? "", (int)(j.Int("attempts") ?? 0), j.Time("at"), j.Time("startedAt"), j.Time("doneAt"));
-            switch (JobMaintenance.Decide(info, now))
+            foreach (var j in all)
             {
-                case JobFix.Requeue:
-                    await _fs.UpdateAsync($"printJobs/{j.Id}", new JsonObject { ["status"] = FirestoreGateway.S("queued") }, [], j.UpdateTime, ct);
-                    break;
-                case JobFix.Fail:
-                    await _fs.UpdateAsync($"printJobs/{j.Id}", new JsonObject
-                    {
-                        ["status"] = FirestoreGateway.S("error"), ["error"] = FirestoreGateway.S(JobMaintenance.StuckError),
-                    }, ["doneAt"], j.UpdateTime, ct);
-                    break;
-                case JobFix.Delete:
-                    await TryAsync(() => _fs.DeleteAsync($"printJobs/{j.Id}", ct));
-                    break;
+                switch (JobMaintenance.Decide(new JobInfo(j.Id, j.Status, j.Attempts, j.At, j.StartedAt, j.DoneAt), now))
+                {
+                    case JobFix.Requeue: await _store.RequeueAsync(j, ct); break;
+                    case JobFix.Fail: await _store.FailAsync(j, JobMaintenance.StuckError, ct); break;
+                    case JobFix.Delete: await TryAsync(() => _store.DeleteJobAsync(j, ct)); break;
+                }
             }
         }
         Publish();
     }
-
     // ---------- Дії з вікна ----------
 
     /// <summary>«Тест етикетки»: EZPL прямо на Godex цього ПК, без Firestore.</summary>
@@ -337,8 +299,7 @@ public sealed class AgentService : IDisposable
     public async Task DisconnectAsync()
     {
         using var cts = new CancellationTokenSource(FirestoreGateway.Timeout);
-        await TryAsync(() => _fs.DeleteAsync($"agents/{_auth.Uid}", cts.Token));
-        await _fs.DeleteAsync($"devices/{_auth.Uid}", cts.Token);
+        await _store.DisconnectAsync(cts.Token);
         Log.Info("ПК відключено від магазину користувачем");
         _shopId = null;
         Retry();
@@ -413,5 +374,6 @@ public sealed class AgentService : IDisposable
         _stop.Dispose();
         _wake.Dispose();
         _printLock.Dispose();
+        (_store as IDisposable)?.Dispose();
     }
 }
