@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>Залишки мережі · ЧудоСкан</title>
+  <title>Адмінка · ЧудоСкан</title>
   <link rel="icon" href="../apple-touch-icon.png">
   <style>
     :root {
@@ -34,6 +34,9 @@
     .workspace { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
     .workspace > section { display: grid; gap: 16px; min-width: 0; }
     .import-nav { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; }
+    .nav-group { color: var(--muted); padding: 6px 8px 0; font-size: 13px; font-weight: 600; }
+    #admin-search input { flex: 1 1 180px; width: auto; }
+    .pagination { margin-block-start: 12px; }
     .import-nav button { display: flex; gap: 10px; align-items: center; text-align: left; border-color: transparent; background: transparent; }
     .import-nav button[aria-current="page"] { background: var(--tone); border-color: var(--tone-line); color: var(--link); }
     .icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -85,13 +88,14 @@
       .topbar-content { padding-inline: 12px; }
       .workspace { grid-template-columns: 1fr; gap: 12px; }
       .import-nav { display: flex; flex-wrap: wrap; }
+      .nav-group { flex-basis: 100%; }
       .import-nav button { flex: 1 1 auto; justify-content: center; }
       .card { padding: 16px; }
     }
   </style>
 </head>
 <body>
-  <header class="topbar"><div class="topbar-content"><img src="../logo.svg" alt="Чудо Острів"><span>Імпорт з 1С</span></div></header>
+  <header class="topbar"><div class="topbar-content"><img src="../logo.svg" alt="Чудо Острів"><span>Адмінка</span></div></header>
   <main id="app"><div class="card"><p class="muted">Завантаження…</p></div></main>
   <noscript><p style="text-align:center">Потрібен JavaScript.</p></noscript>
   <script src="config.js"></script>

@@ -13,6 +13,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ua.chudo.shared.data.ThemePreference
 
 // Те же цвета, что в Android-версии: оранжевый «магазина игрушек», белые карточки, графитовый текст.
 private val Orange = Color(0xFFFF7500)
@@ -60,9 +61,14 @@ private val AppTypography = Typography().run {
 val PriceStyle = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp, fontFeatureSettings = "tnum")
 
 @Composable
-fun ChudoTheme(content: @Composable () -> Unit) {
+fun ChudoTheme(preference: ThemePreference = ThemePreference.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (preference) {
+        ThemePreference.SYSTEM -> isSystemInDarkTheme()
+        ThemePreference.LIGHT -> false
+        ThemePreference.DARK -> true
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Dark else Light,
+        colorScheme = if (dark) Dark else Light,
         typography = AppTypography,
         shapes = Shapes(small = RoundedCornerShape(6.dp), medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(16.dp)),
         content = content,

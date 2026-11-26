@@ -7,6 +7,7 @@ import {
   setDoc, startAfter, writeBatch,
 } from 'firebase/firestore';
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
+import { adminQuery, adminSections, canViewSection, PAGE_SIZE } from './admin.js';
 import { highlightReport } from './highlights.js';
 import { readXlsx } from './xlsx.js';
 import { loadSiteShops } from './siteShops.js';
@@ -88,8 +89,8 @@ function errorText(e) {
 function loginView(message = '') {
   render(`
     <form class="card" id="login">
-      <h2>Вхід</h2>
-      <p class="muted">Той самий номер і пароль, що в застосунку. Завантажувати може лише адмін залишків.</p>
+      <h2>Вхід до адмінки</h2>
+      <p class="muted">Ті самі номер і пароль, що в застосунку ЧудоСкан.</p>
       <label>Телефон<div class="phone"><span>+380</span><input id="phone" inputmode="numeric" autocomplete="username" placeholder="96 123 45 67" required></div></label>
       <label>Пароль<input id="password" type="password" autocomplete="current-password" required></label>
       ${message ? `<p class="error">${esc(message)}</p>` : ''}
@@ -114,19 +115,22 @@ onAuthStateChanged(auth, async (user) => {
     let u;
     if (sb) {
       await timed(ensureRole(user), READ_TIMEOUT, 'підготовка входу');
-      const r = must(await timed(sb.from('users').select('name, approved, stock_admin, super_admin').eq('uid', user.uid).maybeSingle(), READ_TIMEOUT, 'перевірка прав')) ?? {};
-      u = { name: r.name, approved: r.approved, stockAdmin: r.stock_admin, superAdmin: r.super_admin };
+      const r = must(await timed(sb.from('users').select('name, approved, admin, stock_admin, super_admin').eq('uid', user.uid).maybeSingle(), READ_TIMEOUT, 'перевірка прав')) ?? {};
+      u = { name: r.name, approved: r.approved, admin: r.admin, stockAdmin: r.stock_admin, superAdmin: r.super_admin };
     } else {
       u = (await timed(getDoc(doc(db, 'users', user.uid)), READ_TIMEOUT, 'перевірка прав')).data() ?? {};
     }
-    const allowed = u.approved === true && (u.stockAdmin === true || u.superAdmin === true);
+    const canImport = u.stockAdmin === true || u.superAdmin === true;
+    const shopAdmin = Boolean(sb) && u.admin === true;
+    const allowed = u.approved === true && (canImport || shopAdmin);
     if (!allowed) {
-      render(`<div class="card"><h2>Немає прав</h2><p>Завантажувати залишки мережі може лише адмін залишків. Права видаються в консолі Firebase.</p><button id="out">Вийти</button></div>`);
+      render(`<div class="card"><h2>Немає прав</h2><p>Цей розділ доступний адміністраторам магазину, залишків і мережі.</p><button id="out">Вийти</button></div>`);
       $('#out').onclick = () => signOut(auth);
       return;
     }
-    me = { uid: user.uid, name: (u.name || 'Адмін').slice(0, 100) };
-    await homeView();
+    me = { uid: user.uid, name: (u.name || 'Адмін').slice(0, 100), canImport, shopAdmin, superAdmin: u.superAdmin === true };
+    if (canImport) await homeView();
+    else await adminView('staff');
   } catch (e) {
     render(`<div class="card"><p class="error">${esc(errorText(e))}</p><button id="out">Вийти</button></div>`);
     $('#out').onclick = () => signOut(auth);
@@ -145,15 +149,19 @@ const importKinds = [
 const icon = (path) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 
 function importWorkspace(active, heading, content) {
-  const kinds = sb ? importKinds : importKinds.slice(0, 1);
+  const kinds = (sb ? importKinds : importKinds.slice(0, 1)).filter(({ key }) => canViewSection(key, me));
+  const tables = sb ? Object.entries(adminSections).filter(([key]) => canViewSection(key, me)) : [];
   render(`<div class="workspace">
-    <nav class="import-nav" aria-label="Тип імпорту">
+    <nav class="import-nav" aria-label="Розділи адміністратора">
+      ${kinds.length ? '<span class="nav-group">Імпорт з 1С</span>' : ''}
       ${kinds.map(({ key, label, path }) =>
         `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${icon(path)}${label}</button>`).join('')}
+      ${tables.length ? '<span class="nav-group">Адміністрування</span>' : ''}
+      ${tables.map(([key, item]) => `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${item.title}</button>`).join('')}
     </nav>
     <section aria-labelledby="import-title">
       <div class="row between">
-        <div class="page-head"><h1 id="import-title">${esc(heading)}</h1><p class="muted">Імпорт з 1С</p></div>
+        <div class="page-head"><h1 id="import-title">${esc(heading)}</h1><p class="muted">${adminSections[active] ? 'Адміністрування' : 'Імпорт з 1С'}</p></div>
         <button class="link" id="out">Вийти (${esc(me.name)})</button>
       </div>
       ${content}
@@ -166,6 +174,7 @@ function importWorkspace(active, heading, content) {
       if (kind === active) return;
       if (kind === 'stock') homeView();
       else if (kind === 'history') historyView();
+      else if (adminSections[kind]) adminView(kind);
       else highlightsView(kind);
     };
   });
@@ -202,6 +211,51 @@ async function homeView(note = '') {
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) start(f); };
+}
+
+async function adminView(key, search = '', offset = 0) {
+  const section = adminSections[key];
+  if (!me || !canViewSection(key, me)) return;
+  importWorkspace(key, section.title, `<div class="card">
+    <form id="admin-search" class="row">
+      <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="Пошук" maxlength="100">
+      <button type="submit">Знайти</button>
+    </form>
+    <div id="admin-results" aria-live="polite"><p class="muted">Завантаження…</p></div>
+  </div>`);
+  const result = $('#admin-results');
+  $('#admin-search').onsubmit = event => {
+    event.preventDefault();
+    adminView(key, new FormData(event.currentTarget).get('search').trim());
+  };
+  try {
+    const rows = must(await timed(adminQuery(sb, key, search, offset), READ_TIMEOUT, section.title));
+    if (!result.isConnected) return;
+    const cell = (column, row) => {
+      const value = column.get(row);
+      if (value == null || value === '') return '—';
+      if (column.key === 'at' || column.key === 'paired_at') return esc(when(value));
+      return esc(typeof value === 'number' ? fmt(value) : value);
+    };
+    const page = rows.slice(0, PAGE_SIZE);
+    result.innerHTML = `${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
+      <table><thead><tr>${section.columns.map(column => `<th scope="col">${column.label}</th>`).join('')}</tr></thead>
+      <tbody>${page.map(row => `<tr>${section.columns.map(column => `<td>${cell(column, row)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    </div>` : '<p class="muted">Записів немає.</p>'}
+    ${offset || rows.length > PAGE_SIZE ? `<div class="row pagination">
+      ${offset ? '<button type="button" id="previous-page">Назад</button>' : ''}
+      <span>Сторінка ${offset / PAGE_SIZE + 1}</span>
+      ${rows.length > PAGE_SIZE ? '<button type="button" id="next-page">Далі</button>' : ''}
+    </div>` : ''}`;
+    const previous = $('#previous-page');
+    const next = $('#next-page');
+    if (previous) previous.onclick = () => adminView(key, search, offset - PAGE_SIZE);
+    if (next) next.onclick = () => adminView(key, search, offset + PAGE_SIZE);
+  } catch (error) {
+    if (!result.isConnected) return;
+    result.innerHTML = `<p class="error" role="alert">${esc(errorText(error))}</p><button type="button" id="retry-admin">Повторити</button>`;
+    $('#retry-admin').onclick = () => adminView(key, search, offset);
+  }
 }
 
 async function historyView() {

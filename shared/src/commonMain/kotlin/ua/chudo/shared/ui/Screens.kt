@@ -44,6 +44,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,6 +90,7 @@ import ua.chudo.shared.data.HistoryItem
 import ua.chudo.shared.data.HttpException
 import ua.chudo.shared.data.LookupResult
 import ua.chudo.shared.data.Via
+import ua.chudo.shared.data.ThemePreference
 import ua.chudo.shared.openUrl
 import ua.chudo.shared.res.Res
 import ua.chudo.shared.res.logo_wordmark
@@ -540,6 +542,7 @@ fun ProfileScreen(employee: Employee, nav: Navigator) {
     var message by remember { mutableStateOf<String?>(null) }
     var changePassword by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
+    val theme by graph.prefs.theme.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 16.dp)) {
         TopBar("Профіль", onBack = { nav.back() })
         Spacer(Modifier.height(8.dp))
@@ -556,6 +559,13 @@ fun ProfileScreen(employee: Employee, nav: Navigator) {
             }
         }
         Text("Магазин змінює адміністратор.", Modifier.padding(start = 4.dp, top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Text("Тема оформлення", style = MaterialTheme.typography.titleMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(ThemePreference.entries) { option ->
+                FilterChip(selected = theme == option, onClick = { graph.prefs.setTheme(option) }, label = { Text(option.title) })
+            }
+        }
         Spacer(Modifier.height(16.dp))
         Card(Modifier.fillMaxWidth()) {
             Column {
