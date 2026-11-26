@@ -63,22 +63,22 @@ data class MineColors(
 
 val MineDark = MineColors(
     dark = true,
-    bg = Color(0xFF121317), surface = Color(0xFF1C1D22), card = Color(0xFF26272D), line = Color(0xFF3A3B42),
-    outline = Color(0xFF4A4B52), text = Color(0xFFF2EEEA), textSecondary = Color(0xFFB9B4AE),
-    accent = Color(0xFFFF8A24), onAccent = Color(0xFF1A0E04), accentTone = Color(0xFF3A1F08),
-    danger = Color(0xFF5A1A14), onDanger = Color(0xFFF6D6D0), success = Color(0xFF3DCB6C),
-    warning = Color(0xFFFFB020), warningText = Color(0xFFFFC27A), field = Color(0xFF2A2B31),
-    sheet = Color(0xFF1E1F24), link = Color(0xFFFF8A24), logout = Color(0xFFFF8A6A),
+    bg = Color(0xFF0F1114), surface = Color(0xFF1C2025), card = Color(0xFF171A1E), line = Color(0xFF2A2F36),
+    outline = Color(0xFF3A4049), text = Color(0xFFECEEF1), textSecondary = Color(0xFFA3AAB5),
+    accent = Color(0xFFFF7A0A), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFF2A1A0C),
+    danger = Color(0xFF2E1715), onDanger = Color(0xFFFF7A70), success = Color(0xFF4CC27E),
+    warning = Color(0xFFF2B33D), warningText = Color(0xFFF2B33D), field = Color(0xFF1C2025),
+    sheet = Color(0xFF22262C), link = Color(0xFFFF9A47), logout = Color(0xFFFF7A70),
 )
 
 val MineLight = MineColors(
     dark = false,
-    bg = Color(0xFFF5F6F8), surface = Color(0xFFFFFFFF), card = Color(0xFFFFFFFF), line = Color(0xFFDDE0E5),
-    outline = Color(0xFFCDD1D8), text = Color(0xFF1C1D22), textSecondary = Color(0xFF5F6470),
-    accent = Color(0xFFFF7A00), onAccent = Color(0xFF1A0E04), accentTone = Color(0xFFFFE6D5),
-    danger = Color(0xFFFBDAD4), onDanger = Color(0xFF7A1E12), success = Color(0xFF1E9E4A),
-    warning = Color(0xFFE08A00), warningText = Color(0xFF8A5200), field = Color(0xFFF0F1F4),
-    sheet = Color(0xFFFFFFFF), link = Color(0xFFB44A00), logout = Color(0xFFD2452B),
+    bg = Color(0xFFF3F4F6), surface = Color(0xFFF7F8F9), card = Color(0xFFFFFFFF), line = Color(0xFFE1E3E8),
+    outline = Color(0xFFC9CDD4), text = Color(0xFF15171C), textSecondary = Color(0xFF545B67),
+    accent = Color(0xFFFF7500), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFFFFF0E3),
+    danger = Color(0xFFFCEAE8), onDanger = Color(0xFFB42620), success = Color(0xFF1E7F47),
+    warning = Color(0xFFF2B33D), warningText = Color(0xFF8F5600), field = Color(0xFFF7F8F9),
+    sheet = Color(0xFFFFFFFF), link = Color(0xFFA84A00), logout = Color(0xFFB42620),
 )
 
 val LocalMine = staticCompositionLocalOf { MineDark }
@@ -88,9 +88,9 @@ object Mine {
     val colors: MineColors @Composable get() = LocalMine.current
 }
 
-val InStockGreen = Color(0xFF22A846)
+val InStockGreen = Color(0xFF1E7F47)
 val OutOfStockGrey = Color(0xFF9AA0A8)
-private val Sun = Color(0xFFFFD43B)
+private val Sun = Color(0xFFF4F27A)
 
 /** Material-схема из токенов: старые экраны берут те же цвета. */
 private fun scheme(m: MineColors) = if (m.dark) {
@@ -121,14 +121,14 @@ private fun scheme(m: MineColors) = if (m.dark) {
 
 private val AppTypography = Typography().run {
     copy(
-        headlineMedium = headlineMedium.copy(fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp),
-        titleLarge = titleLarge.copy(fontWeight = FontWeight.Bold),
+        headlineMedium = headlineMedium.copy(fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp),
+        titleLarge = titleLarge.copy(fontWeight = FontWeight.SemiBold),
         titleMedium = titleMedium.copy(fontWeight = FontWeight.SemiBold),
         labelLarge = labelLarge.copy(fontWeight = FontWeight.SemiBold),
     )
 }
 
-val PriceStyle = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
+val PriceStyle = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp, fontFeatureSettings = "tnum")
 
 private val NoPrefs = MutableStateFlow(ThemeMode.SYSTEM)
 

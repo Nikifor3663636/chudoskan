@@ -8,7 +8,8 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
-import ua.chudo.scanner.ui.common.MinePrimaryButton
+import ua.chudo.scanner.data.HighlightKind
+import ua.chudo.scanner.data.StockOperation
 import ua.chudo.scanner.ui.common.MineSearchField
 import ua.chudo.scanner.ui.common.MineTone
 import ua.chudo.scanner.ui.common.PriceFont
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -469,7 +471,10 @@ fun StockScreen(
     onScannedConsumed: () -> Unit,
     /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
     onNetworkUpload: (() -> Unit)? = null,
-    onHighlights: (() -> Unit)? = null,
+    onHighlights: ((HighlightKind) -> Unit)? = null,
+    onStockOperation: ((StockOperation) -> Unit)? = null,
+    showBatch: Boolean = false,
+    onBatchShown: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val vm: StockViewModel = viewModel(
@@ -494,18 +499,35 @@ fun StockScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.readFile(ctx, it) }
     }
+    val listState = rememberLazyListState()
+    LaunchedEffect(showBatch) {
+        if (showBatch) {
+            listState.scrollToItem(if (onHighlights == null) 3 else 4)
+            onBatchShown()
+        }
+    }
     LaunchedEffect(scanned) {
         scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
     }
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
+        state = listState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ShopHeader(employee, onBack) }
         onHighlights?.let { open ->
-            item { MinePrimaryButton("Новинки й акції", open, height = 48.dp) }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = Mine.colors.accentTone, contentColor = Mine.colors.link) {
+                        Text("Залишки", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontWeight = FontWeight.SemiBold)
+                    }
+                    HighlightKind.entries.forEach { kind ->
+                        TextButton(onClick = { open(kind) }) { Text(kind.title, color = Mine.colors.link) }
+                    }
+                }
+            }
         }
         // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
         // Решта (консультанти, адмін магазину) лише бачать, коли оновлено, — завантажує тільки stockAdmin (див. firestore.rules).
@@ -529,6 +551,15 @@ fun StockScreen(
             )
         }
 
+        onStockOperation?.let { open ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StockOperation.entries.forEach { operation ->
+                        MineButton(operation.title, { open(operation) })
+                    }
+                }
+            }
+        }
         when (val st = s) {
             StockState.Idle -> {}
             is StockState.Loading -> item {

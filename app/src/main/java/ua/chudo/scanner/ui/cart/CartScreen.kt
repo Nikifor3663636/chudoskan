@@ -39,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Cart
+import ua.chudo.scanner.data.TerminalPaymentDraft
 import ua.chudo.scanner.data.CartLine
 import ua.chudo.scanner.print.Ean13
 import ua.chudo.scanner.ui.common.MessageState
@@ -79,10 +81,21 @@ import java.text.DecimalFormat
 fun CartScreen(onBack: () -> Unit, onScan: () -> Unit) {
     val cart = LocalContext.current.chudoApp.cart
     val lines by cart.lines.collectAsStateWithLifecycle()
+    var payment by remember { mutableStateOf<TerminalPaymentDraft?>(null) }
+    val available = remember(lines) { TerminalPaymentDraft.fromCart(lines) }
     CartContent(
         lines, onBack = onBack, onScan = onScan,
         onQty = cart::setQty, onRemove = cart::remove, onRetry = cart::retry, onClear = cart::clear,
+        onTerminal = { payment = available }, terminalReady = available != null,
     )
+    payment?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { payment = null },
+            title = { Text("Сума для термінала") },
+            text = { Text("${Cart.money(draft.amountKop)} · очікує оплати\nПроведіть оплату на терміналі магазину.") },
+            confirmButton = { TextButton(onClick = { payment = null }) { Text("Закрити") } },
+        )
+    }
 }
 
 @Composable
@@ -94,6 +107,8 @@ fun CartContent(
     onRemove: (String) -> Unit = {},
     onRetry: (String) -> Unit = {},
     onClear: () -> Unit = {},
+    onTerminal: (() -> Unit)? = null,
+    terminalReady: Boolean = false,
 ) {
     val m = Mine.colors
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -122,7 +137,7 @@ fun CartContent(
         ) {
             items(lines, key = { it.barcode }) { l -> LineCard(l, onQty, onRemove, onRetry) }
         }
-        Footer(lines, onScan, onCashier = { cashier = true })
+        Footer(lines, onScan, onCashier = { cashier = true }, onTerminal = onTerminal, terminalReady = terminalReady)
     }
 
     if (confirmClear) AlertDialog(
@@ -195,7 +210,7 @@ private fun ids(l: CartLine) = listOfNotNull(
 ).joinToString(" · ")
 
 @Composable
-private fun Footer(lines: List<CartLine>, onScan: () -> Unit, onCashier: () -> Unit) {
+private fun Footer(lines: List<CartLine>, onScan: () -> Unit, onCashier: () -> Unit, onTerminal: (() -> Unit)?, terminalReady: Boolean) {
     val m = Mine.colors
     val unpriced = Cart.unpriced(lines)
     val loading = lines.count { it.loading }
@@ -217,6 +232,7 @@ private fun Footer(lines: List<CartLine>, onScan: () -> Unit, onCashier: () -> U
                 MineButton("Показати касиру", onCashier, Modifier.weight(1f), enabled = lines.any { !it.loading })
                 MinePrimaryButton("Сканувати ще", onScan, Modifier.weight(1f), height = 48.dp)
             }
+            onTerminal?.let { MineButton("Сума для термінала", it, Modifier.padding(top = 8.dp), enabled = terminalReady) }
         }
     }
 }

@@ -56,6 +56,7 @@ fun OrdersScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onSca
     val repo = LocalContext.current.chudoApp.orders
     LaunchedEffect(employee.shopId) { repo.load(employee.shopId) }
     val orders by repo.orders.collectAsStateWithLifecycle()
+    val activeNumber by repo.activeNumber.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(OrderStage.NEW) }
     var issue by remember { mutableStateOf<PickupOrder?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -76,13 +77,12 @@ fun OrdersScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onSca
 
     Box(Modifier.fillMaxSize()) {
         OrdersContent(
-            OrdersUi(shop = employee.shop, orders = orders, tab = tab, demo = repo.demo),
+            OrdersUi(shop = employee.shop, orders = orders, tab = tab, demo = repo.demo, activeNumber = activeNumber),
             onTab = { tab = it },
             onOrder = { o ->
                 when (o.stage) {
-                    OrderStage.NEW -> if (repo.current() == null) { repo.start(o.number); tab = OrderStage.PICKING }
+                    OrderStage.NEW, OrderStage.PICKING -> { repo.start(o.number); tab = OrderStage.PICKING }
                     OrderStage.READY -> issue = o
-                    OrderStage.PICKING -> Unit
                 }
             },
             onScan = onScan,
@@ -95,13 +95,19 @@ fun OrdersScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onSca
             onDismissRequest = { issue = null },
             title = { Text("Видати № ${o.number}?") },
             text = { Text("${o.customer} · ${money(o.total)}" + if (o.paid) "" else "\nОплата при отриманні: візьми ${money(o.total)}.") },
-            confirmButton = { TextButton(onClick = { repo.issue(o.number); issue = null }) { Text("Видано") } },
+            confirmButton = { TextButton(onClick = { repo.issue(o.number, paymentReceived = !o.paid); issue = null }) { Text(if (o.paid) "Видано" else "Оплату отримано · видати") } },
             dismissButton = { TextButton(onClick = { issue = null }) { Text("Скасувати") } },
         )
     }
 }
 
-data class OrdersUi(val shop: String, val orders: List<PickupOrder>, val tab: OrderStage, val demo: Boolean)
+data class OrdersUi(
+    val shop: String,
+    val orders: List<PickupOrder>,
+    val tab: OrderStage,
+    val demo: Boolean,
+    val activeNumber: String? = orders.singleOrNull { it.stage == OrderStage.PICKING }?.number,
+)
 
 private fun money(v: Double) = "${PriceFormat.tag(v).first} ₴"
 
@@ -119,7 +125,7 @@ fun goods(n: Int): String {
 @Composable
 fun OrdersContent(ui: OrdersUi, onTab: (OrderStage) -> Unit = {}, onOrder: (PickupOrder) -> Unit = {}, onScan: () -> Unit = {}) {
     val m = Mine.colors
-    val current = ui.orders.firstOrNull { it.stage == OrderStage.PICKING }
+    val current = ui.orders.firstOrNull { it.stage == OrderStage.PICKING && it.number == ui.activeNumber }
     val list = ui.orders.filter { it.stage == ui.tab && it != current }
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         item {
@@ -128,7 +134,7 @@ fun OrdersContent(ui: OrdersUi, onTab: (OrderStage) -> Unit = {}, onOrder: (Pick
             if (ui.demo) {
                 Surface(Modifier.padding(top = 12.dp), shape = RoundedCornerShape(12.dp), color = m.accentTone, contentColor = m.accent) {
                     Text(
-                        "Демо-дані: замовлення із сайту ще не підключені. Можна спробувати збирання сканером.",
+                        "Демо-дані: замовлення з 1С ще не підключені. Можна спробувати збирання сканером.",
                         Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, lineHeight = 18.sp,
                     )
                 }

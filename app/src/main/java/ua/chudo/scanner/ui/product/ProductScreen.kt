@@ -115,7 +115,7 @@ private val SiteGreen = Color(0xFF3CC85A)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
+fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit, openPrint: Boolean = false) {
     val ctx = LocalContext.current
     val app = ctx.chudoApp
     val vm: ProductViewModel = viewModel(factory = viewModelFactory {
@@ -124,7 +124,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val region by app.prefs.region.collectAsStateWithLifecycle()
     var showRegions by rememberSaveable { mutableStateOf(false) }
-    var printSheet by rememberSaveable { mutableStateOf(false) }
+    var printSheet by rememberSaveable { mutableStateOf(openPrint) }
     var own by remember { mutableStateOf<StockItem?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -150,7 +150,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
     LaunchedEffect(p?.id) {
         if (p == null) return@LaunchedEffect
         net = runCatching {
-            val bc = vm.barcode
+            val bc = vm.highlightBarcode
             if (bc != null) app.networkLookup.byBarcode(employee.shopId, bc)
             else p.article?.let { app.networkLookup.byArticle(employee.shopId, it).firstOrNull() }
         }.getOrNull()
@@ -184,7 +184,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit) {
             tag = TagData.merge(
                 TagData.Site(product.name, product.article, price?.finalPrice, price?.regularPrice),
                 net?.let { TagData.OneC(it.barcode, it.item.name, it.item.code, it.item.article) },
-                vm.barcode ?: own?.barcode,
+                vm.highlightBarcode ?: own?.barcode,
             ),
             onDismiss = { printSheet = false },
             onDone = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
@@ -237,9 +237,8 @@ fun ProductPage(
                 }
             }
         }
-        item { Gallery(p.images, p.price?.discountPercent ?: 0.0) }
-        item { Availability(p.stock) }
         item { PriceBox(p, onPrint = onPrint, onScan = onScan) }
+        item { Availability(p.stock) }
         toRemember?.let { bc -> item { RememberCard(bc, onRemember, onForget) } }
         net?.let { av ->
             item { SectionDivider() }
@@ -250,6 +249,7 @@ fun ProductPage(
         item { SectionTitle("Наявність в магазинах") }
         item { CityField(city, onCity) }
         shopsSection(shops, myShop, own, onRetry = onRetryShops, onMap = onMap)
+        item { Gallery(p.images, p.price?.discountPercent ?: 0.0) }
         if (p.description.isNotBlank()) {
             item { SectionDivider() }
             item { Description(p.description, onMore = onSite) }
@@ -311,14 +311,21 @@ private fun Title(p: ProductDetails) {
     val m = Mine.colors
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    Column(Modifier.padding(horizontal = H).padding(top = 6.dp)) {
-        Text(p.name, fontSize = 26.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, color = m.text)
-        p.article?.let { art ->
-            Text(
-                "Артикул $art",
-                Modifier.padding(top = 8.dp).clickable { scope.launch { clipboard.setClipEntry(ClipData.newPlainText("Артикул", art).toClipEntry()) } },
-                fontSize = 13.sp, color = m.textSecondary,
-            )
+    Row(
+        Modifier.padding(horizontal = H).padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        p.images.firstOrNull()?.let { image -> ProductImage(image, Modifier.size(68.dp)) }
+        Column(Modifier.weight(1f)) {
+            Text(p.name, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            p.article?.let { art ->
+                Text(
+                    "Артикул $art",
+                    Modifier.padding(top = 6.dp).clickable { scope.launch { clipboard.setClipEntry(ClipData.newPlainText("Артикул", art).toClipEntry()) } },
+                    fontSize = 13.sp, color = m.textSecondary,
+                )
+            }
         }
     }
 }

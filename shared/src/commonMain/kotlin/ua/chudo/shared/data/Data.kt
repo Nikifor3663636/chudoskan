@@ -66,10 +66,21 @@ class SiteClient(private val http: HttpClient) {
 
 @Serializable data class HistoryItem(val urlKey: String, val name: String, val article: String? = null, val image: String? = null)
 
-/** Город, недавние товары, привязанные штрихкоды. */
+enum class ThemePreference(val title: String) {
+    SYSTEM("Як у системі"), LIGHT("Світла"), DARK("Темна"),
+}
+
+/** Місто, тема, нещодавні товари й прив'язані штрихкоди. */
 class Prefs(private val kv: KeyValueStore) {
     private val json = Json { ignoreUnknownKeys = true }
     val allRegions: List<Region> = Core.regions()
+    private val _theme = MutableStateFlow(ThemePreference.entries.firstOrNull { it.name == kv.get("theme") } ?: ThemePreference.SYSTEM)
+    val theme: StateFlow<ThemePreference> = _theme.asStateFlow()
+
+    fun setTheme(value: ThemePreference) {
+        kv.put("theme", value.name)
+        _theme.value = value
+    }
 
     private val _region = MutableStateFlow(regionByCode(kv.get("region")))
     val region: StateFlow<Region> = _region.asStateFlow()

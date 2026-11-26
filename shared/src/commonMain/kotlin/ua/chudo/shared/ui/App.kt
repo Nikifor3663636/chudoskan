@@ -75,7 +75,8 @@ fun App() {
     setSingletonImageLoaderFactory { ctx ->
         ImageLoader.Builder(ctx).components { add(KtorNetworkFetcherFactory(httpClient = { graph.http })) }.build()
     }
-    ChudoTheme {
+    val theme by graph.prefs.theme.collectAsStateWithLifecycle()
+    ChudoTheme(theme) {
         CompositionLocalProvider(LocalGraph provides graph) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 val state by graph.auth.state.collectAsStateWithLifecycle()

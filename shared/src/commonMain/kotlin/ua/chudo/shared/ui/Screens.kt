@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -88,6 +90,7 @@ import ua.chudo.shared.data.HistoryItem
 import ua.chudo.shared.data.HttpException
 import ua.chudo.shared.data.LookupResult
 import ua.chudo.shared.data.Via
+import ua.chudo.shared.data.ThemePreference
 import ua.chudo.shared.openUrl
 import ua.chudo.shared.res.Res
 import ua.chudo.shared.res.logo_wordmark
@@ -335,11 +338,7 @@ fun ResultsScreen(query: String, nav: Navigator) {
                     Text(step, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            is LookupResult.Many -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { Text("Знайдено ${r.items.size}", style = MaterialTheme.typography.titleMedium) }
-                viaNote(r.via)?.let { note -> item { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.tertiaryContainer) { Text(note, Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall) } } }
-                items(r.items, key = { it.id }) { p -> ProductCard(p) { nav.go(Screen.Product(p.urlKey, r.barcode.takeIf { r.via !is Via.Direct })) } }
-            }
+            is LookupResult.Many -> SearchResults(r, nav)
             is LookupResult.NotFound -> Column {
                 HighlightMatches(r.query, r.barcode)
                 Message(
@@ -373,6 +372,41 @@ private fun HighlightMatches(query: String, barcode: String?) {
     }
 }
 
+@Composable
+private fun SearchResults(result: LookupResult.Many, nav: Navigator) {
+    var selected by rememberSaveable(result.query) { mutableStateOf<String?>(null) }
+    val barcode = result.barcode.takeIf { result.via !is Via.Direct }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val split = maxWidth >= 820.dp
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                modifier = if (split) Modifier.weight(0.42f) else Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item { Text("Знайдено ${result.items.size}", style = MaterialTheme.typography.titleMedium) }
+                viaNote(result.via)?.let { note ->
+                    item { Text(note, style = MaterialTheme.typography.bodySmall) }
+                }
+                items(result.items, key = { it.id }) { product ->
+                    ProductCard(product) {
+                        if (split) selected = product.urlKey
+                        else nav.go(Screen.Product(product.urlKey, barcode))
+                    }
+                }
+            }
+            if (split) {
+                val active = result.items.firstOrNull { it.urlKey == selected } ?: result.items.firstOrNull()
+                if (active != null) Surface(Modifier.weight(0.58f), color = MaterialTheme.colorScheme.surface) {
+                    androidx.compose.runtime.key(active.urlKey) {
+                        ProductScreen(active.urlKey, barcode, nav, embedded = true)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun viaNote(via: Via): String? = when (via) {
     Via.Direct, Via.Remembered -> null
     is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі → артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
@@ -395,7 +429,7 @@ private fun Message(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 // ---------- Карточка товара ----------
 
 @Composable
-fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: String? = null) {
+fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: String? = null, embedded: Boolean = false) {
     val graph = LocalGraph.current
     val region by graph.prefs.region.collectAsStateWithLifecycle()
     var product by remember { mutableStateOf<ProductDetails?>(null) }
@@ -433,8 +467,13 @@ fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: Str
         runCatching { graph.repo.shops(p.id, region.code) }.onSuccess { shops = it }.onFailure { shopsError = true }
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        TopBar(product?.name ?: "Товар", onBack = { nav.back() }) {
+    Column(if (embedded) Modifier.fillMaxSize() else Modifier.fillMaxSize().safeDrawingPadding()) {
+        if (embedded) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Картка товару", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                product?.let { p -> IconButton(onClick = { openUrl(Core.productUrl(p.urlKey, p.urlSuffix)) }) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "На сайті") } }
+            }
+        } else TopBar(product?.name ?: "Товар", onBack = { nav.back() }) {
             product?.let { p -> IconButton(onClick = { openUrl(Core.productUrl(p.urlKey, p.urlSuffix)) }) { Icon(Icons.AutoMirrored.Rounded.OpenInNew, "На сайті") } }
         }
         val p = product
@@ -442,13 +481,6 @@ fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: Str
             error != null -> Message(Icons.Rounded.SearchOff, "Не вдалося завантажити товар", error!!, "Спробувати ще" to { attempt++ })
             p == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                item {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(p.images.ifEmpty { listOf("") }) { img ->
-                            AsyncImage(img, null, Modifier.height(240.dp).aspectRatio(1f).clip(MaterialTheme.shapes.large).background(Color.White), contentScale = ContentScale.Fit)
-                        }
-                    }
-                }
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(p.name, style = MaterialTheme.typography.titleLarge)
@@ -458,6 +490,13 @@ fun ProductScreen(urlKey: String, barcode: String?, nav: Navigator, scanned: Str
                         p.article?.let { Text("Артикул: $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         PriceLine(p.price, big = true)
                         StockBadge(p.stock)
+                    }
+                }
+                if (p.images.isNotEmpty()) item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(p.images) { img ->
+                            AsyncImage(img, p.name, Modifier.height(180.dp).aspectRatio(1f).clip(MaterialTheme.shapes.large).background(Color.White), contentScale = ContentScale.Fit)
+                        }
                     }
                 }
                 if (barcode != null) item {
@@ -503,6 +542,7 @@ fun ProfileScreen(employee: Employee, nav: Navigator) {
     var message by remember { mutableStateOf<String?>(null) }
     var changePassword by remember { mutableStateOf(false) }
     var confirmLogout by remember { mutableStateOf(false) }
+    val theme by graph.prefs.theme.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 16.dp)) {
         TopBar("Профіль", onBack = { nav.back() })
         Spacer(Modifier.height(8.dp))
@@ -519,6 +559,13 @@ fun ProfileScreen(employee: Employee, nav: Navigator) {
             }
         }
         Text("Магазин змінює адміністратор.", Modifier.padding(start = 4.dp, top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Text("Тема оформлення", style = MaterialTheme.typography.titleMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(ThemePreference.entries) { option ->
+                FilterChip(selected = theme == option, onClick = { graph.prefs.setTheme(option) }, label = { Text(option.title) })
+            }
+        }
         Spacer(Modifier.height(16.dp))
         Card(Modifier.fillMaxWidth()) {
             Column {

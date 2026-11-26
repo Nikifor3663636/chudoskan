@@ -93,34 +93,54 @@ class OrdersRepository(private val source: OrdersSource = DemoOrders) {
     private val _orders = MutableStateFlow<List<PickupOrder>>(emptyList())
     val orders: StateFlow<List<PickupOrder>> = _orders.asStateFlow()
     private var loadedFor: String? = null
+    private val _activeNumber = MutableStateFlow<String?>(null)
+    val activeNumber = _activeNumber.asStateFlow()
 
+    @Synchronized
     fun load(shopId: String) {
         if (loadedFor == shopId) return
+        val incoming = source.load(shopId)
         loadedFor = shopId
-        _orders.value = source.load(shopId)
+        _orders.value = incoming
+        _activeNumber.value = _orders.value.filter { it.stage == OrderStage.PICKING }.singleOrNull()?.number
     }
 
     /** Заказ, который сейчас собирают (один за раз). */
-    fun current(): PickupOrder? = _orders.value.firstOrNull { it.stage == OrderStage.PICKING }
+    fun current(): PickupOrder? = _orders.value.firstOrNull { it.number == _activeNumber.value && it.stage == OrderStage.PICKING }
 
     /** «Почати збирати»: новый → в сборку. */
-    fun start(number: String) = _orders.update { list ->
-        list.map { if (it.number == number && it.stage == OrderStage.NEW) it.copy(stage = OrderStage.PICKING) else it }
+    @Synchronized
+    fun start(number: String) {
+        val order = _orders.value.firstOrNull { it.number == number } ?: return
+        if (order.stage == OrderStage.READY) return
+        if (order.stage == OrderStage.NEW) {
+            _orders.update { list -> list.map { if (it.number == number) it.copy(stage = OrderStage.PICKING) else it } }
+        }
+        _activeNumber.value = number
     }
 
     /** Отсканировали товар: +1 к строке текущего заказа; всё собрано — заказ «Готові». */
+    @Synchronized
     fun scan(code: String): ScanResult {
         val order = current() ?: return ScanResult.NothingPicking
-        val digits = code.filter(Char::isDigit)
-        val line = order.lines.firstOrNull { it.barcode == digits } ?: return ScanResult.NotInOrder
-        if (line.done) return ScanResult.AlreadyEnough
-        val lines = order.lines.map { if (it === line) it.copy(picked = it.picked + 1) else it }
+        val barcode = code.trim()
+        val index = order.lines.indexOfFirst { it.barcode == barcode && !it.done }
+        if (index == -1) return if (order.lines.any { it.barcode == barcode }) ScanResult.AlreadyEnough else ScanResult.NotInOrder
+        val line = order.lines[index]
+        val lines = order.lines.mapIndexed { at, item -> if (at == index) item.copy(picked = item.picked + 1) else item }
         val done = lines.all { it.done }
         val updated = order.copy(lines = lines, stage = if (done) OrderStage.READY else OrderStage.PICKING)
         _orders.update { list -> list.map { if (it.number == order.number) updated else it } }
+        if (done) _activeNumber.value = null
         return if (done) ScanResult.Completed(updated) else ScanResult.Added(line.name, updated)
     }
 
     /** Покупатель забрал заказ. */
-    fun issue(number: String) = _orders.update { list -> list.filterNot { it.number == number } }
+    @Synchronized
+    fun issue(number: String, paymentReceived: Boolean = false): Boolean {
+        val order = _orders.value.firstOrNull { it.number == number } ?: return false
+        if (order.stage != OrderStage.READY || (!order.paid && !paymentReceived)) return false
+        _orders.update { list -> list.filterNot { it.number == number } }
+        return true
+    }
 }

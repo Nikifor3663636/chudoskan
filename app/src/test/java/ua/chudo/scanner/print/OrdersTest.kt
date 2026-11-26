@@ -6,6 +6,7 @@ import org.junit.Test
 import ua.chudo.scanner.data.DemoOrders
 import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.data.OrdersRepository
+import ua.chudo.scanner.data.OrdersSource
 import ua.chudo.scanner.data.ScanResult
 import ua.chudo.scanner.ui.orders.goods
 
@@ -32,6 +33,34 @@ class OrdersTest {
         assertEquals("100045871", repo.current()!!.number)
         repo.issue("100045755")
         assertTrue(repo.orders.value.none { it.number == "100045755" })
+    }
+
+    @Test fun switchingOrdersKeepsTheScanOnTheSelectedOrder() {
+        val repo = OrdersRepository(DemoOrders).apply { load("shop") }
+        repo.start("100045871")
+        assertTrue(repo.scan("5702016911114") is ScanResult.Added)
+        assertEquals(1, repo.current()?.picked)
+        repo.start("100045790")
+        assertEquals(3, repo.current()?.picked)
+        assertEquals(false, repo.issue("100045790"))
+    }
+
+    @Test fun oneScanOnlyUpdatesOneOfTheDuplicateLines() {
+        val order = DemoOrders.load("shop").first()
+        val line = order.lines.first()
+        val repo = OrdersRepository(object : OrdersSource {
+            override val demo = true
+            override fun load(shopId: String) = listOf(order.copy(lines = listOf(line, line)))
+        }).apply { load("shop"); start(order.number) }
+        assertTrue(repo.scan(line.barcode) is ScanResult.Added)
+        assertEquals(listOf(1, 0), repo.current()?.lines?.map { it.picked })
+        assertTrue(repo.scan(line.barcode) is ScanResult.Completed)
+    }
+
+    @Test fun unpaidOrderRequiresExplicitPaymentConfirmation() {
+        val repo = OrdersRepository(DemoOrders).apply { load("shop") }
+        assertEquals(false, repo.issue("100045731"))
+        assertEquals(true, repo.issue("100045731", paymentReceived = true))
     }
 
     @Test fun goodsPlural() {

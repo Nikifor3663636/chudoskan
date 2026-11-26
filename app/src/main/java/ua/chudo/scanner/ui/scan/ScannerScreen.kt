@@ -100,6 +100,9 @@ fun ScannerScreen(
     onClose: () -> Unit,
     continuous: Boolean = false,
     status: String? = null,
+    result: (@Composable () -> Unit)? = null,
+    onManual: (() -> Unit)? = null,
+    onCartMode: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     var granted by remember {
@@ -114,7 +117,7 @@ fun ScannerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            CameraScreen(onBarcode, onClose, continuous, status)
+            CameraScreen(onBarcode, onClose, continuous, status, result, onManual, onCartMode)
         } else if (askedOnce) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 MessageState(
@@ -140,12 +143,18 @@ private fun CameraScreen(
     onClose: () -> Unit,
     continuous: Boolean,
     status: String?,
+    result: (@Composable () -> Unit)?,
+    onManual: (() -> Unit)?,
+    onCartMode: (() -> Unit)?,
 ) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
     val currentOnBarcode by rememberUpdatedState(onBarcode)
-    val previewView = remember { PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
+    val previewView = remember { PreviewView(ctx).apply {
+        scaleType = PreviewView.ScaleType.FILL_CENTER
+        if (onManual != null) implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+    } }
 
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torch by remember { mutableStateOf(false) }
@@ -226,6 +235,9 @@ private fun CameraScreen(
         ) {
             RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, "Закрити") }
             Spacer(Modifier.weight(1f))
+            onCartMode?.let { open ->
+                androidx.compose.material3.TextButton(onClick = open) { Text("У кошик", color = Color.White) }
+            }
             if (camera?.cameraInfo?.hasFlashUnit() == true) {
                 RoundIcon(onClick = {
                     torch = !torch
@@ -236,17 +248,19 @@ private fun CameraScreen(
             }
         }
 
-        Column(
+        if (result != null) {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(12.dp)) { result() }
+        } else Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                if (continuous) "Скануй товари покупця" else "Наведи рамку на штрихкод",
+                if (continuous && onManual == null) "Скануй товари покупця" else "Наведи рамку на штрихкод",
                 color = MineDark.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
             )
             Text(
-                if (continuous) status?.let { "Додано: $it" } ?: "Кожен код додається в кошик; ще один такий самий — прибери й наведи знову"
-                else "Телефон сам прочитає код і відкриє товар",
+                if (continuous && onManual == null) status?.let { "Додано: $it" } ?: "Кожен код додається в кошик; ще один такий самий — прибери й наведи знову"
+                else if (onManual != null) "Після сканування тут будуть ціна й залишок" else "Телефон сам прочитає код",
                 Modifier.padding(top = 6.dp),
                 color = if (continuous && status != null) MineDark.accent else MineDark.textSecondary,
                 fontSize = 15.sp, fontWeight = if (continuous && status != null) FontWeight.Bold else FontWeight.Normal,
@@ -254,14 +268,14 @@ private fun CameraScreen(
             )
             // Код не читається (пом'ятий, без штрихкоду) — повертаємось і вводимо артикул; у кошику — «Готово».
             Surface(
-                onClick = onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
+                onClick = onManual ?: onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(26.dp),
                 color = if (continuous) MineDark.accent else MineDark.card.copy(alpha = 0.92f),
                 contentColor = if (continuous) MineDark.onAccent else MineDark.text,
                 border = if (continuous) null else BorderStroke(1.dp, MineDark.outline),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(if (continuous) "Готово — до кошика" else "Ввести артикул вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
+                    Text(if (continuous && onManual == null) "Готово — до кошика" else "Ввести код вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
                 }
             }
         }
