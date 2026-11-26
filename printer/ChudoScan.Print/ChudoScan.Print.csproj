@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ChudoScan.Print.Core\ChudoScan.Print.Core.csproj" />
+    <EmbeddedResource Include="..\..\docs\logo.png" LogicalName="ChudoScan.Print.BrandLogo.png" />
   </ItemGroup>
 
   <ItemGroup>

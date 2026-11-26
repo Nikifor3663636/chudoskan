@@ -7,23 +7,30 @@ namespace ChudoScan.Print;
 /// <summary>Вікно «ЧудоСкан Друк»: смуга стану, Godex, черга, дії; значок у треї.</summary>
 public sealed class MainForm : Form
 {
-    private static readonly Color Green = Color.FromArgb(0x1E, 0x8E, 0x3E);
-    private static readonly Color Blue = Color.FromArgb(0x1A, 0x73, 0xE8);
-    private static readonly Color Red = Color.FromArgb(0xD9, 0x30, 0x25);
-    private static readonly Color Amber = Color.FromArgb(0xE3, 0x74, 0x00);
-    private static readonly Color Gray = Color.FromArgb(0x70, 0x75, 0x7A);
+    private static readonly Color Background = Color.FromArgb(247, 245, 242);
+    private static readonly Color Ink = Color.FromArgb(28, 28, 31);
+    private static readonly Color Muted = Color.FromArgb(84, 91, 103);
+    private static readonly Color Line = Color.FromArgb(231, 225, 218);
+    private static readonly Color Orange = Color.FromArgb(255, 117, 0);
+    private static readonly Color Green = Color.FromArgb(30, 127, 71);
+    private static readonly Color Blue = Color.FromArgb(31, 91, 194);
+    private static readonly Color Red = Color.FromArgb(180, 38, 32);
+    private static readonly Color Amber = Color.FromArgb(143, 86, 0);
 
     private readonly AgentService _agent;
     private readonly NotifyIcon _tray = new();
-    private readonly Panel _band = new() { Dock = DockStyle.Top, Height = 150, Padding = new Padding(20, 14, 20, 14) };
-    private readonly Label _bandTitle = new() { AutoSize = false, Dock = DockStyle.Top, Height = 34, ForeColor = Color.White, Font = new Font("Segoe UI", 16f, FontStyle.Bold) };
-    private readonly Label _bandCode = new() { AutoSize = false, Dock = DockStyle.Top, Height = 58, ForeColor = Color.White, Font = new Font("Segoe UI", 34f, FontStyle.Bold) };
-    private readonly Label _bandNote = new() { AutoSize = false, Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Segoe UI", 11f) };
-    private readonly Label _printer = new() { AutoSize = false, Height = 52, Dock = DockStyle.Top, Font = new Font("Segoe UI", 11f), Padding = new Padding(20, 12, 20, 0) };
-    private readonly Label _counts = new() { AutoSize = false, Height = 34, Dock = DockStyle.Top, Font = new Font("Segoe UI", 11f), Padding = new Padding(20, 4, 20, 0) };
-    private readonly Label _message = new() { AutoSize = false, Height = 40, Dock = DockStyle.Top, Font = new Font("Segoe UI", 10f), ForeColor = Gray, Padding = new Padding(20, 6, 20, 0) };
-    private readonly LinkLabel _disconnect = new() { Text = "Відключити від магазину", AutoSize = true, Font = new Font("Segoe UI", 10f) };
-    private readonly Label _footer = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 30, ForeColor = Gray, Font = new Font("Segoe UI", 9f), Padding = new Padding(20, 6, 20, 0) };
+    private readonly System.Windows.Forms.Timer _tick = new() { Interval = 30_000 };
+    private readonly Label _status = Copy("", 13, FontStyle.Bold);
+    private readonly Label _code = Copy("", 32, FontStyle.Bold);
+    private readonly Label _note = Copy("", color: Muted);
+    private readonly Label _printer = Copy("", 14, FontStyle.Bold);
+    private readonly Label _printerState = Copy("", color: Muted);
+    private readonly Label _queue = Copy("0", 20, FontStyle.Bold);
+    private readonly Label _printed = Copy("0", 20, FontStyle.Bold);
+    private readonly Label _message = Copy("", color: Muted);
+    private readonly TableLayoutPanel _totals = new() { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12) };
+    private readonly LinkLabel _disconnect = new() { Text = "Відключити від магазину", AutoSize = true };
+    private readonly Bitmap _logo = LoadLogo();
     private OverallState? _shownState;
     private bool _exiting;
 
@@ -31,35 +38,52 @@ public sealed class MainForm : Form
     {
         _agent = agent;
         Text = "ЧудоСкан Друк";
-        ClientSize = new Size(460, 420);
-        FormBorderStyle = FormBorderStyle.FixedSingle;
-        MaximizeBox = false;
+        ClientSize = new Size(544, 520);
+        MinimumSize = new Size(460, 480);
         StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 10f);
-        BackColor = Color.White;
+        BackColor = Background;
+        ForeColor = Ink;
+        AutoScroll = true;
 
-        _band.Controls.Add(_bandNote);
-        _band.Controls.Add(_bandCode);
-        _band.Controls.Add(_bandTitle);
+        var content = Stack();
+        content.Padding = new Padding(24, 18, 24, 20);
+        var header = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0, 0, 0, 14) };
+        header.Controls.Add(new PictureBox { Image = _logo, SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(132, 36), AccessibleName = "Чудо Острів", Margin = new Padding(0, 0, 12, 0) });
+        var heading = Copy("Друк етикеток", 16, FontStyle.Bold);
+        heading.Margin = new Padding(0, 6, 0, 0);
+        header.Controls.Add(heading);
+        AddRow(content, header);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, Padding = new Padding(16, 8, 16, 0), WrapContents = false };
-        buttons.Controls.Add(Button("Тест етикетки", async () => Say(await _agent.TestLabelAsync())));
-        buttons.Controls.Add(Button("Спробувати ще", () => { _agent.Retry(); Say("Перевіряю…"); return Task.CompletedTask; }));
-        buttons.Controls.Add(Button("Журнал", () => { OpenLog(); return Task.CompletedTask; }));
+        AddRow(content, Card(_status, _code, _note));
+        AddRow(content, Card(_printer, _printerState));
 
-        var links = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, Padding = new Padding(20, 6, 20, 0) };
-        links.Controls.Add(_disconnect);
+        _totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        _totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var queueCard = Card(_queue, Copy("У черзі", color: Muted));
+        queueCard.Margin = new Padding(0, 0, 6, 0);
+        var printedCard = Card(_printed, Copy("Надруковано сьогодні", color: Muted));
+        printedCard.Margin = new Padding(6, 0, 0, 0);
+        _totals.Controls.Add(queueCard, 0, 0);
+        _totals.Controls.Add(printedCard, 1, 0);
+        AddRow(content, _totals);
+
+        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true, Margin = new Padding(0) };
+        actions.Controls.Add(ActionButton("Тест етикетки", async () => Say(await _agent.TestLabelAsync()), primary: true));
+        actions.Controls.Add(ActionButton("Перевірити зв’язок", () => { _agent.Retry(); Say("Перевіряю…"); return Task.CompletedTask; }));
+        actions.Controls.Add(ActionButton("Журнал", () => { OpenLog(); return Task.CompletedTask; }));
+        AddRow(content, actions);
+        _message.Visible = false;
+        AddRow(content, _message);
+
+        _disconnect.LinkColor = Red;
+        _disconnect.ActiveLinkColor = Red;
+        _disconnect.Margin = new Padding(0, 8, 0, 8);
         _disconnect.LinkClicked += async (_, _) => await DisconnectAsync();
-
-        _footer.Text = $"{_agent.PcName} · версія {AgentService.Version}";
-
-        Controls.Add(links);
-        Controls.Add(_message);
-        Controls.Add(buttons);
-        Controls.Add(_counts);
-        Controls.Add(_printer);
-        Controls.Add(_band);
-        Controls.Add(_footer);
+        AddRow(content, _disconnect);
+        AddRow(content, Copy($"{_agent.PcName} · версія {AgentService.Version}", 9, color: Muted));
+        Controls.Add(content);
 
         _tray.Text = "ЧудоСкан Друк";
         _tray.Visible = true;
@@ -73,9 +97,8 @@ public sealed class MainForm : Form
         _tray.ContextMenuStrip = menu;
 
         _agent.StatusChanged += s => { if (IsHandleCreated) BeginInvoke(() => Render(s)); };
-        var tick = new System.Windows.Forms.Timer { Interval = 30_000 };
-        tick.Tick += (_, _) => Render(_agent.Status); // «дійсний ще N хв»
-        tick.Start();
+        _tick.Tick += (_, _) => Render(_agent.Status);
+        _tick.Start();
         Render(_agent.Status);
     }
 
@@ -115,21 +138,21 @@ public sealed class MainForm : Form
             OverallState.Warn => (Amber, "Працює, але є попередження"),
             OverallState.Pairing => (Blue, "Підключіть комп'ютер"),
             OverallState.Error => (Red, "Потрібна увага"),
-            _ => (Gray, "Немає зв'язку"),
+            _ => (Muted, "Немає зв'язку"),
         };
-        _band.BackColor = color;
-        _bandTitle.Text = title;
+        _status.ForeColor = color;
+        _status.Text = title;
         if (s.State == OverallState.Pairing && s.Code != null)
         {
-            _bandCode.Text = $"{s.Code[..3]} {s.Code[3..]}";
-            _bandCode.Visible = true;
+            _code.Text = $"{s.Code[..3]} {s.Code[3..]}";
+            _code.Visible = true;
             var left = s.CodeExpires is { } exp ? PairingCode.MinutesLeft(exp, DateTimeOffset.UtcNow) : 0;
-            _bandNote.Text = $"Введіть код у застосунку: «Профіль → Принтери → Підключити комп'ютер». Дійсний ще {left} хв.";
+            _note.Text = $"Введіть код у застосунку: «Профіль → Принтери → Підключити комп'ютер». Дійсний ще {left} хв.";
         }
         else
         {
-            _bandCode.Visible = false;
-            _bandNote.Text = s.State switch
+            _code.Visible = false;
+            _note.Text = s.State switch
             {
                 OverallState.Ok => s.ShopId != null ? $"Магазин: {s.ShopId}" : s.Text,
                 OverallState.Offline => "Перевірте інтернет — програма підключиться сама.",
@@ -137,8 +160,12 @@ public sealed class MainForm : Form
             };
         }
         var g = s.Godex.FirstOrDefault();
-        _printer.Text = g == null ? "Godex не знайдено" : $"{g.Name} — {g.Text.ToLowerInvariant()}" + (g.Shared ? " (спільний принтер)" : "");
-        _counts.Text = $"У черзі: {s.Queue}   ·   Надруковано сьогодні: {s.PrintedToday}";
+        _printer.Text = g?.Name ?? "Godex не знайдено";
+        _printerState.Text = g is null ? "Перевірте підключення принтера у Windows."
+            : g.Text + (g.Shared ? " · спільний принтер" : "");
+        _queue.Text = s.Queue.ToString("N0");
+        _printed.Text = s.PrintedToday.ToString("N0");
+        _totals.Visible = s.Paired;
         _disconnect.Visible = s.Paired;
 
         _tray.Icon?.Dispose();
@@ -181,11 +208,65 @@ public sealed class MainForm : Form
         await RunAsync(async () => { await _agent.DisconnectAsync(); Say("Комп'ютер відключено від магазину."); });
     }
 
-    private Button Button(string text, Func<Task> action)
+    private static Bitmap LoadLogo()
     {
-        var b = new Button { Text = text, AutoSize = true, Height = 36, Padding = new Padding(8, 2, 8, 2), Margin = new Padding(4) };
-        b.Click += async (_, _) => await RunAsync(action);
-        return b;
+        using var stream = typeof(MainForm).Assembly.GetManifestResourceStream("ChudoScan.Print.BrandLogo.png")!;
+        using var image = Image.FromStream(stream);
+        return new Bitmap(image);
+    }
+
+    private static Label Copy(string text, float size = 10, FontStyle style = FontStyle.Regular, Color? color = null) =>
+        new() { Text = text, AutoSize = true, Font = new Font("Segoe UI", size, style), ForeColor = color ?? Ink, Margin = new Padding(0, 0, 0, 4) };
+
+    private static TableLayoutPanel Stack()
+    {
+        var stack = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, Dock = DockStyle.Top, Margin = new Padding(0) };
+        stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        return stack;
+    }
+
+    private static void AddRow(TableLayoutPanel stack, Control control)
+    {
+        stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stack.Controls.Add(control, 0, stack.RowCount++);
+    }
+
+    private static TableLayoutPanel Card(params Label[] labels)
+    {
+        var card = Stack();
+        card.BackColor = Color.White;
+        card.Padding = new Padding(16, 12, 16, 10);
+        card.Margin = new Padding(0, 0, 0, 12);
+        card.SizeChanged += (_, _) =>
+        {
+            var width = Math.Max(1, card.ClientSize.Width - card.Padding.Horizontal);
+            foreach (var label in labels) label.MaximumSize = new Size(width, 0);
+            var diameter = Math.Min(28 * card.DeviceDpi / 96, Math.Min(card.Width, card.Height));
+            if (diameter < 2) return;
+            using var outline = new GraphicsPath();
+            outline.AddArc(0, 0, diameter, diameter, 180, 90);
+            outline.AddArc(card.Width - diameter, 0, diameter, diameter, 270, 90);
+            outline.AddArc(card.Width - diameter, card.Height - diameter, diameter, diameter, 0, 90);
+            outline.AddArc(0, card.Height - diameter, diameter, diameter, 90, 90);
+            outline.CloseFigure();
+            card.Region = new Region(outline);
+        };
+        foreach (var label in labels) AddRow(card, label);
+        return card;
+    }
+
+    private Button ActionButton(string text, Func<Task> action, bool primary = false)
+    {
+        var button = new Button
+        {
+            Text = text, AutoSize = true, MinimumSize = new Size(0, 36),
+            Padding = new Padding(8, 2, 8, 2), Margin = new Padding(0, 0, 8, 8),
+            FlatStyle = FlatStyle.Flat, BackColor = primary ? Orange : Color.White,
+            ForeColor = Ink, UseVisualStyleBackColor = false,
+        };
+        button.FlatAppearance.BorderColor = primary ? Orange : Line;
+        button.Click += async (_, _) => await RunAsync(action);
+        return button;
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -201,7 +282,11 @@ public sealed class MainForm : Form
         }
     }
 
-    private void Say(string text) => _message.Text = text;
+    private void Say(string text)
+    {
+        _message.Text = text;
+        _message.Visible = true;
+    }
 
     private static void OpenLog()
     {
@@ -215,6 +300,8 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
+            _tick.Dispose();
+            _logo.Dispose();
             _tray.Icon?.Dispose();
             _tray.Dispose();
         }

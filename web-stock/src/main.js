@@ -86,25 +86,27 @@ function errorText(e) {
 
 // ---------- Вхід ----------
 
-function loginView(message = '') {
+function loginView(message = '', phone = '') {
   render(`
     <form class="card" id="login">
-      <h2>Вхід до адмінки</h2>
-      <p class="muted">Ті самі номер і пароль, що в застосунку ЧудоСкан.</p>
-      <label>Телефон<div class="phone"><span>+380</span><input id="phone" inputmode="numeric" autocomplete="username" placeholder="96 123 45 67" required></div></label>
+      <div class="login-heading">
+        <h1>Вхід до адмінки</h1>
+        <p class="muted">Використайте номер і пароль від застосунку ЧудоСкан.</p>
+      </div>
+      <label>Телефон<div class="phone"><span aria-hidden="true">+380</span><input id="phone" type="tel" aria-label="Телефон після +380" inputmode="numeric" autocomplete="username" placeholder="96 123 45 67" value="${esc(phone)}" required></div></label>
       <label>Пароль<input id="password" type="password" autocomplete="current-password" required></label>
-      ${message ? `<p class="error">${esc(message)}</p>` : ''}
+      ${message ? `<p class="error" role="alert">${esc(message)}</p>` : ''}
       <button class="primary" type="submit">Увійти</button>
     </form>`);
   $('#login').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const digits = $('#phone').value.replace(/\D/g, '').slice(-9);
-    if (digits.length !== 9) { loginView('Номер — 9 цифр після +380.'); return; }
+    if (digits.length !== 9) { loginView('Введіть 9 цифр після +380.', digits); $('#phone').focus(); return; }
     const btn = ev.submitter; btn.disabled = true; btn.textContent = 'Входжу…';
     try {
       // +380961234567 → 380961234567@tel.chudoostriv.app (як AuthRepository.loginFor)
       await signInWithEmailAndPassword(auth, `380${digits}@tel.chudoostriv.app`, $('#password').value);
-    } catch (e) { loginView(errorText(e)); }
+    } catch (e) { loginView(errorText(e), digits); $('#password').focus(); }
   });
 }
 
@@ -153,16 +155,20 @@ function importWorkspace(active, heading, content) {
   const tables = sb ? Object.entries(adminSections).filter(([key]) => canViewSection(key, me)) : [];
   render(`<div class="workspace">
     <nav class="import-nav" aria-label="Розділи адміністратора">
-      ${kinds.length ? '<span class="nav-group">Імпорт з 1С</span>' : ''}
-      ${kinds.map(({ key, label, path }) =>
-        `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${icon(path)}${label}</button>`).join('')}
-      ${tables.length ? '<span class="nav-group">Адміністрування</span>' : ''}
-      ${tables.map(([key, item]) => `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${item.title}</button>`).join('')}
+      ${kinds.length ? `<div class="nav-section">
+        <span class="nav-group">Імпорт з 1С</span>
+        ${kinds.map(({ key, label, path }) =>
+          `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${icon(path)}${label}</button>`).join('')}
+      </div>` : ''}
+      ${tables.length ? `<div class="nav-section">
+        <span class="nav-group">Адміністрування</span>
+        ${tables.map(([key, item]) => `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${item.title}</button>`).join('')}
+      </div>` : ''}
     </nav>
     <section aria-labelledby="import-title">
-      <div class="row between">
-        <div class="page-head"><h1 id="import-title">${esc(heading)}</h1><p class="muted">${adminSections[active] ? 'Адміністрування' : 'Імпорт з 1С'}</p></div>
-        <button class="link" id="out">Вийти (${esc(me.name)})</button>
+      <div class="page-head">
+        <h1 id="import-title">${esc(heading)}</h1>
+        <div class="account"><span class="muted">${esc(me.name)}</span><button class="link" id="out">Вийти</button></div>
       </div>
       ${content}
     </section>
