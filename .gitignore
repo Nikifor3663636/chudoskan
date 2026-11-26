@@ -8,6 +8,7 @@ captures/
 .cxx/
 .kotlin/
 core/target/
+security/target/
 app/src/main/jniLibs/
 app/google-services.json
 iosApp/build/
