@@ -213,11 +213,12 @@ private fun AppNav(home: Employee) {
 private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employee, modifier: Modifier, onActAs: (ShopEntry) -> Unit) {
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
+            val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
             val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
             StockScreen(
                 employee,
                 onBack = { nav.popBackStack() },
-                vm = rememberStockViewModel(employee, nav.getBackStackEntry(Routes.HOME)),
+                vm = rememberStockViewModel(employee, homeEntry),
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
@@ -269,9 +270,10 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
-        composable(Routes.LABELS) {
+        composable(Routes.LABELS) { entry ->
+            val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
             LabelBatchScreen(
-                vm = rememberStockViewModel(employee, nav.getBackStackEntry(Routes.HOME)),
+                vm = rememberStockViewModel(employee, homeEntry),
                 onBack = { nav.popBackStack() },
                 onFindProduct = { nav.navigate(Routes.STOCK) { popUpTo(Routes.HOME); launchSingleTop = true } },
             )
