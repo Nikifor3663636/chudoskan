@@ -8,7 +8,7 @@ on:
     paths: [core/**, shared/**, iosApp/**, gradle/**, "*.gradle.kts", .github/workflows/ios.yml]
   workflow_dispatch:
 
-# Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — firestore).
+# Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — supabase; відкат — firestore).
 env:
   BACKEND: ${{ vars.BACKEND }}
 

@@ -16,7 +16,7 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
-# Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — firestore).
+# Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — supabase; відкат — firestore).
 env:
   BACKEND: ${{ vars.BACKEND }}
 
@@ -81,7 +81,7 @@ jobs:
             echo "window.CHUDO_FIREBASE=null;" > site/stock/config.js
           fi
           # Де дані: firestore | supabase (змінна репозиторію BACKEND; повернутись — змінити її й перезапустити).
-          echo "window.CHUDO_BACKEND='${BACKEND:-firestore}';" >> site/stock/config.js
+          echo "window.CHUDO_BACKEND='${BACKEND:-supabase}';" >> site/stock/config.js
         env:
           BACKEND: ${{ vars.BACKEND }}
 

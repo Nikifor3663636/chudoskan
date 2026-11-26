@@ -55,7 +55,7 @@ jobs:
           # backend: firestore | supabase (змінна репозиторію BACKEND); URL і publishable key Supabase — публічні.
           $s = Get-Content printer/ChudoScan.Print/appsettings.json -Raw | ConvertFrom-Json
           @{ firebaseApiKey = $g.client[0].api_key[0].current_key; projectId = $g.project_info.project_id
-             backend = $(if ($env:BACKEND) { $env:BACKEND } else { 'firestore' }); supabaseUrl = $s.supabaseUrl; supabaseKey = $s.supabaseKey } |
+             backend = $(if ($env:BACKEND) { $env:BACKEND } else { 'supabase' }); supabaseUrl = $s.supabaseUrl; supabaseKey = $s.supabaseKey } |
             ConvertTo-Json | Set-Content -Encoding utf8 printer/ChudoScan.Print/appsettings.json
 
       - name: Збірка x64 і x86

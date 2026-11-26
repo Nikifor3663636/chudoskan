@@ -8,7 +8,7 @@ namespace ChudoScan.Print;
 /// appsettings.json поруч з програмою (без секретів): Web API key і projectId Firebase (вхід),
 /// backend = firestore | supabase (де дані), URL і publishable key Supabase.
 /// </summary>
-public sealed record AppSettings(string FirebaseApiKey, string ProjectId, string Backend = "firestore",
+public sealed record AppSettings(string FirebaseApiKey, string ProjectId, string Backend = "supabase",
     string SupabaseUrl = AppSettings.DefaultSupabaseUrl, string SupabaseKey = AppSettings.DefaultSupabaseKey)
 {
     public const string DefaultSupabaseUrl = "https://wbboztsxzuxfocdqjyzk.supabase.co";
@@ -24,7 +24,7 @@ public sealed record AppSettings(string FirebaseApiKey, string ProjectId, string
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         string Str(string name, string fallback) =>
             doc.RootElement.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString()! : fallback;
-        return new AppSettings(Str("firebaseApiKey", ""), Str("projectId", "chudoostriv"), Str("backend", "firestore").Trim().ToLowerInvariant(),
+        return new AppSettings(Str("firebaseApiKey", ""), Str("projectId", "chudoostriv"), Str("backend", "supabase").Trim().ToLowerInvariant(),
             Str("supabaseUrl", DefaultSupabaseUrl), Str("supabaseKey", DefaultSupabaseKey));
     }
 }

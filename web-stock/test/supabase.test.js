@@ -19,8 +19,8 @@ function fakeSb(answers = {}) {
 }
 
 describe('supabase', () => {
-  test('за замовчуванням — firestore', () => {
-    assert.equal(backend(), 'firestore');
+  test('за замовчуванням — supabase', () => {
+    assert.equal(backend(), 'supabase');
   });
 
   test('пачки по 2 000 рядків, усі поля', () => {

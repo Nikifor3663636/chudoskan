@@ -5,10 +5,10 @@ import { createClient } from '@supabase/supabase-js';
 export const SUPABASE_URL = 'https://wbboztsxzuxfocdqjyzk.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_pXZn08SVg5og-I9_PuX5LA_qdTmydyk';
 
-/** firestore | supabase — з config.js (window.CHUDO_BACKEND), інакше firestore. */
+/** supabase | firestore — з config.js (window.CHUDO_BACKEND); за замовчуванням supabase (відкат — 'firestore'). */
 export function backend() {
   const b = globalThis.window?.CHUDO_BACKEND;
-  return b === 'supabase' ? 'supabase' : 'firestore';
+  return b === 'firestore' ? 'firestore' : 'supabase';
 }
 
 /**

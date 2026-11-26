@@ -22,12 +22,12 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "3.2.1"
+        versionCode = 21
+        versionName = "3.3.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
 
-        // Де дані: firestore | supabase (-Pbackend=supabase або змінна BACKEND). Вхід — завжди Firebase Auth.
-        val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND")).orEmpty().trim().lowercase().ifEmpty { "firestore" }
+        // Де дані: supabase (за замовчуванням) | firestore (відкат: -Pbackend=firestore або змінна BACKEND). Вхід — завжди Firebase Auth.
+        val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND")).orEmpty().trim().lowercase().ifEmpty { "supabase" }
         require(backend in setOf("firestore", "supabase")) { "backend: firestore | supabase, а не $backend" }
         buildConfigField("String", "BACKEND", "\"$backend\"")
         // Публічні: URL проєкту й publishable key (доступ вирішують RLS-політики, supabase/migrations).
