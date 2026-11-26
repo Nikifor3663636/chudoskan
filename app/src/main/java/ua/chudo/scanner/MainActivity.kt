@@ -46,6 +46,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.data.StockOperation
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.profile.ProfileScreen
 import ua.chudo.scanner.ui.stock.StockScreen
+import ua.chudo.scanner.ui.inventory.InventoryScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
@@ -106,6 +108,8 @@ private object Routes {
     const val RESULTS = "results/{q}"
     const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
+    const val STOCK_OPERATION = "stock-operation/{mode}"
+    fun stockOperation(mode: StockOperation) = "stock-operation/${mode.name}"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
 
@@ -138,7 +142,7 @@ private object Routes {
 
 // Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
 // и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации.
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART)
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.STOCK_OPERATION)
 
 
 @Composable
@@ -220,11 +224,16 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+                onStockOperation = { nav.navigate(Routes.stockOperation(it)) },
                 showBatch = showBatch,
                 onBatchShown = { entry.savedStateHandle[STOCK_BATCH] = false },
                 onHighlights = if (Backend.isSupabase) ({ kind -> nav.navigate(Routes.highlights(kind)) }) else null,
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
+        }
+        composable(Routes.STOCK_OPERATION, arguments = listOf(navArgument("mode") { type = NavType.StringType })) { entry ->
+            val mode = StockOperation.entries.firstOrNull { it.name == entry.arguments?.getString("mode") }
+            if (mode != null) InventoryScreen(employee, mode, onBack = { nav.popBackStack() })
         }
         composable(Routes.PROFILE) {
             ProfileScreen(

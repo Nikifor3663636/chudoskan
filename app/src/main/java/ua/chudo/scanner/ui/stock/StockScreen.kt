@@ -9,6 +9,7 @@ import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.data.HighlightKind
+import ua.chudo.scanner.data.StockOperation
 import ua.chudo.scanner.ui.common.MineSearchField
 import ua.chudo.scanner.ui.common.MineTone
 import ua.chudo.scanner.ui.common.PriceFont
@@ -471,6 +472,7 @@ fun StockScreen(
     /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
     onNetworkUpload: (() -> Unit)? = null,
     onHighlights: ((HighlightKind) -> Unit)? = null,
+    onStockOperation: ((StockOperation) -> Unit)? = null,
     showBatch: Boolean = false,
     onBatchShown: () -> Unit = {},
 ) {
@@ -549,6 +551,15 @@ fun StockScreen(
             )
         }
 
+        onStockOperation?.let { open ->
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StockOperation.entries.forEach { operation ->
+                        MineButton(operation.title, { open(operation) })
+                    }
+                }
+            }
+        }
         when (val st = s) {
             StockState.Idle -> {}
             is StockState.Loading -> item {
