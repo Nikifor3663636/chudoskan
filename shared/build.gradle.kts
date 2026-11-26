@@ -108,7 +108,11 @@ compose.resources {
 val genFirebaseConfig by tasks.registering {
     val src = rootProject.file("app/google-services.json")
     val out = layout.buildDirectory.file("generated/firebaseConfig/ua/chudo/shared/auth/FirebaseConfig.kt")
+    // Де дані: firestore | supabase (-Pbackend=… або BACKEND, як app/). Вхід — завжди Firebase.
+    val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND")).orEmpty().trim().lowercase().ifEmpty { "firestore" }
+    require(backend in setOf("firestore", "supabase")) { "backend: firestore | supabase, а не $backend" }
     inputs.files(src).optional()
+    inputs.property("backend", backend)
     outputs.file(out)
     @Suppress("UNCHECKED_CAST")
     doLast {
@@ -128,6 +132,10 @@ val genFirebaseConfig by tasks.registering {
                     "internal object FirebaseConfig {\n" +
                     "    const val API_KEY = \"$key\"\n" +
                     "    const val PROJECT_ID = \"$project\"\n" +
+                    "    const val BACKEND = \"$backend\"\n" +
+                    // Публічні: URL проєкту й publishable key (доступ вирішують RLS-політики).
+                    "    const val SUPABASE_URL = \"https://wbboztsxzuxfocdqjyzk.supabase.co\"\n" +
+                    "    const val SUPABASE_KEY = \"sb_publishable_pXZn08SVg5og-I9_PuX5LA_qdTmydyk\"\n" +
                     "}\n",
             )
         }

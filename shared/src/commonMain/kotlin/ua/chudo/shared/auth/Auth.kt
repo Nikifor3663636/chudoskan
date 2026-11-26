@@ -6,6 +6,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.request
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -99,12 +100,14 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
     suspend fun signIn(digits: String, password: String) {
         val r = identityCall("signInWithPassword", login("+380$digits"), password)
         saveSession(r)
+        ensureRole()
         loadProfile()
     }
 
     suspend fun register(digits: String, password: String, profile: NewProfile) {
         val r = identityCall("signUp", login("+380$digits"), password)
         saveSession(r)
+        ensureRole()
         createProfile(profile)
         loadProfile()
     }
@@ -126,6 +129,11 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
 
     suspend fun updateName(name: String) {
         val uid = kv.get(K_UID) ?: return
+        if (supabase) {
+            check(rest("PATCH", "users?uid=eq.$uid", buildJsonObject { put("name", name.trim()) }))
+            loadProfile()
+            return
+        }
         val r = http.patch("$firestore/users/$uid?updateMask.fieldPaths=name") {
             header("Authorization", "Bearer ${token()}")
             header("Content-Type", "application/json")
@@ -147,6 +155,8 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
      * [path] — например `shops/{shopId}/layoutPins`. Возвращает поля каждого документа.
      */
     suspend fun listDocuments(path: String, pageSize: Int = 300): List<JsonObject> {
+        // Supabase: уточнення плану (layoutPins) не переносяться — план працює без них.
+        if (supabase) return emptyList()
         val r = http.get("$firestore/$path?pageSize=$pageSize") { header("Authorization", "Bearer ${token()}") }
         check(r)
         val docs = Json.parseToJsonElement(r.bodyAsText()).jsonObject["documents"]?.jsonArray ?: return emptyList()
@@ -154,8 +164,16 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
     }
 
     private suspend fun loadProfile() {
-        _state.value = try {
+        _state.value = try { run {
             val uid = kv.get(K_UID) ?: return signOut()
+            if (supabase) {
+                ensureRole()
+                val r = rest("GET", "users?uid=eq.$uid&select=*")
+                if (r.status.value >= 400) throw AuthException(if (r.status.value in setOf(401, 403)) "PERMISSION_DENIED" else "HTTP_${r.status.value}")
+                val rows = json.parseToJsonElement(r.bodyAsText()).jsonArray
+                return@run rows.firstOrNull()?.jsonObject?.let { fromRow(uid, it) }
+                    ?.let { if (it.approved) AuthState.Ready(it) else AuthState.Pending(it) } ?: AuthState.NoProfile(phone())
+            }
             val r = http.get("$firestore/users/$uid") { header("Authorization", "Bearer ${token()}") }
             when {
                 r.status.value == 404 -> AuthState.NoProfile(phone())
@@ -164,7 +182,7 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
                     if (it.approved) AuthState.Ready(it) else AuthState.Pending(it)
                 }
             }
-        } catch (e: AuthException) {
+        } } catch (e: AuthException) {
             if (e.code.startsWith("TOKEN") || e.code.startsWith("INVALID_REFRESH") || e.code.startsWith("USER_NOT_FOUND")) {
                 signOut(); return
             }
@@ -181,6 +199,16 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
 
     private suspend fun createProfile(p: NewProfile) {
         val uid = kv.get(K_UID) ?: throw AuthException("NOT_SIGNED_IN")
+        if (supabase) {
+            // Анкета завжди непідтверджена: approved / ролі клієнт не передає (RLS не дозволить).
+            val fields = buildJsonObject {
+                put("name", p.name.trim()); put("phone", phone()); put("region", p.region)
+                put("shop", p.shop.trim()); put("shop_id", shopId(p.region, p.shop))
+            }
+            val r = rest("POST", "users", JsonObject(fields + ("uid" to kotlinx.serialization.json.JsonPrimitive(uid))))
+            if (r.status.value == 409) check(rest("PATCH", "users?uid=eq.$uid", fields)) else check(r)
+            return
+        }
         fun str(v: String) = buildJsonObject { put("stringValue", v) }
         val body = buildJsonObject {
             put("writes", buildJsonArray {
@@ -209,6 +237,33 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
             setBody(body.toString())
         }
         check(r)
+    }
+
+    // ---------- Supabase (PostgREST з Firebase ID token) ----------
+
+    private val supabase get() = FirebaseConfig.BACKEND == "supabase"
+
+    private suspend fun rest(method: String, path: String, body: JsonObject? = null): HttpResponse =
+        http.request("${FirebaseConfig.SUPABASE_URL}/rest/v1/$path") {
+            this.method = io.ktor.http.HttpMethod.parse(method)
+            header("apikey", FirebaseConfig.SUPABASE_KEY)
+            header("Authorization", "Bearer ${token()}")
+            body?.let { header("Content-Type", "application/json"); setBody(it.toString()) }
+        }
+
+    /** Supabase приймає токен лише з claim role = "authenticated"; немає — ensure-role і новий токен. */
+    private suspend fun ensureRole() {
+        if (!supabase || hasRole(token())) return
+        val r = http.post("${FirebaseConfig.SUPABASE_URL}/functions/v1/ensure-role") { header("Authorization", "Bearer ${token()}") }
+        if (r.status.value >= 400) throw AuthException("ENSURE_ROLE_${r.status.value}")
+        kv.put(K_EXP, "0") // наступний token() — оновлений, уже з role
+        token()
+    }
+
+    private fun fromRow(uid: String, o: JsonObject): Employee {
+        fun s(k: String) = o[k]?.jsonPrimitive?.contentOrNull.orEmpty()
+        return Employee(uid, s("name"), s("phone").ifEmpty { phone() }, s("region"), s("shop"), s("shop_id"),
+            approved = o["approved"]?.jsonPrimitive?.contentOrNull == "true")
     }
 
     private fun toEmployee(uid: String, doc: JsonObject): Employee {
@@ -282,6 +337,14 @@ class AuthRepository(private val http: HttpClient, private val kv: KeyValueStore
         private const val K_UID = "auth_uid"
         private const val K_EMAIL = "auth_email"
         private const val K_EXP = "auth_exp"
+
+        /** Чи є в Firebase ID token claim role = "authenticated" (підпис перевіряє сервер). */
+        @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+        fun hasRole(jwt: String): Boolean = runCatching {
+            val part = jwt.split('.')[1]
+            val bytes = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT_OPTIONAL).decode(part)
+            Json.parseToJsonElement(bytes.decodeToString()).jsonObject["role"]?.jsonPrimitive?.contentOrNull == "authenticated"
+        }.getOrDefault(false)
 
         /** +380961234567 → 380961234567@tel.chudoostriv.app (как в Android-версии). */
         fun login(phone: String) = phone.filter(Char::isDigit) + "@tel.chudoostriv.app"

@@ -16,6 +16,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — firestore).
+env:
+  BACKEND: ${{ vars.BACKEND }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
