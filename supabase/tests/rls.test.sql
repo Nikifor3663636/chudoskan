@@ -505,5 +505,24 @@ select tests.login('emp22', 'foreign');
 select is((select count(*)::int from list_product_highlights('new')), 0, 'чужий Firebase проєкт не бачить список');
 reset role;
 
+-- Server-generated audit: only an approved network admin may read it, and no
+-- authenticated client can write or erase events.
+select tests.login('emp22');
+select set_config('request.headers', '{"x-forwarded-for":"198.51.100.2"}', true);
+select tests.run($q$update users set name = 'Audit check' where uid = 'emp22'$q$);
+select is((select count(*)::int from security_events), 0, 'employees cannot read security events');
+select tests.login('adm22');
+select is((select count(*)::int from security_events), 0, 'shop admins cannot read security events');
+select tests.login('sup', 'foreign');
+select is((select count(*)::int from security_events), 0, 'foreign issuer cannot read security events');
+select tests.login('sup');
+select is((select count(*)::int from security_events
+           where action = 'account.profile_changed' and target = 'emp22' and by_uid = 'emp22' and ip is null),
+          1, 'server records the actor and ignores the client-supplied IP');
+select is(tests.rows($q$insert into security_events(action, target) values ('session.allowed', 'emp22')$q$),
+          -1, 'client cannot forge a security event');
+select is(tests.rows($q$delete from security_events$q$), -1, 'client cannot erase security events');
+reset role;
+
 select * from finish();
 rollback;

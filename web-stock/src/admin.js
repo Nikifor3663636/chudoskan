@@ -22,6 +22,11 @@ export const adminSections = {
     title: "Комп'ютери", table: 'devices', search: 'name', order: 'uid',
     columns: [by('name', 'Назва'), by('shop_id', 'Магазин'), by('paired_at', 'Підключено')],
   },
+  security: {
+    title: 'Події безпеки', table: 'security_events', search: 'action', order: 'id', descending: true,
+    columns: [by('at', 'Час'), by('by_uid', 'Обліковий запис'), by('action', 'Подія'), by('target', 'Запис'),
+      by('shop_id', 'Магазин'), by('ip', 'IP'), by('outcome', 'Результат')],
+  },
   audit: {
     title: 'Журнал дій', table: 'admin_log', search: 'action', order: 'id', descending: true,
     columns: [by('at', 'Час'), by('action', 'Дія'), by('target', 'Запис'), by('shop_id', 'Магазин')],
@@ -31,7 +36,7 @@ export const adminSections = {
 export const PAGE_SIZE = 30;
 
 export function canViewSection(key, account) {
-  if (key === 'audit') return account.superAdmin;
+  if (key === 'audit' || key === 'security') return account.superAdmin;
   if (key === 'history' || ['stock', 'new', 'promo'].includes(key)) return account.canImport;
   if (['staff', 'printers', 'devices'].includes(key)) return account.superAdmin || account.shopAdmin;
   return account.canImport || account.shopAdmin;

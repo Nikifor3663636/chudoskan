@@ -13,6 +13,9 @@ test('admin navigation follows the employee roles', () => {
   assert.equal(canViewSection('history', shop), false);
   assert.equal(canViewSection('audit', shop), false);
   assert.equal(canViewSection('audit', network), true);
+  assert.equal(canViewSection('security', shop), false);
+  assert.equal(canViewSection('security', stock), false);
+  assert.equal(canViewSection('security', network), true);
 });
 
 test('admin search uses one whitelisted field, escaped text and stable pagination', () => {
