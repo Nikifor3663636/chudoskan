@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "description": "Службові скрипти переходу Firestore → Supabase. Ключі — лише з env.",
+  "scripts": { "test": "node --test test/scripts.test.js" },
   "engines": { "node": ">=22" },
   "dependencies": {
     "@supabase/supabase-js": "2.119.0",
