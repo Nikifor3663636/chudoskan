@@ -152,21 +152,17 @@ class DesignSnapshots {
 
     private fun orders(dark: Boolean) = paparazzi.snapshot {
         ChudoTheme(dark = dark) {
-            androidx.compose.material3.Scaffold(
-                containerColor = Mine.colors.bg,
-                bottomBar = { MineBottomBar(MainTab.ORDERS, newOrders = 3, onTab = {}, onScan = {}) },
-            ) { inner ->
-                Box(Modifier.padding(inner)) {
-                    OrdersContent(OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true))
-                }
+            Surface(color = Mine.colors.bg) {
+                OrdersContent(OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true))
             }
         }
     }
 
     private val recent = listOf(
-        ua.chudo.scanner.data.HistoryItem("lego", "LEGO Duplo Потяг із цифрами: вчимося рахувати", "10954", null),
-        ua.chudo.scanner.data.HistoryItem("hw", "Hot Wheels Форсаж, в асортименті", "HNW46", null),
-        ua.chudo.scanner.data.HistoryItem("xs", "X-Shot бластер Purple Blaze", "36882R", null),
+        ua.chudo.scanner.data.HistoryItem("lego", "LEGO Duplo Потяг із цифрами: вчимося рахувати", "10954", null, 64900),
+        ua.chudo.scanner.data.HistoryItem("hw", "Hot Wheels Форсаж, в асортименті", "HNW46", null, 33900),
+        ua.chudo.scanner.data.HistoryItem("xs", "X-Shot бластер Purple Blaze", "36882R", null, 79900),
+        ua.chudo.scanner.data.HistoryItem("trefl", "Пазл Trefl «Венеція» 1000", "10744", null, 38900),
     )
 
     /** Кошик покупця: акція, кілька штук, товар без ціни, ще шукаємо, більше ніж є в магазині. */
@@ -236,12 +232,13 @@ class DesignSnapshots {
         ChudoTheme(dark = dark) {
             androidx.compose.material3.Scaffold(
                 containerColor = Mine.colors.bg,
-                bottomBar = { MineBottomBar(MainTab.SEARCH, newOrders = 3, onTab = {}, onScan = {}) },
+                bottomBar = { MineBottomBar(MainTab.HOME, onTab = {}, onScan = {}) },
             ) { inner ->
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
                         // Сьогодні о 09:30 — щоб знімок не залежав від часу запуску.
-                        ua.chudo.scanner.ui.home.HomeUi("Gagarin Plaza", "Вакаренко Микита", todayAt930(), "", recent, 3),
+                        ua.chudo.scanner.ui.home.HomeUi("Одеса", "ЧО 22 · ТРЦ Gagarin Plaza", todayAt930(), "", recent, 3, cartUnits = 4),
+                        onHighlights = {},
                     )
                 }
             }
@@ -259,7 +256,7 @@ class DesignSnapshots {
                     ua.chudo.scanner.ui.profile.ProfileUi(
                         name = "Вакаренко Микита", phone = "+380 96 232 09 33", city = "Одеса",
                         shop = "вул. Генуезька, 5/2, ТРЦ \"Gagarinn Plaza\", друга черга, 3 поверх",
-                        stock = "2 418 позицій", theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
+                        theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
                     ),
                 )
             }

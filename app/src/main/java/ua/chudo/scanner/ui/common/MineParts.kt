@@ -34,7 +34,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -64,8 +63,8 @@ fun MineSearchField(
 ) {
     val m = Mine.colors
     Row(
-        modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(8.dp)).background(m.card)
-            .border(1.dp, m.outline, RoundedCornerShape(8.dp)).padding(start = 12.dp, end = 4.dp),
+        modifier.fillMaxWidth().height(56.dp).clip(Mine.fieldShape).background(m.card)
+            .border(1.dp, m.outline, Mine.fieldShape).padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Search, null, tint = m.textSecondary)
@@ -84,20 +83,6 @@ fun MineSearchField(
         )
         if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, "Очистити", tint = m.textSecondary) }
         onScan?.let { open -> IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.link) } }
-    }
-}
-
-/** Плитка-ярлык на главном: иконка, название, строка состояния ([accent] — есть что делать). */
-@Composable
-fun MineTile(icon: ImageVector, title: String, note: String, accent: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val m = Mine.colors
-    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(8.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
-        Column(Modifier.padding(16.dp)) {
-            Icon(icon, null, Modifier.size(26.dp), tint = m.text)
-            Spacer(Modifier.height(14.dp))
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(note, Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = if (accent) FontWeight.Medium else FontWeight.Normal, color = if (accent) m.link else m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 

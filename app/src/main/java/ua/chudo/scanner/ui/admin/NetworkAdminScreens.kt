@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -180,7 +183,7 @@ private fun date(d: Date?) = d?.let { DATE.format(it) } ?: "—"
 @Composable
 fun NetworkAdminScreen(
     employee: Employee, onBack: () -> Unit,
-    onShops: () -> Unit, onStaff: () -> Unit, onNetworkStock: () -> Unit, onHistory: () -> Unit,
+    onShops: () -> Unit, onStaff: () -> Unit, onHistory: () -> Unit,
 ) {
     val vm = adminVm(employee)
     val data by vm.data.collectAsStateWithLifecycle()
@@ -194,14 +197,7 @@ fun NetworkAdminScreen(
             val pending = data?.staff?.count { it.pending } ?: 0
             AdminRow("Співробітники", data?.let { "${it.staff.count { s -> s.approved }} підтверджених" + if (pending > 0) " · очікують: $pending" else "" } ?: "Завантажую…", onStaff, accent = pending > 0)
         }
-        item { AdminRow("Залишки мережі", data?.stockInfo?.let { "Оновлено ${date(it.updatedAt)} · ${it.items} товарів" } ?: "Завантажити звіт 1С", onNetworkStock) }
         item { AdminRow("Історія завантажень", "Залишки мережі й дії адмінів", onHistory) }
-        item {
-            Text(
-                "Тут — усі магазини мережі. Звичайний адмін магазину бачить лише «Мій магазин».",
-                Modifier.padding(horizontal = 4.dp), fontSize = 13.sp, lineHeight = 18.sp, color = m.textSecondary,
-            )
-        }
     }
 }
 
@@ -209,8 +205,13 @@ fun NetworkAdminScreen(
 private fun AdminRow(title: String, note: String, onClick: () -> Unit, accent: Boolean = false) {
     val m = Mine.colors
     MineCard(Modifier.clickable(onClick = onClick), padding = 18.dp) {
-        Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Text(note, Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 19.sp, color = if (accent) m.accent else m.textSecondary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(note, Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 19.sp, color = if (accent) m.link else m.textSecondary)
+            }
+            Icon(Icons.Rounded.ChevronRight, null, tint = m.textSecondary)
+        }
     }
 }
 

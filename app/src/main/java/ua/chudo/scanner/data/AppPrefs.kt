@@ -18,6 +18,7 @@ data class HistoryItem(
     val name: String,
     val article: String?,
     val image: String?,
+    val priceKop: Long? = null,
 )
 
 class AppPrefs(context: Context) {
@@ -79,6 +80,7 @@ class AppPrefs(context: Context) {
                 name = o.getString("n"),
                 article = o.optString("a").ifEmpty { null },
                 image = o.optString("i").ifEmpty { null },
+                priceKop = o.optLong("p").takeIf { it > 0 },
             )
         }
     }.getOrDefault(emptyList())
@@ -86,7 +88,7 @@ class AppPrefs(context: Context) {
     private fun writeHistory(list: List<HistoryItem>) {
         val arr = JSONArray()
         list.forEach {
-            arr.put(JSONObject().put("k", it.urlKey).put("n", it.name).put("a", it.article ?: "").put("i", it.image ?: ""))
+            arr.put(JSONObject().put("k", it.urlKey).put("n", it.name).put("a", it.article ?: "").put("i", it.image ?: "").put("p", it.priceKop))
         }
         sp.edit { putString(KEY_HISTORY, arr.toString()) }
     }

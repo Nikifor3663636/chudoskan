@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,9 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Print
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material3.AlertDialog
@@ -382,7 +379,6 @@ class PrintersActions(
 @Composable
 fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
     val m = Mine.colors
-    var others by rememberSaveable { mutableStateOf(false) }
     val network = ui.records.filter { it.transport == Link.TCP }
     val viaPc = ui.records.filter { it.transport == Link.AGENT } + ui.agents
     LazyColumn(
@@ -391,7 +387,6 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
     ) {
         item {
             MineHeader("Принтери", a.onBack) {
-                IconButton(onClick = a.onRefresh, enabled = !ui.scanning) { Icon(Icons.Rounded.Refresh, "Оновити", tint = m.text) }
                 IconButton(onClick = a.onHelp) { Icon(Icons.AutoMirrored.Rounded.HelpOutline, "Допомога", tint = m.text) }
             }
             Text(
@@ -399,17 +394,13 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
                 Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp), fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary,
             )
         }
-        if (ui.scanning) item {
-            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = m.accent)
-                Text("  Шукаю принтери в мережі магазину…", fontSize = 14.sp, color = m.textSecondary)
-            }
+        item {
+            MinePrimaryButton("Знайти принтери", a.onRefresh, icon = Icons.Rounded.Search, busy = ui.scanning)
         }
-
         item(key = "h-net") { SectionTitle("У мережі") }
         items(network, key = { it.id }) { r -> RecordCard(r, ui, a) }
         items(ui.unknown, key = { "u" + it.ip }) { d -> UnknownCard(d, a.onAddUnknown) }
-        if (network.isEmpty() && ui.unknown.isEmpty()) item(key = "e-net") { Empty(if (ui.scanning) "Шукаю…" else "У мережі принтерів не знайдено.") }
+        if (network.isEmpty() && ui.unknown.isEmpty() && !ui.scanning) item(key = "e-net") { Empty("У мережі принтерів не знайдено.") }
 
         item(key = "h-usb") { SectionTitle("USB") }
         items(ui.usb, key = { it.id }) { r -> RecordCard(r, ui, a) }
@@ -420,34 +411,8 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
         items(viaPc, key = { "pc" + it.id }) { r -> RecordCard(r, ui, a) }
         if (viaPc.isEmpty() && ui.pcs.isEmpty()) item(key = "e-pc") { Empty("Встанови на комп'ютер з Godex програму «ЧудоСкан Друк» і підключи його кодом.") }
         item(key = "pair") { MineButton("Підключити комп'ютер", a.onPairPc, Modifier.fillMaxWidth()) }
-
         item {
-            Spacer(Modifier.height(10.dp))
-            MinePrimaryButton("Знайти принтери", a.onRefresh, icon = Icons.Rounded.Search, busy = ui.scanning)
-        }
-        item {
-            MineRow(Modifier.clickable { others = !others }) {
-                Column {
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Інші способи підключення", Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Text("За IP", fontSize = 15.sp, color = m.textSecondary)
-                    }
-                    AnimatedVisibility(others) {
-                        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) { MineButton("Додати вручну", a.onManual) }
-                    }
-                }
-            }
-        }
-        item {
-            Spacer(Modifier.height(18.dp))
-            MineRow(Modifier.clickable(onClick = a.onHelp)) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Info, null, tint = m.accent)
-                    Spacer(Modifier.width(12.dp))
-                    Text("Не друкує? Відкрий інструкцію: що перевірити за 1 хвилину.", fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary)
-                }
-            }
-            Spacer(Modifier.height(30.dp))
+            MineButton("Додати принтер за IP", a.onManual, Modifier.fillMaxWidth().padding(bottom = 24.dp))
         }
     }
 }
@@ -472,8 +437,12 @@ private fun RecordCard(r: PrinterRecord, ui: PrintersUi, a: PrintersActions) {
             MineIconBox(if (r.kind == LabelKind.STICKY) Icons.Rounded.Sell else Icons.Rounded.Print)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(r.displayName, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
-                Text(r.address, fontSize = 14.sp, color = m.textSecondary, maxLines = 2)
+                val address = r.address
+                val title = r.name.ifBlank { r.model.ifBlank { address } }
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
+                if (address.isNotBlank() && title != address && !title.endsWith(" · $address")) {
+                    Text(address, fontSize = 14.sp, color = m.textSecondary, maxLines = 2)
+                }
             }
         }
         if (ui.main[r.kind] == r.id) {

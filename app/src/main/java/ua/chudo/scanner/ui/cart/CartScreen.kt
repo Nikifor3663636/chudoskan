@@ -186,12 +186,12 @@ private fun LineCard(l: CartLine, onQty: (String, Int) -> Unit, onRemove: (Strin
                             }
                             if (l.qty > 1) Text("${Cart.money(l.priceKop!!)} / шт", fontSize = 13.sp, color = m.textSecondary)
                         }
-                    } else Text("Немає ціни на сайті", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = m.warningText)
+                    } else if (!l.failed) Text("Немає ціни на сайті", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = m.warningText)
                 }
             }
             when {
                 l.failed -> Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Не вдалося знайти — немає інтернету?", Modifier.weight(1f), fontSize = 14.sp, color = m.warningText)
+                    Text("Не вдалося завантажити товар", Modifier.weight(1f), fontSize = 14.sp, color = m.warningText)
                     TextButton(onClick = { onRetry(l.barcode) }) { Text("Повторити", color = m.link) }
                 }
                 Cart.overStock(l) -> Text(
@@ -226,7 +226,7 @@ private fun Footer(lines: List<CartLine>, onScan: () -> Unit, onCashier: () -> U
             }
             when {
                 loading > 0 -> Text("Шукаю ціну ще для $loading товар(ів)…", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.textSecondary)
-                unpriced > 0 -> Text("Без $unpriced товар(ів) без ціни — уточни на касі", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.warningText)
+                unpriced > 0 -> Text("У сумі не враховано товари без ціни: $unpriced", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.warningText)
             }
             Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MineButton("Показати касиру", onCashier, Modifier.weight(1f), enabled = lines.any { !it.loading })

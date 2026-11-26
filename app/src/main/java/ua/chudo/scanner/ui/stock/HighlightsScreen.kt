@@ -26,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import ua.chudo.scanner.ui.theme.Mine
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -126,7 +127,7 @@ fun HighlightsScreen(
         item {
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth(), enabled = !working,
-                label = { Text("Назва, штрихкод або артикул") }, singleLine = true,
+                label = { Text("Назва, штрихкод або артикул") }, singleLine = true, shape = Mine.fieldShape,
             )
         }
         if (canUpload) item {

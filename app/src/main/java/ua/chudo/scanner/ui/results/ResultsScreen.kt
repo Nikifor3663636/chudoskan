@@ -116,7 +116,6 @@ class ResultsViewModel(
 fun ResultsScreen(
     onBack: () -> Unit,
     onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
-    onScanAgain: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: ResultsViewModel = viewModel(factory = viewModelFactory {
@@ -156,7 +155,7 @@ fun ResultsScreen(
                             HighlightMatches(r.query, r.barcode)
                             MessageState(
                                 icon = Icons.Rounded.SearchOff,
-                                title = "Не знайшли «${r.query}»",
+                                title = "Товарів не знайдено",
                                 text = buildString {
                                     append("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.")
                                     if (r.triedArticles.isNotEmpty()) {
@@ -164,7 +163,6 @@ fun ResultsScreen(
                                     }
                                 },
                                 primary = "Шукати на сайті" to { ctx.openUrl(siteSearchUrl(Lang.UA, r.query)) },
-                                secondary = "Сканувати ще" to onScanAgain,
                             )
                         }
                     }
@@ -199,7 +197,7 @@ private fun HighlightMatches(query: String, barcode: String?) {
 private fun ResultsHeader(query: String, onBack: () -> Unit) {
     val m = Mine.colors
     Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(onClick = onBack, modifier = Modifier.size(44.dp), shape = CircleShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+        Surface(onClick = onBack, modifier = Modifier.size(48.dp), shape = CircleShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
             Box(contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", Modifier.size(22.dp)) }
         }
         Spacer(Modifier.width(14.dp))

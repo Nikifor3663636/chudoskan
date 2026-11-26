@@ -46,7 +46,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
-import ua.chudo.scanner.data.StockOperation
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
@@ -63,8 +62,10 @@ import ua.chudo.scanner.data.ShopEntry
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.profile.ProfileScreen
+import ua.chudo.scanner.ui.stock.LabelBatchScreen
+import ua.chudo.scanner.ui.stock.rememberStockViewModel
 import ua.chudo.scanner.ui.stock.StockScreen
-import ua.chudo.scanner.ui.inventory.InventoryScreen
+import ua.chudo.scanner.ui.home.HistoryScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
@@ -96,7 +97,6 @@ class MainActivity : ComponentActivity() {
 
 private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
-private const val STOCK_BATCH = "stock_batch"
 private const val ORDERS_MODE = "orders"
 private const val ORDERS_CODE = "orders_code"
 /** Кошик: сканер не закривається, кожен код одразу йде в кошик. */
@@ -108,14 +108,13 @@ private object Routes {
     const val RESULTS = "results/{q}"
     const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
-    const val STOCK_OPERATION = "stock-operation/{mode}"
-    fun stockOperation(mode: StockOperation) = "stock-operation/${mode.name}"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
     const val SCAN_CART = "scan?mode=$CART_MODE"
+    const val HISTORY = "history"
     const val CART = "cart"
     const val LABELS = "labels"
     const val PRINTERS = "printers"
@@ -142,7 +141,7 @@ private object Routes {
 
 // Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
 // и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации.
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.STOCK_OPERATION)
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.ORDERS)
 
 
 @Composable
@@ -159,8 +158,6 @@ private fun AppNav(home: Employee) {
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
     LaunchedEffect(employee.shopId) { ordersRepo.load(employee.shopId) }
-    val orders by ordersRepo.orders.collectAsStateWithLifecycle()
-    val newOrders = orders.count { it.stage == ua.chudo.scanner.data.OrderStage.NEW }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
     LaunchedEffect(employee.shopId) {
         printing.attach(employee.shopId)
@@ -171,12 +168,12 @@ private fun AppNav(home: Employee) {
     // Нова версія на GitHub — банер «Оновити» на головній (перевірка не частіше ніж раз на 3 години).
     val updater = LocalContext.current.chudoApp.updater
     LaunchedEffect(Unit) { updater.check() }
-    // Залишки открываются из профиля — подсвечиваем «Профіль»; результаты и карточка товара — «Пошук».
     val tab = when (route) {
-        Routes.ORDERS -> MainTab.ORDERS
-        Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
+        Routes.HOME, Routes.RESULTS, Routes.HISTORY -> MainTab.HOME
+        Routes.LABELS -> MainTab.LABELS
+        Routes.STOCK -> MainTab.STOCK
         Routes.PROFILE -> MainTab.PROFILE
-        else -> MainTab.SEARCH
+        else -> null
     }
     fun openTab(r: String) {
         if (route != r) nav.navigate(r) { popUpTo(Routes.HOME); launchSingleTop = true }
@@ -191,16 +188,16 @@ private fun AppNav(home: Employee) {
             // Сканер и настройки принтеров — без нижней навигации.
             if (route != null && route !in FULLSCREEN) MineBottomBar(
                 tab = tab,
-                newOrders = newOrders,
                 onTab = { t ->
                     when (t) {
-                        MainTab.SEARCH -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
-                        MainTab.ORDERS -> openTab(Routes.ORDERS)
+                        MainTab.HOME -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
+                        MainTab.LABELS -> openTab(Routes.LABELS)
                         MainTab.STOCK -> openTab(Routes.STOCK)
                         MainTab.PROFILE -> openTab(Routes.PROFILE)
                     }
                 },
-                onScan = { nav.navigate(Routes.scan()) },
+                scanLabel = if (route == Routes.STOCK) "Сканувати для пошуку залишків" else "Сканувати товар",
+                onScan = { nav.navigate(if (route == Routes.STOCK) Routes.SCAN_STOCK else Routes.scan()) },
             )
             }
         },
@@ -217,30 +214,19 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
-            val showBatch by entry.savedStateHandle.getStateFlow(STOCK_BATCH, false).collectAsStateWithLifecycle()
             StockScreen(
                 employee,
                 onBack = { nav.popBackStack() },
-                onScan = { nav.navigate(Routes.SCAN_STOCK) },
+                vm = rememberStockViewModel(employee, nav.getBackStackEntry(Routes.HOME)),
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
-                onStockOperation = { nav.navigate(Routes.stockOperation(it)) },
-                showBatch = showBatch,
-                onBatchShown = { entry.savedStateHandle[STOCK_BATCH] = false },
-                onHighlights = if (Backend.isSupabase) ({ kind -> nav.navigate(Routes.highlights(kind)) }) else null,
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
-        }
-        composable(Routes.STOCK_OPERATION, arguments = listOf(navArgument("mode") { type = NavType.StringType })) { entry ->
-            val mode = StockOperation.entries.firstOrNull { it.name == entry.arguments?.getString("mode") }
-            if (mode != null) InventoryScreen(employee, mode, onBack = { nav.popBackStack() })
         }
         composable(Routes.PROFILE) {
             ProfileScreen(
                 employee, onBack = { nav.popBackStack() },
                 onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
-                onStock = { nav.navigate(Routes.STOCK) },
-                onNetworkStock = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
                 onMyShop = if (home.admin && !home.superAdmin) ({ nav.navigate(Routes.MY_SHOP) }) else null,
@@ -250,7 +236,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             if (home.superAdmin) NetworkAdminScreen(
                 home, onBack = { nav.popBackStack() },
                 onShops = { nav.navigate(Routes.ADMIN_SHOPS) }, onStaff = { nav.navigate(Routes.adminStaff()) },
-                onNetworkStock = { nav.navigate(Routes.NETWORK_STOCK) }, onHistory = { nav.navigate(Routes.ADMIN_HISTORY) },
+                onHistory = { nav.navigate(Routes.ADMIN_HISTORY) },
             ) else nav.popBackStack()
         }
         composable(Routes.ADMIN_SHOPS) {
@@ -269,7 +255,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.NETWORK_STOCK) {
             if (employee.stockAdmin) NetworkStockScreen(
                 employee, onBack = { nav.popBackStack() },
-                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.highlights()) }) else null,
             ) else nav.popBackStack()
         }
         composable(Routes.HIGHLIGHTS, arguments = listOf(navArgument("kind") { type = NavType.StringType; defaultValue = "new" })) { entry ->
@@ -284,17 +269,18 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
         composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
-        // Старий екран «Друк» прибрано: цінник — з картки товару, пакет — із «Залишків». Старі посилання ведуть туди.
         composable(Routes.LABELS) {
-            LaunchedEffect(Unit) {
-                nav.navigate(Routes.STOCK) { popUpTo(Routes.LABELS) { inclusive = true } }
-                nav.currentBackStackEntry?.savedStateHandle?.set(STOCK_BATCH, true)
-            }
+            LabelBatchScreen(
+                vm = rememberStockViewModel(employee, nav.getBackStackEntry(Routes.HOME)),
+                onBack = { nav.popBackStack() },
+                onFindProduct = { nav.navigate(Routes.STOCK) { popUpTo(Routes.HOME); launchSingleTop = true } },
+            )
         }
         composable(Routes.ORDERS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(ORDERS_CODE, null).collectAsStateWithLifecycle()
             OrdersScreen(
                 employee,
+                onBack = { nav.popBackStack() },
                 onScan = { nav.navigate(Routes.SCAN_ORDERS) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[ORDERS_CODE] = null },
@@ -305,12 +291,16 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 employee,
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
-                onProfile = { nav.navigate(Routes.PROFILE) },
-                onLabels = { nav.navigate(Routes.LABELS) },
+                onHistory = { nav.navigate(Routes.HISTORY) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
-                onStock = { nav.navigate(Routes.STOCK) },
                 onCart = { nav.navigate(Routes.CART) },
-                onScan = { nav.navigate(Routes.scan()) },
+                onHighlights = if (Backend.isSupabase) ({ kind -> nav.navigate(Routes.highlights(kind)) }) else null,
+            )
+        }
+        composable(Routes.HISTORY) {
+            HistoryScreen(
+                onBack = { nav.popBackStack() },
+                onOpenProduct = { nav.navigate(Routes.product(it, null)) },
             )
         }
         composable(Routes.CART) {
@@ -359,9 +349,6 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                     nav.navigate(Routes.product(urlKey, bc, scanned)) {
                         if (replace) popUpTo(Routes.RESULTS) { inclusive = true }
                     }
-                },
-                onScanAgain = {
-                    nav.navigate(Routes.scan()) { popUpTo(Routes.HOME) }
                 },
             )
         }

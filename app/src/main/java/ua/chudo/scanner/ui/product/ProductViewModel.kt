@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.data.AppPrefs
 import ua.chudo.scanner.data.ChudoRepository
+import ua.chudo.scanner.data.Cart
 import ua.chudo.scanner.data.HistoryItem
 import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.toUiError
@@ -61,7 +62,7 @@ class ProductViewModel(
         try {
             val p = repo.details(urlKey)
             _state.update { it.copy(loading = false, refreshing = false, product = p) }
-            prefs.addToHistory(HistoryItem(p.urlKey, p.name, p.article, p.images.firstOrNull()))
+            prefs.addToHistory(HistoryItem(p.urlKey, p.name, p.article, p.images.firstOrNull(), Cart.kop(p.price?.finalPrice)))
             loadShops()
         } catch (e: CancellationException) {
             throw e

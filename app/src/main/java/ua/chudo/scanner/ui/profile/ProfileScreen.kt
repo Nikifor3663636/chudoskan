@@ -36,7 +36,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +52,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Employee
-import ua.chudo.scanner.data.ShopStockInfo
 import ua.chudo.scanner.ui.auth.PasswordDialog
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.formatPhone
@@ -68,8 +66,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun ProfileScreen(
-    employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?, onStock: () -> Unit = {},
-    onNetworkStock: (() -> Unit)? = null,
+    employee: Employee, onBack: () -> Unit, onPrinters: (() -> Unit)?,
     /** «Адміністрування мережі» — лише superAdmin. */
     onNetworkAdmin: (() -> Unit)? = null,
     /** «Мій магазин» — адмін магазину (співробітники свого магазину). */
@@ -77,31 +74,25 @@ fun ProfileScreen(
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
-    var info by remember { mutableStateOf<ShopStockInfo?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var editName by rememberSaveable { mutableStateOf(false) }
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     var changePassword by rememberSaveable { mutableStateOf(false) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
 
-    // Залишки мережі (одне завантаження на всю мережу); старі залишки магазину — запасний варіант.
-    LaunchedEffect(employee.shopId) {
-        info = runCatching { app.networkLookup.info() }.getOrNull()?.let { ShopStockInfo(it.updatedAt, it.updatedBy, it.items) }
-            ?: runCatching { app.shopStock.info(employee.shopId) }.getOrNull()
-    }
     var checking by remember { mutableStateOf(false) }
 
     val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
     ProfileContent(
         ProfileUi(
             name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
-            shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
-            theme = theme, admin = onPrinters != null, message = message, networkStock = onNetworkStock != null,
+            shop = employee.shop,
+            theme = theme, admin = onPrinters != null, message = message,
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,
         ),
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
-        onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() },
+        onPrinters = { onPrinters?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
         onCheckUpdate = {
             if (!checking) scope.launch {
@@ -171,12 +162,9 @@ data class ProfileUi(
     val phone: String,
     val city: String,
     val shop: String,
-    val stock: String,
     val theme: ThemeMode,
     val admin: Boolean,
     val message: String? = null,
-    /** «Залишки мережі» — лише stockAdmin / superAdmin. */
-    val networkStock: Boolean = false,
     val networkAdmin: Boolean = false,
     val myShop: Boolean = false,
     val version: String = "",
@@ -190,9 +178,7 @@ fun ProfileContent(
     onBack: () -> Unit = {},
     onEditName: () -> Unit = {},
     onTheme: (ThemeMode) -> Unit = {},
-    onStock: () -> Unit = {},
     onPrinters: () -> Unit = {},
-    onNetworkStock: () -> Unit = {},
     onNetworkAdmin: () -> Unit = {},
     onMyShop: () -> Unit = {},
     onPassword: () -> Unit = {},
@@ -212,10 +198,8 @@ fun ProfileContent(
             IconButton(onClick = onEditName) { Icon(Icons.Rounded.Edit, "Змінити ім'я", tint = m.textSecondary) }
         }
         Spacer(Modifier.height(28.dp))
-        ThemePicker(ui.theme, onTheme)
-        Spacer(Modifier.height(24.dp))
 
-        Surface(shape = RoundedCornerShape(20.dp), color = m.surface, contentColor = m.text) {
+        Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text) {
             Column {
                 if (ui.networkAdmin) {
                     ProfileRow("Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
@@ -227,12 +211,6 @@ fun ProfileContent(
                 }
                 if (ui.admin) {
                     ProfileRow("Принтери", "Налаштування", onClick = onPrinters)
-                    RowDivider()
-                }
-                ProfileRow("Залишки магазину", ui.stock, onClick = onStock)
-                RowDivider()
-                if (ui.networkStock) {
-                    ProfileRow("Залишки мережі", "Завантажити з 1С", onClick = onNetworkStock)
                     RowDivider()
                 }
                 ProfileStackedRow("Магазин", ui.shop)
@@ -254,6 +232,8 @@ fun ProfileContent(
         }
         Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
         ui.message?.let { Text(it, Modifier.padding(start = 4.dp, top = 10.dp), fontSize = 15.sp, color = m.success) }
+        Spacer(Modifier.height(20.dp))
+        ThemePicker(ui.theme, onTheme)
         Spacer(Modifier.height(32.dp))
     }
 }

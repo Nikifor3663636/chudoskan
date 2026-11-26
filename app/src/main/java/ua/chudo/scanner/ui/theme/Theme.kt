@@ -73,7 +73,7 @@ val MineDark = MineColors(
 
 val MineLight = MineColors(
     dark = false,
-    bg = Color(0xFFF3F4F6), surface = Color(0xFFF7F8F9), card = Color(0xFFFFFFFF), line = Color(0xFFE1E3E8),
+    bg = Color(0xFFF7F5F2), surface = Color(0xFFFCFAF7), card = Color(0xFFFFFFFF), line = Color(0xFFE7E1DA),
     outline = Color(0xFFC9CDD4), text = Color(0xFF15171C), textSecondary = Color(0xFF545B67),
     accent = Color(0xFFFF7500), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFFFFF0E3),
     danger = Color(0xFFFCEAE8), onDanger = Color(0xFFB42620), success = Color(0xFF1E7F47),
@@ -85,6 +85,9 @@ val LocalMine = staticCompositionLocalOf { MineDark }
 
 /** Токены текущей темы: `Mine.colors.accent`. */
 object Mine {
+    val fieldShape = RoundedCornerShape(18.dp)
+    val cardShape = RoundedCornerShape(24.dp)
+    val pillShape = RoundedCornerShape(50)
     val colors: MineColors @Composable get() = LocalMine.current
 }
 
@@ -156,9 +159,9 @@ fun ChudoTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
             colorScheme = scheme(m),
             typography = AppTypography,
             shapes = Shapes(
-                small = RoundedCornerShape(8.dp),
-                medium = RoundedCornerShape(14.dp),
-                large = RoundedCornerShape(20.dp),
+                small = RoundedCornerShape(12.dp),
+                medium = Mine.fieldShape,
+                large = Mine.cardShape,
                 extraLarge = RoundedCornerShape(28.dp),
             ),
             content = content,

@@ -1,6 +1,7 @@
 package ua.chudo.scanner.ui.auth
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -326,7 +327,7 @@ private fun ColumnScope.SignedOutForm(vm: AuthViewModel) {
     val switchTo = { m: Int -> vm.clearError(); mode = m }
     if (mode == 1) {
         Text(
-            "Реєстрація", Modifier.padding(top = 40.dp, bottom = 16.dp),
+            "Реєстрація", Modifier.padding(top = 28.dp, bottom = 16.dp),
             fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Mine.colors.text,
         )
         ProfileFields(vm, needsAccount = true)
@@ -356,27 +357,6 @@ private fun ColumnScope.SignedOutForm(vm: AuthViewModel) {
             confirmButton = { TextButton(onClick = { forgot = false }) { Text("Зрозуміло") } },
         )
     }
-}
-
-/** Номер после +380: 9 цифр, маска XX XXX XX XX. Принимает и вставку «0671234567» / «+380…». */
-@Composable
-private fun PhoneField(digits: String, enabled: Boolean, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = digits,
-        onValueChange = { raw ->
-            var d = raw.filter(Char::isDigit)
-            if (d.length > 9 && d.startsWith("380")) d = d.drop(3)
-            onChange(d.trimStart('0').take(9))
-        },
-        enabled = enabled, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text("Номер телефону") },
-        prefix = { Text("+380 ") },
-        placeholder = { Text("XX XXX XX XX") },
-        leadingIcon = { Icon(Icons.Rounded.Phone, null) },
-        visualTransformation = PhoneMask,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-        shape = RoundedCornerShape(14.dp),
-    )
 }
 
 internal object PhoneMask : VisualTransformation {
@@ -415,11 +395,13 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
 
     OutlinedTextField(
         value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text("Ім'я та прізвище") }, shape = RoundedCornerShape(14.dp),
+        label = { Text("Ім'я та прізвище") }, shape = Mine.fieldShape,
     )
     if (needsAccount) {
         Spacer(Modifier.height(10.dp))
-        PhoneField(digits, !busy) { digits = it }
+        Text("Номер телефону", style = MaterialTheme.typography.labelLarge, color = Mine.colors.textSecondary)
+        Spacer(Modifier.height(6.dp))
+        MinePhoneField(digits, !busy) { digits = it }
         Spacer(Modifier.height(10.dp))
         PasswordField(password, "Пароль (щонайменше $MIN_PASSWORD символів)") { password = it }
         Spacer(Modifier.height(10.dp))
@@ -427,7 +409,7 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
     }
     Spacer(Modifier.height(16.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Твій магазин", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Text("Магазин", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         AssistChip(
             onClick = { showRegions = true },
             label = { Text(regionObj.name) },
@@ -440,12 +422,12 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
         is ShopsState.Loaded -> if (!manualShop && s.shops.isNotEmpty()) {
             s.shops.forEach { address ->
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    tonalElevation = if (shop == address) 3.dp else 0.dp,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { shop = address },
+                    shape = Mine.fieldShape,
+                    color = if (shop == address) Mine.colors.accentTone else Mine.colors.surface,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).selectable(selected = shop == address, role = Role.RadioButton) { shop = address },
                 ) {
                     Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = shop == address, onClick = { shop = address })
+                        RadioButton(selected = shop == address, onClick = null, modifier = Modifier.padding(14.dp))
                         Text(address, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
@@ -469,7 +451,7 @@ private fun ProfileFields(vm: AuthViewModel, needsAccount: Boolean) {
         else vm.completeProfile(name, region, shop)
     }
     Text(
-        "Магазин змінити потім може лише адміністратор. Після реєстрації адміністратор підтверджує акаунт.",
+        "Адміністратор магазину підтвердить твій акаунт.",
         Modifier.padding(top = 8.dp),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -492,7 +474,7 @@ private fun ManualShop(value: String, onChange: (String) -> Unit) {
         value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(),
         label = { Text("Адреса магазину") },
         leadingIcon = { Icon(Icons.Rounded.Store, null) },
-        shape = RoundedCornerShape(14.dp),
+        shape = Mine.fieldShape,
     )
 }
 
@@ -501,7 +483,7 @@ private fun PasswordField(value: String, label: String, onChange: (String) -> Un
     var visible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(), singleLine = true,
-        label = { Text(label) }, shape = RoundedCornerShape(14.dp),
+        label = { Text(label) }, shape = Mine.fieldShape,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {

@@ -167,7 +167,7 @@ fun ProductScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit, op
                     else -> ProductPage(
                         p, s.shops, employee.shop, own, region.name, vm.barcode, s.barcodeToRemember,
                         onPrint = { printSheet = true }, onScan = onScan, onCity = { showRegions = true },
-                        onRetryShops = vm::loadShops, onMap = ctx::openMap, onSite = { ctx.openUrl(url) },
+                        onRetryShops = vm::loadShops, onMap = ctx::openMap,
                         onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net, highlights = highlights,
                     )
                 }
@@ -216,7 +216,6 @@ fun ProductPage(
     onCity: () -> Unit = {},
     onRetryShops: () -> Unit = {},
     onMap: (String) -> Unit = {},
-    onSite: () -> Unit = {},
     onRemember: () -> Unit = {},
     onForget: () -> Unit = {},
     /** Залишки мережі з stock/{штрихкод}; `null` — даних немає, лише наявність із сайту. */
@@ -246,16 +245,19 @@ fun ProductPage(
             item { NetworkStockCard(av, Modifier.padding(horizontal = H)) }
         }
         item { SectionDivider() }
-        item { SectionTitle("Наявність в магазинах") }
+        item { SectionTitle("Наявність за даними сайту") }
         item { CityField(city, onCity) }
-        shopsSection(shops, myShop, own, onRetry = onRetryShops, onMap = onMap)
+        shopsSection(shops, myShop, own.takeUnless { net?.own != null }, onRetry = onRetryShops, onMap = onMap)
         item { Gallery(p.images, p.price?.discountPercent ?: 0.0) }
         if (p.description.isNotBlank()) {
             item { SectionDivider() }
-            item { Description(p.description, onMore = onSite) }
+            item { Description(p.description) }
         }
-        item { SectionDivider() }
-        item { Characteristics(p, barcode ?: own?.barcode) }
+        val displayedBarcode = barcode ?: own?.barcode
+        if (!p.article.isNullOrBlank() || !displayedBarcode.isNullOrBlank()) {
+            item { SectionDivider() }
+            item { ProductCodes(p.article, displayedBarcode) }
+        }
     }
 }
 
@@ -391,7 +393,7 @@ private fun Availability(stock: StockStatus) {
 private fun PriceBox(p: ProductDetails, onPrint: () -> Unit, onScan: () -> Unit) {
     val m = Mine.colors
     val price = p.price
-    Surface(Modifier.padding(horizontal = H).padding(top = 14.dp).fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = boxBg(), contentColor = m.text) {
+    Surface(Modifier.padding(horizontal = H).padding(top = 14.dp).fillMaxWidth(), shape = Mine.cardShape, color = boxBg(), contentColor = m.text) {
         Column(Modifier.padding(20.dp)) {
             if (price == null) {
                 Text("Ціна недоступна", fontSize = 18.sp, color = m.textSecondary)
@@ -410,8 +412,8 @@ private fun PriceBox(p: ProductDetails, onPrint: () -> Unit, onScan: () -> Unit)
             }
             Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    onClick = onPrint, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(16.dp),
-                    color = m.accent, contentColor = Color.White,
+                    onClick = onPrint, modifier = Modifier.weight(1f).height(56.dp), shape = Mine.pillShape,
+                    color = m.accent, contentColor = m.onAccent,
                 ) {
                     Box(contentAlignment = Alignment.Center) { Text("Друкувати цінник", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
                 }
@@ -505,9 +507,9 @@ private fun ShopRow(shop: ShopAvailability, mineQty: Int?, isMine: Boolean, onCl
     }
 }
 
-/** «Опис» + «Дізнатись більше» (открывает страницу на сайте). */
+/** Опис із можливістю розгорнути текст. */
 @Composable
-private fun Description(text: String, onMore: () -> Unit) {
+private fun Description(text: String) {
     val m = Mine.colors
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.animateContentSize()) {
@@ -521,23 +523,20 @@ private fun Description(text: String, onMore: () -> Unit) {
                 if (expanded) "Згорнути" else "Читати повністю", Modifier.clickable { expanded = !expanded },
                 fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.accent,
             )
-            Text("Дізнатись більше", Modifier.clickable(onClick = onMore), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.accent)
         }
     }
 }
 
-/** «Характеристики»: подпись слева серым, значение справа жирным — как таблица на сайте. */
+/** Коди для звірки товару. */
 @Composable
-private fun Characteristics(p: ProductDetails, barcode: String?) {
+private fun ProductCodes(article: String?, barcode: String?) {
     val m = Mine.colors
     val rows = listOfNotNull(
-        "Найменування товару" to p.name,
-        p.article?.let { "Артикул" to it },
+        article?.takeIf { it.isNotBlank() }?.let { "Артикул" to it },
         barcode?.takeIf { it.isNotBlank() }?.let { "Штрихкод" to it },
-        p.categories.lastOrNull()?.let { "Категорія" to it },
     )
     Column {
-        SectionTitle("Характеристики")
+        SectionTitle("Коди товару")
         rows.forEach { (k, v) ->
             Row(Modifier.padding(horizontal = H, vertical = 6.dp)) {
                 Text(k, Modifier.weight(1f), fontSize = 16.sp, color = m.textSecondary)

@@ -5,11 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
-import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineHeader
-import ua.chudo.scanner.data.HighlightKind
-import ua.chudo.scanner.data.StockOperation
 import ua.chudo.scanner.ui.common.MineSearchField
 import ua.chudo.scanner.ui.common.MineTone
 import ua.chudo.scanner.ui.common.PriceFont
@@ -32,7 +29,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -72,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -462,49 +459,43 @@ private val QTY_FORMAT = DecimalFormat("#,##0.###")
 private fun Double.qty(): String = QTY_FORMAT.format(this)
 
 @Composable
+fun rememberStockViewModel(employee: Employee, owner: ViewModelStoreOwner): StockViewModel {
+    val app = LocalContext.current.chudoApp
+    return viewModel(
+        viewModelStoreOwner = owner,
+        key = "stock-${employee.uid}-${employee.shopId}",
+        factory = viewModelFactory {
+            initializer {
+                StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, networkView = employee.managesShop || employee.stockAdmin)
+            }
+        },
+    )
+}
+
+@Composable
 fun StockScreen(
     employee: Employee,
     onBack: () -> Unit,
-    onScan: () -> Unit,
+    vm: StockViewModel,
     /** Код со сканера (scan?mode=stock); после обработки вызываем [onScannedConsumed]. */
     scanned: String?,
     onScannedConsumed: () -> Unit,
     /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
     onNetworkUpload: (() -> Unit)? = null,
-    onHighlights: ((HighlightKind) -> Unit)? = null,
-    onStockOperation: ((StockOperation) -> Unit)? = null,
-    showBatch: Boolean = false,
-    onBatchShown: () -> Unit = {},
 ) {
-    val app = LocalContext.current.chudoApp
-    val vm: StockViewModel = viewModel(
-        key = "stock-${employee.uid}",
-        factory = viewModelFactory { initializer { StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, networkView = employee.managesShop || employee.stockAdmin) } },
-    )
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
-    val changedLoading by vm.changedLoading.collectAsStateWithLifecycle()
-    val batchNote by vm.batchNote.collectAsStateWithLifecycle()
-    val printTags by vm.printTags.collectAsStateWithLifecycle()
     val stores by vm.stores.collectAsStateWithLifecycle()
     val ownCode by vm.ownCode.collectAsStateWithLifecycle()
     val storeCode by vm.storeCode.collectAsStateWithLifecycle()
     val storeItems by vm.storeItems.collectAsStateWithLifecycle()
     val storeLoading by vm.storeLoading.collectAsStateWithLifecycle()
-    val labelsProgress by vm.labelsProgress.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.readFile(ctx, it) }
-    }
-    val listState = rememberLazyListState()
-    LaunchedEffect(showBatch) {
-        if (showBatch) {
-            listState.scrollToItem(if (onHighlights == null) 3 else 4)
-            onBatchShown()
-        }
     }
     LaunchedEffect(scanned) {
         scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
@@ -512,53 +503,19 @@ fun StockScreen(
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(),
-        state = listState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { ShopHeader(employee, onBack) }
-        onHighlights?.let { open ->
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = RoundedCornerShape(8.dp), color = Mine.colors.accentTone, contentColor = Mine.colors.link) {
-                        Text("Залишки", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontWeight = FontWeight.SemiBold)
-                    }
-                    HighlightKind.entries.forEach { kind ->
-                        TextButton(onClick = { open(kind) }) { Text(kind.title, color = Mine.colors.link) }
-                    }
-                }
-            }
-        }
         // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
         // Решта (консультанти, адмін магазину) лише бачать, коли оновлено, — завантажує тільки stockAdmin (див. firestore.rules).
         if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }
         else item { UploadCard(info, onUpload = if (employee.stockAdmin) ({ picker.launch(FILE_TYPES) }) else null) }
         item {
-            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineSearchField(
-                    query, { query = it; if (it.isEmpty()) vm.clear() }, "Артикул, штрихкод або назва",
-                    { keyboard?.hide(); vm.search(query) }, Modifier.weight(1f),
-                )
-                Surface(onClick = onScan, modifier = Modifier.size(60.dp), shape = RoundedCornerShape(18.dp), color = Mine.colors.accentTone, contentColor = Mine.colors.accent) {
-                    Box(contentAlignment = Alignment.Center) { Icon(BarcodeScanIcon, "Сканувати", Modifier.size(28.dp)) }
-                }
-            }
-        }
-        item {
-            LabelBatchCard(
-                selected, changedLoading, labelsProgress ?: batchNote,
-                onChanged = vm::addChanged, onRemove = vm::unselect, onLabels = vm::prepareLabels,
+            MineSearchField(
+                query, { query = it; if (it.isEmpty()) vm.clear() }, "Артикул, штрихкод або назва",
+                { keyboard?.hide(); vm.search(query) },
             )
-        }
-
-        onStockOperation?.let { open ->
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StockOperation.entries.forEach { operation ->
-                        MineButton(operation.title, { open(operation) })
-                    }
-                }
-            }
         }
         when (val st = s) {
             StockState.Idle -> {}
@@ -627,7 +584,6 @@ fun StockScreen(
     }
 
     ImportDialog(vm, employee)
-    printTags?.let { tags -> PrintSheet(tags, onDismiss = vm::closePrint, onDone = vm::printed) }
 }
 
 private val FILE_TYPES = arrayOf(
@@ -652,7 +608,7 @@ private fun ShopHeader(e: Employee, onBack: () -> Unit) {
 @Composable
 private fun UploadCard(info: ShopStockInfo?, onUpload: (() -> Unit)?) {
     val m = Mine.colors
-    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+    Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(if (info == null) m.warning else m.success)
@@ -717,7 +673,7 @@ private fun SiteLine(have: Boolean) {
 @Composable
 private fun MyShopCard(e: Employee, st: StockState.Ready, uploaded: Boolean) {
     val m = Mine.colors
-    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+    Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             Text("У твоєму магазині", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = m.textSecondary)
             val item = st.item
@@ -824,35 +780,47 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
  * (один документ на кілька аркушів у «Друк цінників»).
  */
 @Composable
-private fun LabelBatchCard(
-    selected: List<NetAvailability>, loading: Boolean, note: String?,
-    onChanged: () -> Unit, onRemove: (String) -> Unit, onLabels: () -> Unit,
-) {
+fun LabelBatchScreen(vm: StockViewModel, onBack: () -> Unit, onFindProduct: () -> Unit) {
     val m = Mine.colors
-    Surface(shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
-        Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Text("Цінники", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(
-                if (selected.isEmpty()) "Додай товари кнопкою «Додати до цінників» або візьми змінені з минулого завантаження."
-                else "Вибрано: ${selected.size}",
-                Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 19.sp, color = m.textSecondary,
-            )
-            selected.take(MAX_SHOWN).forEach { av ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(av.item.name.ifBlank { av.barcode }, Modifier.weight(1f), fontSize = 15.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    IconButton(onClick = { onRemove(av.barcode) }) { Icon(Icons.Rounded.Close, "Прибрати", tint = m.textSecondary) }
+    val selected by vm.selected.collectAsStateWithLifecycle()
+    val loading by vm.changedLoading.collectAsStateWithLifecycle()
+    val note by vm.batchNote.collectAsStateWithLifecycle()
+    val progress by vm.labelsProgress.collectAsStateWithLifecycle()
+    val printTags by vm.printTags.collectAsStateWithLifecycle()
+
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
+        MineHeader("Друк цінників", onBack)
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                Text(
+                    if (selected.isEmpty()) "Додай товари із залишків або завантаж зміни з 1С." else "Вибрано: ${selected.size}",
+                    fontSize = 16.sp, color = m.textSecondary,
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MineButton("Знайти товар", onFindProduct, Modifier.weight(1f))
+                    MineButton("Додати зміни з 1С", vm::addChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
                 }
             }
-            if (selected.size > MAX_SHOWN) Text("… і ще ${selected.size - MAX_SHOWN}", fontSize = 14.sp, color = m.textSecondary)
-            note?.let { Text(it, Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary) }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Змінені з минулого завантаження", onChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
-            }
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Цінники для вибраних", onLabels, Modifier.weight(1f), tone = MineTone.ACCENT, enabled = selected.isNotEmpty())
+            items(selected, key = { it.barcode }) { product ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(product.item.name.ifBlank { product.barcode }, Modifier.weight(1f), fontSize = 15.sp, color = m.text)
+                    IconButton(onClick = { vm.unselect(product.barcode) }) {
+                        Icon(Icons.Rounded.Close, "Прибрати товар", tint = m.textSecondary)
+                    }
+                }
             }
         }
+        (progress ?: note)?.let { Text(it, Modifier.padding(bottom = 8.dp), fontSize = 14.sp, color = m.textSecondary) }
+        MineButton(
+            "Підготувати до друку", vm::prepareLabels, Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            tone = MineTone.ACCENT, enabled = selected.isNotEmpty() && progress == null,
+        )
     }
+    printTags?.let { PrintSheet(it, onDismiss = vm::closePrint, onDone = vm::printed) }
 }
-
-private const val MAX_SHOWN = 5

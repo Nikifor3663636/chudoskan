@@ -47,14 +47,14 @@ import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.data.PickupOrder
 import ua.chudo.scanner.data.ScanResult
 import ua.chudo.scanner.print.PriceFormat
+import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.common.MinePrimaryButton
 import ua.chudo.scanner.ui.theme.Mine
 
 /** «Замовлення»: интернет-заказы на самовывоз, сборка сканером. */
 @Composable
-fun OrdersScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onScannedConsumed: () -> Unit) {
+fun OrdersScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit, scanned: String?, onScannedConsumed: () -> Unit) {
     val repo = LocalContext.current.chudoApp.orders
-    LaunchedEffect(employee.shopId) { repo.load(employee.shopId) }
     val orders by repo.orders.collectAsStateWithLifecycle()
     val activeNumber by repo.activeNumber.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(OrderStage.NEW) }
@@ -78,6 +78,7 @@ fun OrdersScreen(employee: Employee, onScan: () -> Unit, scanned: String?, onSca
     Box(Modifier.fillMaxSize()) {
         OrdersContent(
             OrdersUi(shop = employee.shop, orders = orders, tab = tab, demo = repo.demo, activeNumber = activeNumber),
+            onBack = onBack,
             onTab = { tab = it },
             onOrder = { o ->
                 when (o.stage) {
@@ -123,14 +124,14 @@ fun goods(n: Int): String {
 }
 
 @Composable
-fun OrdersContent(ui: OrdersUi, onTab: (OrderStage) -> Unit = {}, onOrder: (PickupOrder) -> Unit = {}, onScan: () -> Unit = {}) {
+fun OrdersContent(ui: OrdersUi, onBack: () -> Unit = {}, onTab: (OrderStage) -> Unit = {}, onOrder: (PickupOrder) -> Unit = {}, onScan: () -> Unit = {}) {
     val m = Mine.colors
     val current = ui.orders.firstOrNull { it.stage == OrderStage.PICKING && it.number == ui.activeNumber }
     val list = ui.orders.filter { it.stage == ui.tab && it != current }
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
         item {
-            Text("Замовлення на самовивіз", Modifier.padding(top = 20.dp), fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, color = m.text)
-            Text("${ui.shop.ifEmpty { "Мій магазин" }}, сьогодні", Modifier.padding(top = 4.dp), fontSize = 15.sp, color = m.textSecondary)
+            MineHeader("Замовлення", onBack)
+            Text(ui.shop.ifEmpty { "Мій магазин" }, Modifier.padding(top = 4.dp), fontSize = 15.sp, color = m.textSecondary)
             if (ui.demo) {
                 Surface(Modifier.padding(top = 12.dp), shape = RoundedCornerShape(12.dp), color = m.accentTone, contentColor = m.accent) {
                     Text(
@@ -141,21 +142,21 @@ fun OrdersContent(ui: OrdersUi, onTab: (OrderStage) -> Unit = {}, onOrder: (Pick
             }
             Segments(ui, onTab)
         }
+        current?.let { o -> item { PickingCard(o, onScan) } }
         items(list, key = { it.number }) { o ->
             OrderRow(o, onClick = { onOrder(o) })
             HorizontalDivider(color = m.line)
         }
-        if (list.isEmpty()) item {
+        if (list.isEmpty() && current == null) item {
             Text(
                 when (ui.tab) {
                     OrderStage.NEW -> "Нових замовлень немає."
-                    OrderStage.PICKING -> if (current == null) "Зараз нічого не збирається. Обери замовлення в «Нові»." else ""
+                    OrderStage.PICKING -> "Обери замовлення у вкладці «Нові»."
                     OrderStage.READY -> "Готових до видачі замовлень немає."
                 },
                 Modifier.padding(vertical = 16.dp), fontSize = 15.sp, color = m.textSecondary,
             )
         }
-        current?.let { o -> item { PickingCard(o, onScan) } }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -234,6 +235,7 @@ private fun PickingCard(o: PickupOrder, onScan: () -> Unit) {
                         .clip(RoundedCornerShape(4.dp)).background(m.accent),
                 )
             }
+            MinePrimaryButton("Сканувати наступний товар", onScan, Modifier.padding(top = 16.dp), icon = Icons.Rounded.QrCodeScanner)
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 o.lines.forEach { l ->
                     Row {
@@ -242,7 +244,6 @@ private fun PickingCard(o: PickupOrder, onScan: () -> Unit) {
                     }
                 }
             }
-            MinePrimaryButton("Сканувати наступний товар", onScan, Modifier.padding(top = 16.dp), icon = Icons.Rounded.QrCodeScanner)
         }
     }
 }

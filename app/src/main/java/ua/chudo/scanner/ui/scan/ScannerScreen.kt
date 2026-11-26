@@ -4,10 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import ua.chudo.scanner.ui.theme.Mine
 import ua.chudo.scanner.ui.theme.MineDark
 import android.Manifest
 import android.content.Intent
@@ -266,16 +266,17 @@ private fun CameraScreen(
                 fontSize = 15.sp, fontWeight = if (continuous && status != null) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center, maxLines = 2,
             )
-            // Код не читається (пом'ятий, без штрихкоду) — повертаємось і вводимо артикул; у кошику — «Готово».
-            Surface(
-                onClick = onManual ?: onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(26.dp),
-                color = if (continuous) MineDark.accent else MineDark.card.copy(alpha = 0.92f),
-                contentColor = if (continuous) MineDark.onAccent else MineDark.text,
-                border = if (continuous) null else BorderStroke(1.dp, MineDark.outline),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(if (continuous && onManual == null) "Готово — до кошика" else "Ввести код вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
+            if (onManual != null || continuous) {
+                Surface(
+                    onClick = onManual ?: onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
+                    shape = Mine.pillShape,
+                    color = if (continuous) MineDark.accent else MineDark.card.copy(alpha = 0.92f),
+                    contentColor = if (continuous) MineDark.onAccent else MineDark.text,
+                    border = if (continuous) null else BorderStroke(1.dp, MineDark.outline),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(if (continuous && onManual == null) "Готово — до кошика" else "Ввести код вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
+                    }
                 }
             }
         }
