@@ -84,7 +84,12 @@ fun ProfileScreen(
     var changePassword by rememberSaveable { mutableStateOf(false) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
 
-    LaunchedEffect(employee.shopId) { info = runCatching { app.shopStock.info(employee.shopId) }.getOrNull() }
+    // Залишки мережі (одне завантаження на всю мережу); старі залишки магазину — запасний варіант.
+    LaunchedEffect(employee.shopId) {
+        info = runCatching { app.networkLookup.info() }.getOrNull()?.let { ShopStockInfo(it.updatedAt, it.updatedBy, it.items) }
+            ?: runCatching { app.shopStock.info(employee.shopId) }.getOrNull()
+    }
+    var checking by remember { mutableStateOf(false) }
 
     val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
     ProfileContent(
@@ -93,10 +98,27 @@ fun ProfileScreen(
             shop = employee.shop, stock = info?.let { "${it.rows} позицій" } ?: "ще не завантажено",
             theme = theme, admin = onPrinters != null, message = message, networkStock = onNetworkStock != null,
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
+            version = app.updater.currentVersion, checking = checking,
         ),
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onStock = onStock, onPrinters = { onPrinters?.invoke() }, onNetworkStock = { onNetworkStock?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
+        onCheckUpdate = {
+            if (!checking) scope.launch {
+                checking = true
+                message = null
+                runCatching { app.updater.check(force = true) }
+                checking = false
+                message = when (val s = app.updater.state.value) {
+                    is ua.chudo.scanner.data.UpdateState.Available -> {
+                        launch { app.updater.download() }
+                        "Є версія ${s.info.version} — завантажую. Далі натисніть «Встановити» на головному екрані."
+                    }
+                    is ua.chudo.scanner.data.UpdateState.Ready -> "Версія ${s.info.version} уже завантажена — «Встановити» на головному екрані."
+                    else -> "У вас остання версія."
+                }
+            }
+        },
     )
 
     if (changePassword) {
@@ -157,6 +179,8 @@ data class ProfileUi(
     val networkStock: Boolean = false,
     val networkAdmin: Boolean = false,
     val myShop: Boolean = false,
+    val version: String = "",
+    val checking: Boolean = false,
 )
 
 /** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
@@ -173,6 +197,7 @@ fun ProfileContent(
     onMyShop: () -> Unit = {},
     onPassword: () -> Unit = {},
     onLogout: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
 ) {
     val m = Mine.colors
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -217,6 +242,12 @@ fun ProfileContent(
                 ProfileRow("Телефон", ui.phone)
                 RowDivider()
                 ProfileRow("Змінити пароль", null, onClick = onPassword)
+                RowDivider()
+                ProfileRow(
+                    "Перевірити оновлення",
+                    if (ui.checking) "Перевіряю…" else ui.version.takeIf { it.isNotEmpty() }?.let { "Версія $it" },
+                    onClick = onCheckUpdate,
+                )
                 RowDivider()
                 ProfileRow("Вийти", null, danger = true, onClick = onLogout)
             }

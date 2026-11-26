@@ -176,7 +176,8 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
 
     private companion object {
         const val LATEST_URL = "https://api.github.com/repos/Nikifor3663636/chudoskan/releases/latest"
-        const val CHECK_EVERY_MS = 3 * 60 * 60 * 1000L
+        /** Автоматично — не частіше ніж раз на 30 хв (вручну — «Профіль → Перевірити оновлення»). */
+        const val CHECK_EVERY_MS = 30 * 60 * 1000L
         const val KEY_CHECKED = "checkedAt"
         const val KEY_VERSION = "version"
         const val KEY_URL = "url"
