@@ -95,7 +95,11 @@ class NetworkAdminViewModel(
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
 
-    init { load() }
+    init {
+        load()
+        // Нова анкета чи зміна прав — перечитати (Supabase Realtime; з Firestore потік порожній).
+        viewModelScope.launch { runCatching { repo.staffChanges().collect { load() } } }
+    }
 
     fun load() = viewModelScope.launch {
         _error.value = null

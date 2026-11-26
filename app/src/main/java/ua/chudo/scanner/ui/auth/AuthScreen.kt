@@ -199,6 +199,10 @@ fun Throwable.authMessage(): String = run {
         } else {
             "Помилка бази: ${e.message}"
         }
+        // Supabase: 42501 — RLS / права; 401 — токен без role або чужого проєкту.
+        is io.github.jan.supabase.postgrest.exception.PostgrestRestException ->
+            if (e.code == "42501" || e.statusCode == 401 || e.statusCode == 403) "Немає доступу (перевір права в Supabase)." else "Помилка бази: ${e.message}"
+        is io.github.jan.supabase.exceptions.HttpRequestException -> "Немає інтернету."
         else -> e.message ?: e.javaClass.simpleName
     }
 }

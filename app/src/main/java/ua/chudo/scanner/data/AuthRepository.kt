@@ -12,6 +12,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 
@@ -86,6 +87,10 @@ class AuthRepository(context: Context) {
 
     private var profileListener: ListenerRegistration? = null
 
+    /** Supabase: завантаження анкети й підписка Realtime на неї. */
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+    private var profileJob: kotlinx.coroutines.Job? = null
+
     init {
         if (configured) auth.addAuthStateListener { onUser(it.currentUser) }
     }
@@ -93,11 +98,14 @@ class AuthRepository(context: Context) {
     private fun onUser(user: FirebaseUser?) {
         profileListener?.remove()
         profileListener = null
+        profileJob?.cancel()
+        profileJob = null
         if (user == null) {
             _state.value = AuthState.SignedOut
             return
         }
         _state.value = AuthState.Loading
+        if (Backend.isSupabase) { profileJob = scope.launch { watchSupabase(user) }; return }
         // Слушаем анкету: как только администратор поставит approved = true, вход откроется сам.
         profileListener = db.collection(USERS).document(user.uid).addSnapshotListener { snap, err ->
             if (auth.currentUser?.uid != user.uid) return@addSnapshotListener
@@ -106,6 +114,30 @@ class AuthRepository(context: Context) {
                 snap == null || !snap.exists() -> AuthState.NoProfile(phoneOf(user))
                 else -> snap.toEmployee(user).let { if (it.approved) AuthState.Ready(it) else AuthState.Pending(it) }
             }
+        }
+    }
+
+    /**
+     * Supabase: роль у токені (ensure-role) → анкета; далі — Realtime: як тільки адмін поставить
+     * approved = true, вхід відкриється сам (як підписка Firestore).
+     */
+    private suspend fun watchSupabase(user: FirebaseUser) {
+        suspend fun read() {
+            val row = SupabaseUsers.profile(user.uid)
+            if (auth.currentUser?.uid != user.uid) return
+            _state.value = when {
+                row == null -> AuthState.NoProfile(phoneOf(user))
+                else -> row.employee(phoneOf(user)).let { if (it.approved) AuthState.Ready(it) else AuthState.Pending(it) }
+            }
+        }
+        try {
+            Supabase.ensureRole(user)
+            read()
+            SupabaseUsers.changes("users", "uid=eq.${user.uid}").collect { runCatching { read() } }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (auth.currentUser?.uid == user.uid) _state.value = AuthState.Failed(e.message ?: e.javaClass.simpleName)
         }
     }
 
@@ -139,10 +171,16 @@ class AuthRepository(context: Context) {
     /** Имя сотрудник меняет сам; магазин и подтверждение — только администратор. */
     suspend fun updateName(name: String) {
         val uid = auth.currentUser?.uid ?: error("Не виконано вхід")
+        if (Backend.isSupabase) { SupabaseUsers.updateName(uid, name.trim()); return }
         db.collection(USERS).document(uid).update("name", name.trim()).await()
     }
 
     private suspend fun saveProfile(user: FirebaseUser, name: String, region: String, shop: String) {
+        if (Backend.isSupabase) {
+            Supabase.ensureRole(user)
+            SupabaseUsers.saveProfile(user.uid, name.trim(), phoneOf(user), region, shop.trim(), shopId(region, shop))
+            return
+        }
         db.collection(USERS).document(user.uid).set(
             mapOf(
                 "name" to name.trim(),

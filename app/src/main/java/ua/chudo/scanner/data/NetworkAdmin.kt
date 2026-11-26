@@ -172,29 +172,31 @@ data class AdminLogEntry(val id: String, val by: String, val action: String, val
  */
 class NetworkAdminRepository(private val db: FirebaseFirestore) {
 
-    suspend fun shops(): List<ShopDoc> = db.collection("shops").get().await().documents.map {
+    suspend fun shops(): List<ShopDoc> = if (Backend.isSupabase) SupabaseUsers.shops() else db.collection("shops").get().await().documents.map {
         ShopDoc(it.id, it.getString("address").orEmpty(), it.getString("region").orEmpty(), it.getString("code1C"), it.getTimestamp("updatedAt")?.toDate())
     }
 
     /** superAdmin — усі; адмін магазину — лише свій магазин (так дозволяють правила). */
     suspend fun staff(shopId: String? = null): List<StaffMember> {
+        if (Backend.isSupabase) return SupabaseUsers.staff(shopId)
         val q: Query = if (shopId == null) db.collection("users") else db.collection("users").whereEqualTo("shopId", shopId)
         return q.get().await().documents.map { it.toStaff() }
     }
 
-    suspend fun agents(): List<AgentInfo> = db.collection("agents").get().await().documents.map { d ->
+    suspend fun agents(): List<AgentInfo> = if (Backend.isSupabase) SupabaseUsers.agents() else db.collection("agents").get().await().documents.map { d ->
         val seen = d.getTimestamp("lastSeen")?.toDate()?.time ?: 0
         AgentInfo(d.id, d.getString("shopId").orEmpty(), d.getString("pcName").orEmpty(),
             online = d.getBoolean("online") != false && System.currentTimeMillis() - seen < AGENT_ONLINE_MS)
     }
 
     suspend fun apply(actorUid: String, m: StaffMember, action: StaffAction, target: ShopDoc? = null) {
-        val data = NetworkAdmin.update(action, actorUid, target) + ("changedAt" to FieldValue.serverTimestamp())
-        db.collection("users").document(m.uid).update(data).await()
+        if (Backend.isSupabase) SupabaseUsers.apply(m.uid, NetworkAdmin.update(action, actorUid, target))
+        else db.collection("users").document(m.uid).update(NetworkAdmin.update(action, actorUid, target) + ("changedAt" to FieldValue.serverTimestamp())).await()
         log(actorUid, action.log, m.uid, target?.id ?: m.shopId)
     }
 
     suspend fun log(actorUid: String, action: String, target: String, shopId: String, details: String? = null) {
+        if (Backend.isSupabase) { SupabaseUsers.log(action, target, shopId, details); return }
         val data = mutableMapOf<String, Any>(
             "by" to actorUid, "action" to action, "target" to target.take(200), "shopId" to shopId, "at" to FieldValue.serverTimestamp(),
         )
@@ -204,10 +206,14 @@ class NetworkAdminRepository(private val db: FirebaseFirestore) {
 
     /** Останні дії (лише superAdmin читає журнал). */
     suspend fun history(limit: Long = 100): List<AdminLogEntry> =
-        db.collection("adminLog").orderBy("at", Query.Direction.DESCENDING).limit(limit).get().await().documents.map {
+        if (Backend.isSupabase) SupabaseUsers.history(limit) else db.collection("adminLog").orderBy("at", Query.Direction.DESCENDING).limit(limit).get().await().documents.map {
             AdminLogEntry(it.id, it.getString("by").orEmpty(), it.getString("action").orEmpty(), it.getString("target").orEmpty(),
                 it.getString("shopId").orEmpty(), it.getString("details").orEmpty(), (it.get("at") as? Timestamp)?.toDate())
         }
+
+    /** Нові й змінені анкети (Realtime) — адмін бачить їх без «Оновити». Firestore — без підписки. */
+    fun staffChanges(): kotlinx.coroutines.flow.Flow<Unit> =
+        if (Backend.isSupabase) SupabaseUsers.changes("users") else kotlinx.coroutines.flow.emptyFlow()
 
     private fun DocumentSnapshot.toStaff() = StaffMember(
         uid = id, name = getString("name").orEmpty(), phone = getString("phone").orEmpty(),
