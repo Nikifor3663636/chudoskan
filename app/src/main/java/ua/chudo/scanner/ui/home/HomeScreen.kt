@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Surface
@@ -71,6 +72,7 @@ fun HomeScreen(
     onOrders: () -> Unit,
     onStock: () -> Unit,
     onCart: () -> Unit = {},
+    onScan: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val cartLines by app.cart.lines.collectAsStateWithLifecycle()
@@ -99,7 +101,7 @@ fun HomeScreen(
         onQuery = { query = it },
         onSubmit = { if (query.isNotBlank()) { keyboard?.hide(); onSearch(query.trim()) } },
         onRegion = { showRegions = true },
-        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock, onCart = onCart,
+        onProfile = onProfile, onLabels = onLabels, onOrders = onOrders, onStock = onStock, onCart = onCart, onScan = onScan,
         onOpenProduct = onOpenProduct, onClearHistory = prefs::clearHistory,
         banner = {
             val update by app.updater.state.collectAsStateWithLifecycle()
@@ -165,26 +167,6 @@ fun UpdateBanner(state: ua.chudo.scanner.data.UpdateState, onUpdate: () -> Unit)
 
 private data class Quad(val a: String, val b: String, val c: String?, val d: Float?)
 
-/** «Кошик покупця»: оранжева кнопка на всю ширину; є товари — кількість і сума. */
-@Composable
-private fun CartButton(units: Int, totalKop: Long, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val m = Mine.colors
-    Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = m.accent, contentColor = m.onAccent) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.Icon(Icons.Outlined.ShoppingCart, null, Modifier.size(30.dp))
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Кошик покупця", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    if (units > 0) "$units шт у кошику" else "Скануй товари — порахую суму",
-                    fontSize = 15.sp, color = m.onAccent.copy(alpha = 0.85f),
-                )
-            }
-            if (units > 0) Text(ua.chudo.scanner.data.Cart.money(totalKop), fontSize = 20.sp, fontWeight = FontWeight.Black)
-        }
-    }
-}
-
 /** «оновлено о 12:20» сегодня, иначе «оновлено 14.11». */
 fun updatedText(at: Date?): String? {
     at ?: return null
@@ -208,6 +190,7 @@ fun HomeContent(
     onCart: () -> Unit = {},
     onOpenProduct: (String) -> Unit = {},
     onClearHistory: () -> Unit = {},
+    onScan: () -> Unit = {},
     /** Над усім — «Доступна нова версія» (оновлення застосунку). */
     banner: @Composable () -> Unit = {},
 ) {
@@ -224,8 +207,11 @@ fun HomeContent(
                 Avatar(ui.employee, size = 44.dp, onClick = onProfile)
             }
             banner()
-            Row(Modifier.padding(top = 18.dp)) { MinePlacePill(ui.region, onRegion) }
-            Text("Що шукаємо?", Modifier.padding(top = 18.dp), fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Black, color = m.text)
+            Row(Modifier.padding(top = 12.dp)) { MinePlacePill(ui.region, onRegion) }
+            MineSearchField(
+                ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit,
+                Modifier.padding(top = 12.dp), onScan = onScan,
+            )
             updatedText(ui.stockAt)?.let {
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     StatusDot(m.success)
@@ -233,20 +219,27 @@ fun HomeContent(
                     Text(it, fontSize = 15.sp, color = m.textSecondary)
                 }
             }
-            MineSearchField(ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit, Modifier.padding(top = 18.dp))
-            // Кошик покупця (термінал продавця) — головна дія: одразу під пошуком, великою кнопкою.
-            CartButton(ui.cartUnits, ui.cartTotal, onCart, Modifier.padding(top = 12.dp))
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Друк — у нижній панелі; тут — залишки магазину з 1С.
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MineTile(
-                    Icons.Outlined.Inventory2, "Залишки",
-                    if (ui.stockAt == null) "Завантаж файл з 1С" else "Кількість з 1С",
-                    accent = ui.stockAt == null, onClick = onStock, modifier = Modifier.weight(1f),
+                    Icons.Outlined.ShoppingCart, "Кошик",
+                    if (ui.cartUnits > 0) "${ui.cartUnits} шт · ${ua.chudo.scanner.data.Cart.money(ui.cartTotal)}" else "Порожній",
+                    accent = ui.cartUnits > 0, onClick = onCart, modifier = Modifier.weight(1f),
                 )
                 MineTile(
                     Icons.Outlined.ShoppingBag, "Замовлення",
                     if (ui.newOrders > 0) "${ui.newOrders} нові до збирання" else "Нових немає",
                     accent = ui.newOrders > 0, onClick = onOrders, modifier = Modifier.weight(1f),
+                )
+            }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MineTile(
+                    Icons.Outlined.Inventory2, "Залишки",
+                    if (ui.stockAt == null) "Дані 1С недоступні" else "Кількість з 1С",
+                    accent = ui.stockAt == null, onClick = onStock, modifier = Modifier.weight(1f),
+                )
+                MineTile(
+                    Icons.Rounded.Print, "Цінники", "Пакетний друк",
+                    accent = false, onClick = onLabels, modifier = Modifier.weight(1f),
                 )
             }
         }

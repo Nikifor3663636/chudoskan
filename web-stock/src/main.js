@@ -135,31 +135,67 @@ onAuthStateChanged(auth, async (user) => {
 
 // ---------- Головна: стан і вибір файлу ----------
 
+const importKinds = [
+  { key: 'stock', label: 'Залишки', path: 'M3 7h18v13H3z M3 7l3-4h12l3 4 M9 11h6' },
+  { key: 'new', label: 'Новинки', path: 'M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z' },
+  { key: 'promo', label: 'Акції', path: 'M7 17L17 7 M9 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0 M18 16a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0' },
+  { key: 'history', label: 'Історія залишків', path: 'M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5m4 0v5l3 2' },
+];
+
+const icon = (path) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+
+function importWorkspace(active, heading, content) {
+  const kinds = sb ? importKinds : importKinds.slice(0, 1);
+  render(`<div class="workspace">
+    <nav class="import-nav" aria-label="Тип імпорту">
+      ${kinds.map(({ key, label, path }) =>
+        `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${icon(path)}${label}</button>`).join('')}
+    </nav>
+    <section aria-labelledby="import-title">
+      <div class="row between">
+        <div class="page-head"><h1 id="import-title">${esc(heading)}</h1><p class="muted">Імпорт з 1С</p></div>
+        <button class="link" id="out">Вийти (${esc(me.name)})</button>
+      </div>
+      ${content}
+    </section>
+  </div>`);
+  $('#out').onclick = () => signOut(auth);
+  app.querySelectorAll('[data-kind]').forEach((button) => {
+    button.onclick = () => {
+      const kind = button.dataset.kind;
+      if (kind === active) return;
+      if (kind === 'stock') homeView();
+      else if (kind === 'history') historyView();
+      else highlightsView(kind);
+    };
+  });
+}
+
 async function homeView(note = '') {
+  const account = me;
   const meta = sb
     ? (await timed(sb.from('meta_stock').select('updatedAt:updated_at, updatedBy:updated_by, items, stores').maybeSingle(), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data
     : (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data();
-  render(`
+  if (!account || me !== account) return;
+  importWorkspace('stock', 'Залишки мережі', `
+    ${note ? `<div class="card" role="status">${note}</div>` : ''}
     <div class="card">
-      <div class="row between"><h2>Залишки мережі</h2><button class="link" id="out">Вийти (${esc(me.name)})</button></div>
+      <h2>Останній імпорт</h2>
       ${meta
         ? `<p><span class="dot ok"></span>Оновлено <b>${esc(when(meta.updatedAt))}</b>${meta.updatedBy ? `, ${esc(meta.updatedBy)}` : ''}</p>
-           <p class="muted">${fmt(meta.items ?? 0)} товарів · ${fmt(meta.stores ?? 0)} магазинів</p>`
-        : '<p><span class="dot warn"></span>Залишки ще не завантажувалися.</p>'}
-      ${note}
+           <div class="stats"><div><b>${fmt(meta.items ?? 0)}</b><span>Товари</span></div><div><b>${fmt(meta.stores ?? 0)}</b><span>Магазини</span></div></div>`
+        : '<p class="muted">Залишки ще не завантажувалися.</p>'}
     </div>
-    <label class="drop" id="drop">
-      <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-      <b>Перетягни сюди звіт 1С (.xlsx)</b>
-      <span class="muted">або натисни, щоб вибрати файл</span>
-      <small class="muted">«Ведомость по партиям товаров на складах», склади в колонках, період «по» — сьогодні.</small>
-    </label>
-    ${sb ? '<div class="card"><h2>Новинки й акції</h2><button id="highlights-new">Завантажити новинки</button> <button id="highlights-promo">Завантажити акції</button></div>' : ''}`);
-  $('#out').onclick = () => signOut(auth);
-  if (sb) {
-    $('#highlights-new').onclick = () => highlightsView('new');
-    $('#highlights-promo').onclick = () => highlightsView('promo');
-  }
+    <div class="card"><h2>Завантажити звіт</h2>
+      <div class="drop" id="drop">
+        ${icon(importKinds[0].path)}
+        <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        <b>Перетягніть файл .xlsx сюди</b>
+        <button type="button" class="primary" id="choose-file">Вибрати файл</button>
+        <small>«Ведомость по партиям товаров на складах», склади в колонках, період «по» — сьогодні.</small>
+      </div>
+    </div>`);
+  $('#choose-file').onclick = () => $('#file').click();
   const input = $('#file');
   const drop = $('#drop');
   input.onchange = () => input.files[0] && start(input.files[0]);
@@ -168,17 +204,40 @@ async function homeView(note = '') {
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) start(f); };
 }
 
+async function historyView() {
+  importWorkspace('history', 'Історія залишків', '<div class="card" role="status">Завантаження…</div>');
+  const pending = app.querySelector('.workspace');
+  let body;
+  try {
+    const rows = must(await timed(sb.from('stock_uploads')
+      .select('at,by_name,file_name,rows_total,changed,removed,status')
+      .in('status', ['done', 'failed']).order('at', { ascending: false }).order('id', { ascending: false }).limit(30),
+      READ_TIMEOUT, 'історія залишків'));
+    body = rows.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="Історія імпорту">
+      <table><thead><tr><th scope="col">Час</th><th scope="col">Файл і хто імпортував</th><th scope="col">Товари</th><th scope="col">Стан</th></tr></thead><tbody>
+      ${rows.map(row => `<tr><td>${esc(when(row.at))}</td><td>${esc(row.file_name || '—')}<br><small>${esc(row.by_name || '—')}</small></td>
+        <td>${fmt(row.rows_total)}<br><small>${fmt(row.changed)} змінено · ${fmt(row.removed)} вилучено</small></td>
+        <td class="${row.status === 'done' ? 'ok' : 'error'}">${row.status === 'done' ? 'Завершено' : 'Помилка'}</td></tr>`).join('')}
+      </tbody></table>
+    </div>` : '<p class="muted">Завершених завантажень ще немає.</p>';
+  } catch (error) {
+    body = `<p class="error" role="alert">${esc(errorText(error))}</p><div class="row"><button type="button" id="retry-history">Повторити</button></div>`;
+  }
+  if (!me || !pending.isConnected) return;
+  importWorkspace('history', 'Історія залишків', `<div class="card"><h2>Останні завантаження</h2>${body}</div>`);
+  const retry = $('#retry-history');
+  if (retry) retry.onclick = historyView;
+}
+
 function highlightsView(kind) {
   const title = kind === 'new' ? 'Новинки' : 'Акції';
-  render(`<form class="card" id="highlight-form">
-    <h2>${title}</h2>
-    <p>Вибери повний звіт .xlsx. Потрібні «Назва» та «Штрихкод» або «Артикул».</p>
-    <p class="muted">Додаткові колонки: «Початок», «Кінець» та для акцій «Акційна ціна».</p>
-    <label>Звіт <input id="highlight-file" type="file" accept=".xlsx" required></label>
-    <button class="primary" type="submit">Перевірити файл</button>
-    <button type="button" id="back">Назад</button>
+  importWorkspace(kind, title, `<form class="card" id="highlight-form">
+    <h2>Завантажити звіт</h2>
+    <p>Виберіть повний звіт .xlsx. Потрібні «Назва» та «Штрихкод» або «Артикул».</p>
+    <p class="muted">Додаткові колонки — «Початок», «Кінець»${kind === 'promo' ? ' та «Акційна ціна»' : ''}.</p>
+    <label>Файл XLSX <input id="highlight-file" type="file" accept=".xlsx" required></label>
+    <div class="row"><button class="primary" type="submit">Перевірити файл</button></div>
   </form>`);
-  $('#back').onclick = () => homeView();
   $('#highlight-form').onsubmit = async (event) => {
     event.preventDefault();
     const file = $('#highlight-file').files[0];
@@ -188,9 +247,20 @@ function highlightsView(kind) {
       const report = highlightReport(kind);
       await readXlsx(new Uint8Array(await file.arrayBuffer()), report.row, (p) => progressView('Перевіряю звіт…', p, file.name));
       const rows = report.finish();
-      render(`<div class="card"><h2>${title}</h2><p>${esc(file.name)} · ${fmt(rows.length)} товарів</p>
-        <p>Публікація замінить поточний список цієї категорії для всієї мережі.</p>
-        <button class="primary" id="publish">Опублікувати</button> <button id="cancel">Скасувати</button></div>`);
+      const preview = rows.slice(0, 10);
+      importWorkspace(kind, title, `<div class="card">
+        <h2>Перевірка звіту</h2><p>${esc(file.name)} · ${fmt(rows.length)} товарів</p>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Попередній перегляд звіту">
+          <table><thead><tr><th scope="col">Товар</th><th scope="col">Штрихкод або артикул</th><th scope="col">Період</th>${kind === 'promo' ? '<th scope="col">Ціна</th>' : ''}</tr></thead><tbody>
+          ${preview.map(row => `<tr><td>${esc(row.name)}</td><td>${esc([row.barcode, row.article].filter(Boolean).join(' · '))}</td>
+            <td>${esc([row.starts_on && `від ${row.starts_on}`, row.ends_on && `до ${row.ends_on}`].filter(Boolean).join(' ') || '—')}</td>
+            ${kind === 'promo' ? `<td>${row.promo_price == null ? '—' : esc(new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'UAH' }).format(row.promo_price))}</td>` : ''}</tr>`).join('')}
+          </tbody></table>
+        </div>
+        ${rows.length > preview.length ? `<p class="muted">Показано ${preview.length} з ${fmt(rows.length)} товарів.</p>` : ''}
+        <p class="warn">Публікація замінить поточний список цієї категорії для всієї мережі.</p>
+        <div class="row"><button class="primary" id="publish">Опублікувати</button><button id="cancel">Скасувати</button></div>
+      </div>`);
       $('#cancel').onclick = () => highlightsView(kind);
       $('#publish').onclick = async () => {
         progressView('Публікую…', null, file.name);

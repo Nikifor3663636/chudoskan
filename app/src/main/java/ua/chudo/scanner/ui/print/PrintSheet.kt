@@ -1,6 +1,8 @@
 package ua.chudo.scanner.ui.print
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -33,20 +35,28 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.print.LabelFormat
+import ua.chudo.scanner.print.LabelItem
 import ua.chudo.scanner.print.LabelKind
+import ua.chudo.scanner.print.LabelRenderer
 import ua.chudo.scanner.print.PriceFormat
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.QueueItem
@@ -185,6 +195,7 @@ fun PrintSheet(tags: List<PriceTag>, onDismiss: () -> Unit, onDone: (String) -> 
                 qty = qty, printer = line, busy = busy, error = error, alternative = alternative?.displayName,
                 landscape = landscape,
             ),
+            preview = { PrintPreview(items, format, qty, promo && canPromo, landscape) },
             onLandscape = { v -> if (!busy) scope.launch { svc.store.setLandscape(format, v) } },
             onFormat = { if (!busy) { format = it; error = null; alternative = null; scope.launch { svc.store.setLastTemplate(it) } } },
             onPromo = { promo = it },
@@ -215,6 +226,7 @@ fun PrintSheetContent(
     onChoosePrinter: () -> Unit = {},
     onAlternative: () -> Unit = {},
     onLandscape: (Boolean) -> Unit = {},
+    preview: (@Composable () -> Unit)? = null,
 ) {
     val m = Mine.colors
     Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -222,6 +234,7 @@ fun PrintSheetContent(
             Text("Друк цінника", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = m.text)
             Text(ui.subtitle, Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary)
         }
+        preview?.invoke()
         Column {
             Text("Формат", Modifier.padding(bottom = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -268,6 +281,33 @@ fun PrintSheetContent(
             },
             onPrint, height = 58.dp, enabled = !ui.busy,
         )
+    }
+}
+
+@Composable
+private fun PrintPreview(items: List<LabelItem>, format: Template, quantity: Int, promo: Boolean, landscape: Boolean) {
+    val context = LocalContext.current
+    val renderer = remember(context) { LabelRenderer(context) }
+    val perPage = format.layout(landscape)?.perPage
+    val pages = perPage?.let { (items.size * quantity + it - 1) / it }
+    val image by produceState<ImageBitmap?>(null, listOf(items, format, quantity, promo, landscape)) {
+        value = null
+        value = withContext(Dispatchers.Default) {
+            if (perPage == null) renderer.render(items.first(), LabelFormat.of(format, promo), 100f).asImageBitmap()
+            else {
+                val firstPage = List(minOf(items.size * quantity, perPage)) { index -> items[index / quantity] }
+                renderer.sheetPreview(firstPage, format, promo, 82f, landscape).asImageBitmap()
+            }
+        }
+    }
+    val bitmap = image
+    if (bitmap != null) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(if (pages == null) "Попередній перегляд" else "Аркуш 1 з $pages", fontSize = 13.sp, color = Mine.colors.textSecondary)
+            Surface(shape = RoundedCornerShape(8.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
+                Image(bitmap, "Попередній перегляд цінника", modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).padding(8.dp))
+            }
+        }
     }
 }
 

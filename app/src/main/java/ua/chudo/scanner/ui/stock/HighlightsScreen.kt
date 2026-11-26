@@ -52,10 +52,11 @@ fun HighlightsScreen(
     onBack: () -> Unit,
     onProduct: (String, String?) -> Unit,
     onSearch: (String) -> Unit,
+    initialKind: HighlightKind = HighlightKind.NEW,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var kind by rememberSaveable { mutableStateOf(HighlightKind.NEW) }
+    var kind by rememberSaveable(initialKind) { mutableStateOf(initialKind) }
     var query by rememberSaveable { mutableStateOf("") }
     var rows by remember { mutableStateOf(emptyList<ProductHighlight>()) }
     var selected by remember { mutableStateOf<ProductHighlight?>(null) }

@@ -51,6 +51,7 @@ import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
 import ua.chudo.scanner.ui.print.PrintersScreen
 import ua.chudo.scanner.data.Backend
+import ua.chudo.scanner.data.HighlightKind
 import ua.chudo.scanner.ui.stock.HighlightsScreen
 import ua.chudo.scanner.ui.stock.NetworkStockScreen
 import ua.chudo.scanner.ui.admin.AdminHistoryScreen
@@ -65,6 +66,7 @@ import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
+import ua.chudo.scanner.ui.scan.ProductScanScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
 import ua.chudo.scanner.ui.common.MainTab
 import ua.chudo.scanner.ui.common.MineBottomBar
@@ -92,6 +94,7 @@ class MainActivity : ComponentActivity() {
 
 private const val STOCK_MODE = "stock"
 private const val STOCK_CODE = "stock_code"
+private const val STOCK_BATCH = "stock_batch"
 private const val ORDERS_MODE = "orders"
 private const val ORDERS_CODE = "orders_code"
 /** Кошик: сканер не закривається, кожен код одразу йде в кошик. */
@@ -101,7 +104,7 @@ private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
     const val RESULTS = "results/{q}"
-    const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}"
+    const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
@@ -113,7 +116,8 @@ private object Routes {
     const val LABELS = "labels"
     const val PRINTERS = "printers"
     const val NETWORK_STOCK = "network-stock"
-    const val HIGHLIGHTS = "highlights"
+    const val HIGHLIGHTS = "highlights?kind={kind}"
+    fun highlights(kind: HighlightKind = HighlightKind.NEW) = "highlights?kind=${kind.key}"
     const val ADMIN = "admin"
     const val ADMIN_SHOPS = "admin-shops"
     const val ADMIN_STAFF = "admin-staff?shop={shop}"
@@ -124,8 +128,10 @@ private object Routes {
 
     fun scan() = "scan?mode=barcode"
     fun results(q: String) = "results/${Uri.encode(q)}"
-    fun product(urlKey: String, bc: String?, scanned: String? = null): String {
-        val query = listOfNotNull(bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" })
+    fun product(urlKey: String, bc: String?, scanned: String? = null, print: Boolean = false): String {
+        val query = listOfNotNull(
+            bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" }, "print=true".takeIf { print },
+        )
         return "product/${Uri.encode(urlKey)}" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
     }
 }
@@ -207,13 +213,16 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(STOCK_CODE, null).collectAsStateWithLifecycle()
+            val showBatch by entry.savedStateHandle.getStateFlow(STOCK_BATCH, false).collectAsStateWithLifecycle()
             StockScreen(
                 employee,
                 onBack = { nav.popBackStack() },
                 onScan = { nav.navigate(Routes.SCAN_STOCK) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
-                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.HIGHLIGHTS) }) else null,
+                showBatch = showBatch,
+                onBatchShown = { entry.savedStateHandle[STOCK_BATCH] = false },
+                onHighlights = if (Backend.isSupabase) ({ kind -> nav.navigate(Routes.highlights(kind)) }) else null,
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
         }
@@ -251,12 +260,14 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.NETWORK_STOCK) {
             if (employee.stockAdmin) NetworkStockScreen(
                 employee, onBack = { nav.popBackStack() },
-                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.HIGHLIGHTS) }) else null,
+                onHighlights = if (Backend.isSupabase) ({ nav.navigate(Routes.highlights()) }) else null,
             ) else nav.popBackStack()
         }
-        composable(Routes.HIGHLIGHTS) {
+        composable(Routes.HIGHLIGHTS, arguments = listOf(navArgument("kind") { type = NavType.StringType; defaultValue = "new" })) { entry ->
+            val kind = HighlightKind.entries.firstOrNull { it.key == entry.arguments?.getString("kind") } ?: HighlightKind.NEW
             if (Backend.isSupabase) HighlightsScreen(
                 canUpload = employee.stockAdmin || employee.superAdmin,
+                initialKind = kind,
                 onBack = { nav.popBackStack() },
                 onProduct = { key, barcode -> nav.navigate(Routes.product(key, barcode)) },
                 onSearch = { nav.navigate(Routes.results(it)) },
@@ -266,7 +277,10 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
         // Старий екран «Друк» прибрано: цінник — з картки товару, пакет — із «Залишків». Старі посилання ведуть туди.
         composable(Routes.LABELS) {
-            LaunchedEffect(Unit) { nav.navigate(Routes.STOCK) { popUpTo(Routes.LABELS) { inclusive = true } } }
+            LaunchedEffect(Unit) {
+                nav.navigate(Routes.STOCK) { popUpTo(Routes.LABELS) { inclusive = true } }
+                nav.currentBackStackEntry?.savedStateHandle?.set(STOCK_BATCH, true)
+            }
         }
         composable(Routes.ORDERS) { entry ->
             val scanned by entry.savedStateHandle.getStateFlow<String?>(ORDERS_CODE, null).collectAsStateWithLifecycle()
@@ -283,10 +297,11 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onProfile = { nav.navigate(Routes.PROFILE) },
-                onLabels = { nav.navigate(Routes.STOCK) },
+                onLabels = { nav.navigate(Routes.LABELS) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
                 onStock = { nav.navigate(Routes.STOCK) },
                 onCart = { nav.navigate(Routes.CART) },
+                onScan = { nav.navigate(Routes.scan()) },
             )
         }
         composable(Routes.CART) {
@@ -309,14 +324,21 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 ORDERS_MODE -> ORDERS_CODE
                 else -> null
             }
+            if (returnKey == null) {
+                ProductScanScreen(
+                    employee = employee,
+                    onClose = { nav.popBackStack() },
+                    onSearch = { code -> nav.navigate(Routes.results(code)) },
+                    onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
+                    onPrint = { key, barcode -> nav.navigate(Routes.product(key, null, barcode, print = true)) },
+                    onCart = { nav.navigate(Routes.CART) },
+                )
+                return@composable
+            }
             ScannerScreen(
                 onBarcode = { code ->
-                    if (returnKey != null) {
-                        nav.previousBackStackEntry?.savedStateHandle?.set(returnKey, code)
-                        nav.popBackStack()
-                    } else {
-                        nav.navigate(Routes.results(code)) { popUpTo(Routes.SCAN) { inclusive = true } }
-                    }
+                    nav.previousBackStackEntry?.savedStateHandle?.set(returnKey, code)
+                    nav.popBackStack()
                 },
                 onClose = { nav.popBackStack() },
             )
@@ -340,9 +362,13 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 navArgument("urlKey") { type = NavType.StringType },
                 navArgument("bc") { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument("scanned") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("print") { type = NavType.BoolType; defaultValue = false },
             ),
-        ) {
-            ProductScreen(employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) })
+        ) { entry ->
+            ProductScreen(
+                employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) },
+                openPrint = entry.arguments?.getBoolean("print") == true,
+            )
         }
     }
 }

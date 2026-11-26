@@ -52,7 +52,7 @@ import ua.chudo.scanner.ui.theme.Mine
 /** Montserrat — тот же шрифт цены, что на печатных ценниках. */
 val PriceFont = FontFamily(Font(R.font.montserrat_extrabold, FontWeight.ExtraBold), Font(R.font.montserrat_bold, FontWeight.Bold))
 
-/** Поле поиска: 60 dp, скругление 18, лупа слева, крестик очистки. */
+/** Пошук за текстом або штрихкодом. */
 @Composable
 fun MineSearchField(
     value: String,
@@ -60,11 +60,12 @@ fun MineSearchField(
     placeholder: String,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
+    onScan: (() -> Unit)? = null,
 ) {
     val m = Mine.colors
     Row(
-        modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(18.dp)).background(m.card)
-            .border(1.dp, m.line, RoundedCornerShape(18.dp)).padding(start = 18.dp, end = 6.dp),
+        modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(8.dp)).background(m.card)
+            .border(1.dp, m.outline, RoundedCornerShape(8.dp)).padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.Search, null, tint = m.textSecondary)
@@ -82,6 +83,7 @@ fun MineSearchField(
             },
         )
         if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, "Очистити", tint = m.textSecondary) }
+        onScan?.let { open -> IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.link) } }
     }
 }
 
@@ -89,12 +91,12 @@ fun MineSearchField(
 @Composable
 fun MineTile(icon: ImageVector, title: String, note: String, accent: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val m = Mine.colors
-    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(20.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
+    Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(8.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
         Column(Modifier.padding(16.dp)) {
             Icon(icon, null, Modifier.size(26.dp), tint = m.text)
             Spacer(Modifier.height(14.dp))
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-            Text(note, Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = if (accent) FontWeight.Medium else FontWeight.Normal, color = if (accent) m.accent else m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(note, Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = if (accent) FontWeight.Medium else FontWeight.Normal, color = if (accent) m.link else m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
