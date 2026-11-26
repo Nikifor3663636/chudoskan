@@ -32,3 +32,10 @@ printer/**/bin/
 printer/**/obj/
 printer/publish/
 printer/installer/Output/
+
+# Supabase: секрети й тимчасові файли CLI.
+.env.local
+.env*.local
+supabase/.temp/
+supabase/.branches/
+

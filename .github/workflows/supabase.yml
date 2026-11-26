@@ -1,0 +1,26 @@
+name: Supabase
+
+# Схема й права (supabase/migrations) + pgTAP-тести прав (supabase/tests) на локальній базі.
+on:
+  push:
+    branches: [main]
+    paths: [supabase/**, .github/workflows/supabase.yml]
+  pull_request:
+    paths: [supabase/**, .github/workflows/supabase.yml]
+  workflow_dispatch:
+
+jobs:
+  db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.4.0
+
+      # Лише Postgres: міграції застосовуються під час старту.
+      - run: supabase db start
+      - run: supabase test db
+      - run: supabase db lint --level error
