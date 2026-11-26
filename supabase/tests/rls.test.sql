@@ -435,6 +435,26 @@ select is((stock_upload_commit(current_setting('t.up3')::bigint, '{01}', true) -
 select is((select (q ? '01') from stock where barcode = '4820000000000'), false, 'товару немає у файлі → 0 для ЧО 01');
 select is((select (q ->> '02')::int from stock where barcode = '4820000000000'), 3, 'для ЧО 02 (не у файлі) — без змін');
 
+-- Запити застосунку.
+select tests.login('emp22');
+select is((select count(*)::int from stock_in_store('01', 1000)), 449, 'stock_in_store: товари з q > 0 у ЧО 01');
+select is((select (q ->> '01')::int from stock_in_store('01', 1) limit 1), 1, 'stock_in_store: найбільший залишок першим');
+select is((select count(*)::int from stock_changed_last_import('01')), 449, 'змінені останнім завантаженням');
+select tests.login('new22');
+select is((select count(*)::int from stock_in_store('01')), 0, 'непідтверджений stock_in_store не бачить');
+
+-- Вигрузка 1С (service_role): без назв — назви лишаються.
+reset role;
+select set_config('request.jwt.claims', '{"role": "service_role"}', true);
+select set_config('role', 'service_role', true);
+select set_config('t.up4', stock_upload_begin('stock.csv', 'csv')::text, true);
+select stock_upload_chunk(current_setting('t.up4')::bigint, '[{"barcode": "4820000000001", "article": "", "q": {"02": 9}}]');
+select is((stock_upload_commit(current_setting('t.up4')::bigint, '{02}', true) ->> 'stores')::int, 1, 'service_role завантажує');
+select is((select name from stock where barcode = '4820000000001'), 'Товар 1, з комою', 'CSV без назв: назва лишилась');
+select is((select (q ->> '02')::int from stock where barcode = '4820000000001'), 9, 'CSV: кількість оновлена');
+select is((select by_uid from stock_uploads where id = current_setting('t.up4')::bigint), 'service:1c', 'хто завантажив: service:1c');
+reset role;
+
 -- ===================== «Працювати як у магазині» =====================
 select tests.login('sup');
 select set_config('request.headers', '{"x-act-shop": "62"}', true);

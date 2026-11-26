@@ -95,7 +95,7 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
 
     /** Один запит на всі склади за сесію. */
     suspend fun stores(): Map<String, StoreDoc> = lock.withLock {
-        stores ?: db.collection(NetworkStockRepository.STORES).get().await().documents.associate {
+        stores ?: if (Backend.isSupabase) SupabaseStock.stores().also { stores = it } else db.collection(NetworkStockRepository.STORES).get().await().documents.associate {
             it.id to StoreDoc(it.getString("name").orEmpty(), it.getString("city").orEmpty(), it.getString("shopId")?.ifEmpty { null })
         }.also { stores = it }
     }
@@ -103,6 +103,10 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
     private var changedAfter: com.google.firebase.Timestamp? = null
 
     private suspend fun loadMeta() = lock.withLock {
+        if (!metaLoaded && Backend.isSupabase) {
+            updatedAt = runCatching { SupabaseStock.info()?.updatedAt }.getOrNull()
+            metaLoaded = true
+        }
         if (!metaLoaded) {
             runCatching { db.collection(NetworkStockRepository.META).document(NetworkStockRepository.STOCK).get().await() }.getOrNull()?.let { d ->
                 updatedAt = d.getTimestamp("updatedAt")?.toDate()
@@ -123,6 +127,10 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
      */
     suspend fun changedSinceLastImport(shopId: String, limit: Long = 500): List<NetAvailability> {
         loadMeta()
+        if (Backend.isSupabase) {
+            val own = ownCode(shopId) ?: return emptyList()
+            return SupabaseStock.changedLastImport(own, limit).map { availability(shopId, it.barcode, it.item()) }.sortedBy { it.item.name }
+        }
         val after = changedAfter ?: return emptyList()
         val own = ownCode(shopId) ?: return emptyList()
         val docs = db.collection(NetworkStockRepository.STOCK).whereGreaterThan("updatedAt", after).limit(limit).get().await().documents
@@ -137,6 +145,7 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
         val c = lock.withLock {
             if (shopId !in code1C) {
                 code1C[shopId] = runCatching {
+                    if (Backend.isSupabase) return@runCatching SupabaseStock.code1C(shopId)
                     db.collection(NetworkStockRepository.SHOPS).document(shopId).get().await().getString("code1C")
                 }.getOrNull()
             }
@@ -151,8 +160,9 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
     /** `null` — у stock/{bc} немає даних (тоді показуємо як раніше: сайт і shops/{shopId}/stock). */
     suspend fun byBarcode(shopId: String, barcode: String): NetAvailability? {
         val bc = barcode.filter(Char::isDigit).ifEmpty { return null }
-        val d = db.collection(NetworkStockRepository.STOCK).document(bc).get().await()
-        val item = d.toNetItem() ?: return null
+        // Скан — один запит за штрихкодом.
+        val item = if (Backend.isSupabase) SupabaseStock.byBarcode(bc) ?: return null
+        else db.collection(NetworkStockRepository.STOCK).document(bc).get().await().toNetItem() ?: return null
         return availability(shopId, bc, item)
     }
 
@@ -165,6 +175,7 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
 
     private suspend fun query(shopId: String, field: String, value: String): List<NetAvailability> {
         if (value.isEmpty()) return emptyList()
+        if (Backend.isSupabase) return SupabaseStock.byField(field, value).map { (bc, it) -> availability(shopId, bc, it) }
         val docs = db.collection(NetworkStockRepository.STOCK).whereEqualTo(field, value).limit(10).get().await().documents
         return docs.mapNotNull { d -> d.toNetItem()?.let { availability(shopId, d.id, it) } }
     }
@@ -177,6 +188,7 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
      * Запит `stock where q.NN > 0 orderBy q.NN desc` — до [limit] читань.
      */
     suspend fun storeItems(code: String, limit: Long = 100): List<StoreItem> {
+        if (Backend.isSupabase) return SupabaseStock.storeItems(code, limit).map { StoreItem(it.barcode, it.item(), it.q[code] ?: 0.0) }
         val field = com.google.firebase.firestore.FieldPath.of("q", code)
         return db.collection(NetworkStockRepository.STOCK).whereGreaterThan(field, 0)
             .orderBy(field, com.google.firebase.firestore.Query.Direction.DESCENDING).limit(limit).get().await().documents

@@ -17,6 +17,12 @@ data class NetworkStockInfo(val updatedAt: Date?, val updatedBy: String?, val it
 
 data class NetworkImportResult(val stores: Int, val items: Int, val changed: Int, val removed: Int, val keptStores: List<String>, val seconds: Long)
 
+/** Supabase: commit або застосовано, або сервер просить підтвердження (сеанс [id] лишається відкритим). */
+sealed interface SupabaseUpload {
+    data class Done(val result: NetworkImportResult) : SupabaseUpload
+    data class NeedConfirm(val id: Long, val file: Int, val previous: Int) : SupabaseUpload
+}
+
 /**
  * Залишки мережі (тільки stockAdmin — див. firestore.rules):
  * - `stock/{штрихкод}` = {q: {"22": 1, …}, name, code, article, updatedAt} — лише ненульові;
@@ -60,6 +66,7 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
     }
 
     suspend fun info(): NetworkStockInfo? {
+        if (Backend.isSupabase) return SupabaseStock.info()
         val d = db.collection(META).document(STOCK).get().await()
         if (!d.exists()) return null
         return NetworkStockInfo(d.getTimestamp("updatedAt")?.toDate(), d.getString("updatedBy"),
@@ -68,17 +75,18 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
 
     /** Відомі склади: ~50 читань. */
     suspend fun stores(): Map<String, StoreDoc> =
-        db.collection(STORES).get().await().documents.associate {
+        if (Backend.isSupabase) SupabaseStock.stores() else db.collection(STORES).get().await().documents.associate {
             it.id to StoreDoc(it.getString("name").orEmpty(), it.getString("city").orEmpty(), it.getString("shopId")?.ifEmpty { null })
         }
 
     suspend fun shops(): List<ShopRef> =
-        db.collection(SHOPS).get().await().documents
+        if (Backend.isSupabase) SupabaseStock.shops() else db.collection(SHOPS).get().await().documents
             .map { ShopRef(it.id, it.getString("address").orEmpty(), it.getString("region").orEmpty()) }
             .sortedWith(compareBy({ it.region }, { it.address }))
 
     /** «Який це магазин?»: склад 1С ↔ магазин застосунку. */
     suspend fun link(code: String, shopId: String) {
+        if (Backend.isSupabase) { SupabaseStock.link(code, shopId); return }
         db.batch()
             .set(db.collection(STORES).document(code), mapOf("shopId" to shopId), SetOptions.merge())
             .set(db.collection(SHOPS).document(shopId), mapOf("code1C" to code), SetOptions.merge())
@@ -142,6 +150,47 @@ class NetworkStockRepository(private val db: FirebaseFirestore, filesDir: File) 
             db.collection(META).document(STOCK).get().await().getTimestamp("updatedAt")?.toDate()?.time
         }.getOrNull()?.let { at -> runCatching { snapshotMark.writeText(at.toString()) } } ?: snapshotMark.delete()
         return NetworkImportResult(storeCount, plan.items.size, plan.changed.size, plan.removed.size, plan.keptStores, seconds)
+    }
+
+    /** Supabase: нові склади — у stores до прив'язки «Який це магазин?» (Firestore пише їх під час upload). */
+    suspend fun prepareStores(fresh: NetworkStock, known: Map<String, StoreDoc>): Map<String, StoreDoc> {
+        if (!Backend.isSupabase) return known
+        val sw = storesToWrite(fresh.stores, known)
+        SupabaseStock.storesUpsert(sw)
+        return known + sw.associate { it.code to StoreDoc(it.name.take(200), it.city.take(100), known[it.code]?.shopId) }
+    }
+
+    /**
+     * Supabase: begin → пачки по 2 000 → commit (одна транзакція на сервері). Різницю рахує сервер —
+     * знімок на телефоні не потрібен. [uploadId] — сеанс, відкритий до запиту підтвердження: тоді лише commit.
+     */
+    suspend fun uploadSupabase(
+        fresh: NetworkStock, uploadId: Long?, confirm: Boolean, fileName: String, startedAt: Long,
+        onProgress: (Int, Int) -> Unit,
+    ): SupabaseUpload {
+        val total = fresh.items.size
+        val id = uploadId ?: SupabaseStock.begin(fileName).also { id ->
+            var done = 0
+            onProgress(0, total)
+            try {
+                for (rows in SupabaseStock.rows(fresh.items)) {
+                    done += SupabaseStock.chunk(id, rows)
+                    onProgress(done.coerceAtMost(total), total)
+                }
+            } catch (e: Exception) { SupabaseStock.abort(id); throw e }
+        }
+        val report = try {
+            SupabaseStock.commit(id, fresh.stores.map { it.code }, confirm)
+        } catch (e: io.github.jan.supabase.postgrest.exception.PostgrestRestException) {
+            when (val p = CommitProblem.of(e.message, e.details?.toString()?.trim('"'))) {
+                is CommitProblem.Confirm -> return SupabaseUpload.NeedConfirm(id, p.file, p.previous)
+                is CommitProblem.Unknown -> { SupabaseStock.abort(id); throw StockFileException("Невідомі склади: ЧО ${p.codes.joinToString(", ЧО ")}. Спробуйте ще раз.") }
+                null -> { SupabaseStock.abort(id); throw e }
+            }
+        }
+        snapshot.delete(); snapshotMark.delete()
+        val seconds = (System.currentTimeMillis() - startedAt) / 1000
+        return SupabaseUpload.Done(NetworkImportResult(report.stores, report.items, report.changed, report.removed, report.kept, seconds))
     }
 
     companion object {

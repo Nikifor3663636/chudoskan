@@ -76,6 +76,10 @@ jobs:
           else
             echo "window.CHUDO_FIREBASE=null;" > site/stock/config.js
           fi
+          # Де дані: firestore | supabase (змінна репозиторію BACKEND; повернутись — змінити її й перезапустити).
+          echo "window.CHUDO_BACKEND='${BACKEND:-firestore}';" >> site/stock/config.js
+        env:
+          BACKEND: ${{ vars.BACKEND }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

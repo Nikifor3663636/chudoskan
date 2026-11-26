@@ -1,0 +1,11 @@
+{
+  "name": "chudoskan-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Службові скрипти переходу Firestore → Supabase. Ключі — лише з env.",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "firebase-admin": "14.5.1"
+  }
+}

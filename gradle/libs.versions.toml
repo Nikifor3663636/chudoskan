@@ -25,6 +25,8 @@ serialization = "1.9.0"
 jbLifecycle = "2.9.6"
 coil3 = "3.3.0"
 cmpIcons = "1.7.3"
+# supabase-kt 3.3.0 (2026-01-04): Kotlin 2.3.0, Ktor 3.3.3 — новіші зібрані Kotlin 2.4, наш компілятор 2.2 їх не читає.
+supabase = "3.3.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -68,6 +70,9 @@ jb-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:li
 jb-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "jbLifecycle" }
 coil3-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil3" }
 coil3-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil3" }
+supabase-bom = { module = "io.github.jan-tennert.supabase:bom", version.ref = "supabase" }
+supabase-postgrest = { module = "io.github.jan-tennert.supabase:postgrest-kt" }
+supabase-realtime = { module = "io.github.jan-tennert.supabase:realtime-kt" }
 cmp-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "cmpIcons" }
 
 [plugins]

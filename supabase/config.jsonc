@@ -465,6 +465,11 @@
     // },
   },
 
+  // ensure-role приймає Firebase ID token і перевіряє його сама (підпис Google, iss/aud).
+  "functions": {
+    "ensure-role": { "verify_jwt": false }
+  },
+
   "analytics": {
     "enabled": true,
     "port": 54327,

@@ -9,6 +9,7 @@ import {
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
 import { loadSiteShops } from './siteShops.js';
 import { loadSnapshot, saveSnapshot, useSnapshot } from './snapshot.js';
+import { asError, backend, commitStock, ensureRole, supabaseFor, uploadStock } from './supabase.js';
 
 const BATCH = 450; // Firestore — до 500 операцій у пачці
 const PAGE = 2000;
@@ -33,7 +34,7 @@ function timed(promise, ms, what) {
 const $ = (sel) => document.querySelector(sel);
 const app = $('#app');
 const fmt = (n) => new Intl.NumberFormat('uk-UA').format(n);
-const when = (ts) => (ts ? ts.toDate().toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+const when = (ts) => (ts ? (ts.toDate ? ts.toDate() : new Date(ts)).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const cfg = window.CHUDO_FIREBASE;
@@ -45,6 +46,11 @@ const fb = initializeApp({ apiKey: cfg.apiKey, projectId: cfg.projectId, authDom
 const auth = getAuth(fb);
 const db = getFirestore(fb);
 const SNAP_KEY = `stock:${cfg.projectId}`;
+// BACKEND = supabase: ті самі дані в Postgres; Firebase лишається лише для входу.
+const sb = backend() === 'supabase' ? supabaseFor(auth) : null;
+
+/** {data, error} від supabase-js → data або виняток. */
+function must(r) { if (r.error) throw asError(r.error); return r.data; }
 
 let me = null; // {uid, name}
 
@@ -103,7 +109,14 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) { me = null; loginView(); return; }
   render('<div class="card"><p class="muted">Перевіряю права…</p></div>');
   try {
-    const u = (await timed(getDoc(doc(db, 'users', user.uid)), READ_TIMEOUT, 'перевірка прав')).data() ?? {};
+    let u;
+    if (sb) {
+      await timed(ensureRole(user), READ_TIMEOUT, 'підготовка входу');
+      const r = must(await timed(sb.from('users').select('name, approved, stock_admin, super_admin').eq('uid', user.uid).maybeSingle(), READ_TIMEOUT, 'перевірка прав')) ?? {};
+      u = { name: r.name, approved: r.approved, stockAdmin: r.stock_admin, superAdmin: r.super_admin };
+    } else {
+      u = (await timed(getDoc(doc(db, 'users', user.uid)), READ_TIMEOUT, 'перевірка прав')).data() ?? {};
+    }
     const allowed = u.approved === true && (u.stockAdmin === true || u.superAdmin === true);
     if (!allowed) {
       render(`<div class="card"><h2>Немає прав</h2><p>Завантажувати залишки мережі може лише адмін залишків. Права видаються в консолі Firebase.</p><button id="out">Вийти</button></div>`);
@@ -121,7 +134,9 @@ onAuthStateChanged(auth, async (user) => {
 // ---------- Головна: стан і вибір файлу ----------
 
 async function homeView(note = '') {
-  const meta = (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data();
+  const meta = sb
+    ? (await timed(sb.from('meta_stock').select('updatedAt:updated_at, updatedBy:updated_by, items, stores').maybeSingle(), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data
+    : (await timed(getDoc(doc(db, 'meta', 'stock')), READ_TIMEOUT, 'стан залишків').catch(() => null))?.data();
   render(`
     <div class="card">
       <div class="row between"><h2>Залишки мережі</h2><button class="link" id="out">Вийти (${esc(me.name)})</button></div>
@@ -207,6 +222,7 @@ async function start(file) {
     progressView('Читаю файл…', 0, file.name);
     const buf = new Uint8Array(await file.arrayBuffer());
     const fresh = await parseReport(buf, (p) => progressView('Розбираю звіт 1С…', p, file.name));
+    if (sb) { await startSupabase(file, fresh, startedAt); return; }
     progressView('Порівнюю з тим, що вже завантажено…', null);
     const [old, knownSnap] = await Promise.all([
       baseline((n) => progressView('Порівнюю з тим, що вже завантажено…', null, `прочитано ${fmt(n)} товарів`)),
@@ -242,8 +258,45 @@ async function start(file) {
   } catch (e) { console.error(e); failView(e); }
 }
 
+/**
+ * Supabase: порівнює сервер (stock_upload_commit), тож базового знімка не треба —
+ * лише склади й «Який це магазин?», далі ті самі екрани.
+ */
+async function startSupabase(file, fresh, startedAt) {
+  progressView('Звіряю склади 1С з магазинами…', null);
+  const rows = must(await timed(sb.from('stores').select('code, name, city, shop_id'), READ_TIMEOUT, 'список складів'));
+  const known = new Map(rows.map((r) => [r.code, { name: r.name ?? '', city: r.city ?? '', shopId: r.shop_id || null }]));
+  const pending = { file: file.name, fresh, plan: null, known, startedAt, autoLinked: 0 };
+  // Нові склади — у stores одразу, щоб їх можна було прив'язати.
+  const sw = storesToWrite(fresh.stores, known);
+  if (sw.length) {
+    must(await sb.rpc('stores_upsert', { p_rows: sw.map((s) => ({ code: s.code, name: s.name.slice(0, 200), city: s.city.slice(0, 100) })) }));
+    for (const s of sw) known.set(s.code, { ...(known.get(s.code) ?? {}), name: s.name, city: s.city, shopId: known.get(s.code)?.shopId ?? null });
+  }
+  const unknown = fresh.stores.filter((s) => !known.get(s.code)?.shopId);
+  if (!unknown.length) { confirmView(pending); return; }
+  const [site, dbShops] = await Promise.all([
+    loadSiteShops((p) => progressView('Звіряю склади 1С з магазинами…', p, 'список магазинів із сайту')),
+    sb.from('shops').select('id, address, region').then(must),
+  ]);
+  const byId = new Map(site.map((s) => [s.id, s]));
+  for (const s of dbShops) if (!byId.has(s.id) && s.address) byId.set(s.id, { id: s.id, address: s.address ?? '', region: s.region ?? '' });
+  const shops = [...byId.values()].sort((a, b) => a.region.localeCompare(b.region, 'uk') || a.address.localeCompare(b.address, 'uk'));
+  const linked = new Set([...known.values()].map((k) => k.shopId).filter(Boolean));
+  const matches = match(unknown, shops, linked);
+  for (const m of matches.filter((x) => x.shopId)) {
+    await link(m.code, m.shopId);
+    known.set(m.code, { ...known.get(m.code), shopId: m.shopId });
+    pending.autoLinked++;
+  }
+  const rest = unknown.filter((s) => !matches.find((m) => m.code === s.code)?.shopId);
+  if (!rest.length) confirmView(pending);
+  else linkView(pending, rest, shops, new Map(matches.map((m) => [m.code, m.candidates])));
+}
+
 /** «Який це магазин?»: склад 1С ↔ магазин застосунку (stores/{код}.shopId і shops/{id}.code1C). */
 async function link(code, shopId) {
+  if (sb) { must(await timed(sb.rpc('store_link', { p_code: code, p_shop: shopId }), WRITE_TIMEOUT, 'привʼязка складу')); return; }
   const b = writeBatch(db);
   b.set(doc(db, 'stores', code), { shopId }, { merge: true });
   b.set(doc(db, 'shops', shopId), { code1C: code }, { merge: true });
@@ -278,6 +331,7 @@ function linkView(pending, rest, shops, candidates) {
 }
 
 function confirmView(pending) {
+  if (!pending.plan) { confirmSupabase(pending); return; }
   const p = pending.plan;
   const writes = p.changed.length + p.removed.length;
   const storeCount = new Set([...p.items.values()].flatMap((it) => Object.keys(it.q))).size;
@@ -306,6 +360,56 @@ function confirmView(pending) {
     </div>`);
   $('#cancel').onclick = () => homeView();
   $('#go').onclick = () => upload(pending);
+}
+
+// ---------- Supabase: begin → chunk × N → commit ----------
+
+function confirmSupabase(pending, shrunk = null) {
+  const items = pending.fresh.items;
+  const storeCount = new Set([...items.values()].flatMap((it) => Object.keys(it.q))).size;
+  render(`
+    <div class="card">
+      <h2>Завантажити залишки?</h2>
+      <p class="muted">${esc(pending.file)}</p>
+      <div class="stats">
+        <div><b>${fmt(storeCount)}</b><span>магазинів</span></div>
+        <div><b>${fmt(items.size)}</b><span>товарів</span></div>
+      </div>
+      ${pending.fresh.noBarcode ? `<p class="muted">Рядків без штрихкоду (пропущено): ${fmt(pending.fresh.noBarcode)}.</p>` : ''}
+      ${shrunk ? `<p class="warn">${esc(`У файлі ${fmt(shrunk.file)} товарів — менше половини від наявних (${fmt(shrunk.prev)}). Можливо, це неповний звіт.`)}</p>` : ''}
+      <p class="muted">Змінюються лише магазини з цього файлу; магазини без жодного товару у файлі лишаються як були.</p>
+      <div class="row">
+        <button class="primary" id="go">${shrunk ? 'Усе одно завантажити' : 'Завантажити'}</button>
+        <button id="cancel">Скасувати</button>
+      </div>
+    </div>`);
+  $('#cancel').onclick = () => { if (pending.uploadId) sb.rpc('stock_upload_abort', { p_id: pending.uploadId }); homeView(); };
+  $('#go').onclick = () => uploadSupabase(pending, !!shrunk);
+}
+
+async function uploadSupabase(pending, confirm) {
+  const { fresh, startedAt } = pending;
+  const shops = fresh.stores.map((s) => s.code);
+  try {
+    let res;
+    if (pending.uploadId) {
+      progressView('Застосовую…', null);
+      res = await timed(commitStock(sb, pending.uploadId, shops, confirm), WRITE_TIMEOUT, 'застосування залишків');
+    } else {
+      progressView('Завантажую…', 0, `0 з ${fmt(fresh.items.size)}`);
+      res = await uploadStock(sb, {
+        fileName: pending.file, items: fresh.items, shops, confirm,
+        onProgress: (frac, n) => progressView(frac < 1 ? 'Завантажую…' : 'Застосовую…', frac < 1 ? frac : null, `${fmt(n)} з ${fmt(fresh.items.size)}`),
+      });
+    }
+    pending.uploadId = res.id;
+    if (res.problem?.kind === 'confirm') { confirmSupabase(pending, res.problem); return; }
+    if (res.problem?.kind === 'unknown') throw new StockFileError(`Невідомі склади: ЧО ${res.problem.codes.join(', ЧО ')}. Онови сторінку й спробуй ще раз.`);
+    const r = res.report;
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    const kept = r.kept?.length ? `; без товарів у файлі, лишились як були: ЧО ${r.kept.join(', ЧО ')}` : '';
+    await homeView(`<p class="ok"><span class="dot ok"></span>Готово за ${seconds} с: магазинів ${fmt(r.stores)}, товарів ${fmt(r.items)}, змінено ${fmt(r.changed)}, видалено ${fmt(r.removed)}${esc(kept)}${pending.autoLinked ? `, складів привʼязано автоматично: ${pending.autoLinked}` : ''}.</p>`);
+  } catch (e) { console.error(e); failView(e); }
 }
 
 // ---------- Запис (як NetworkStockRepository.upload) ----------

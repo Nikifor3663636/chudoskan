@@ -59,6 +59,8 @@ import ua.chudo.scanner.data.StoreMatcher
 import ua.chudo.scanner.data.StockDiff
 import ua.chudo.scanner.data.StockFileException
 import ua.chudo.scanner.data.StockPlan
+import ua.chudo.scanner.data.Backend
+import ua.chudo.scanner.data.SupabaseUpload
 import ua.chudo.scanner.data.StoreDoc
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.MineCard
@@ -73,6 +75,10 @@ data class NetPending(
     val fresh: NetworkStock, val plan: StockPlan, val known: Map<String, StoreDoc>, val startedAt: Long,
     /** Скільки складів прив'язано до магазинів автоматично. */
     val autoLinked: Int = 0,
+    /** Supabase: відкритий сеанс завантаження (сервер попросив підтвердження) і назва файлу. */
+    val uploadId: Long? = null,
+    val confirmed: Boolean = false,
+    val fileName: String = "",
 )
 
 sealed interface NetState {
@@ -119,11 +125,13 @@ class NetworkStockViewModel(
                 val fresh = NetworkStockParser.parse(
                     { resolver.openInputStream(uri) ?: throw StockFileException("Не вдалося відкрити файл.") }, size,
                 ) { p -> _state.value = NetState.Parsing(p) }
-                // Знімок на телефоні — або Firestore, якщо після знімка завантажували з ПК.
-                fresh to StockDiff.plan(repo.baseline(), fresh)
+                // Supabase: різницю рахує сервер. Firestore: знімок на телефоні — або Firestore, якщо після знімка завантажували з ПК.
+                fresh to if (Backend.isSupabase) StockPlan(fresh.items, emptyList(), emptyList(), emptyList(), first = false, shrunk = false, previousItems = 0)
+                else StockDiff.plan(repo.baseline(), fresh)
             }
-            val known = repo.stores()
-            val pending = NetPending(fresh, plan, known, startedAt)
+            val known = repo.prepareStores(fresh, repo.stores())
+            val name = runCatching { uri.lastPathSegment?.substringAfterLast('/') }.getOrNull().orEmpty()
+            val pending = NetPending(fresh, plan, known, startedAt, fileName = name)
             val unknown = fresh.stores.filter { known[it.code]?.shopId == null }
             if (unknown.isEmpty()) { confirmOrUpload(pending); return@guard }
             // Автоматично: склад 1С ↔ магазин сайту за назвою ТЦ і містом; питаємо лише про сумнівні.
@@ -166,6 +174,8 @@ class NetworkStockViewModel(
     }
 
     private fun confirmOrUpload(p: NetPending) {
+        // Supabase: «менше половини» перевіряє сервер під час commit.
+        if (Backend.isSupabase) { upload(p); return }
         val plan = p.plan
         val warnings = buildList {
             if (plan.first) add(
@@ -185,6 +195,7 @@ class NetworkStockViewModel(
     }
 
     private fun upload(p: NetPending) {
+        if (Backend.isSupabase) { uploadSupabase(p); return }
         _state.value = NetState.Uploading(0, p.plan.writes)
         guard {
             val r = repo.upload(employee, p.fresh, p.plan, p.known, p.startedAt) { done, total ->
@@ -193,6 +204,27 @@ class NetworkStockViewModel(
             _state.value = NetState.Done(r, p.autoLinked)
             runCatching { onImported() }
             refreshInfo()
+        }
+    }
+
+    /** Supabase: begin → пачки → commit; «менше половини» — питання й повторний commit того ж сеансу. */
+    private fun uploadSupabase(p: NetPending) {
+        _state.value = NetState.Uploading(0, p.fresh.items.size)
+        guard {
+            when (val r = repo.uploadSupabase(p.fresh, p.uploadId, p.confirmed, p.fileName, p.startedAt) { done, total ->
+                _state.value = NetState.Uploading(done, total)
+            }) {
+                is SupabaseUpload.NeedConfirm -> _state.value = NetState.Confirm(
+                    p.copy(uploadId = r.id, confirmed = true),
+                    "У файлі ${fmt(r.file)} товарів — менше половини від наявних (${fmt(r.previous)}). " +
+                        "Можливо, це неповний звіт.\n\nЗавантажити?",
+                )
+                is SupabaseUpload.Done -> {
+                    _state.value = NetState.Done(r.result, p.autoLinked)
+                    runCatching { onImported() }
+                    refreshInfo()
+                }
+            }
         }
     }
 

@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.paparazzi)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Вход сотрудников и остатки магазинов — Firebase. Файл google-services.json кладётся в app/
@@ -24,6 +25,14 @@ android {
         versionCode = 20
         versionName = "3.2.1"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+
+        // Де дані: firestore | supabase (-Pbackend=supabase або змінна BACKEND). Вхід — завжди Firebase Auth.
+        val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND") ?: "firestore").trim().lowercase()
+        require(backend in setOf("firestore", "supabase")) { "backend: firestore | supabase, а не $backend" }
+        buildConfigField("String", "BACKEND", "\"$backend\"")
+        // Публічні: URL проєкту й publishable key (доступ вирішують RLS-політики, supabase/migrations).
+        buildConfigField("String", "SUPABASE_URL", "\"https://wbboztsxzuxfocdqjyzk.supabase.co\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_pXZn08SVg5og-I9_PuX5LA_qdTmydyk\"")
     }
 
     // Постійний ключ підпису: без нього кожна збірка CI підписана новим debug-ключем, і Android не ставить
@@ -54,7 +63,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     lint {
         // Обновления зависимостей — отдельной задачей, а не ошибкой сборки.
         disable += setOf("NewerVersionAvailable", "GradleDependency", "AndroidGradlePluginVersion", "OldTargetApi")
@@ -120,6 +129,12 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    // Дані в Supabase (Postgres): без плагіна Auth — токен дає Firebase.
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.realtime)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.datastore.preferences)
     implementation("${libs.jna.get()}@aar")
 }

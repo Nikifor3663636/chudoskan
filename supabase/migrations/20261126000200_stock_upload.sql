@@ -12,9 +12,18 @@ create unlogged table app.stock_staging (
 );
 revoke all on app.stock_staging from public, anon, authenticated;
 
+-- Сервер (вигрузка 1С, scripts/upload-stock-csv.js) — ключем service_role; людина — stockAdmin / superAdmin.
+create function app.is_service() returns boolean
+language sql stable as $$ select coalesce(auth.jwt() ->> 'role', '') = 'service_role' $$;
+
+-- Хто завантажує: uid Firebase або «service:1c».
+create function app.uploader() returns text
+language sql stable as $$ select coalesce(app.uid(), case when app.is_service() then 'service:1c' end) $$;
+
 create function app.require_stock_admin() returns void
 language plpgsql stable as $$
 begin
+  if app.is_service() then return; end if;
   if not app.firebase_ok() or not app.is_stock_admin() then
     raise exception 'stock admin only' using errcode = '42501';
   end if;
@@ -27,9 +36,9 @@ language plpgsql security definer set search_path = '' as $$
 declare v_id bigint;
 begin
   perform app.require_stock_admin();
-  update public.stock_uploads set status = 'failed' where by_uid = app.uid() and status = 'open';
+  update public.stock_uploads set status = 'failed' where by_uid = app.uploader() and status = 'open';
   insert into public.stock_uploads (by_uid, by_name, source, file_name)
-  values (app.uid(), coalesce((app.me()).name, ''), coalesce(nullif(p_source, ''), 'xlsx'), left(coalesce(p_file_name, ''), 300))
+  values (app.uploader(), coalesce((app.me()).name, case when app.is_service() then '1С' end, ''), coalesce(nullif(p_source, ''), 'xlsx'), left(coalesce(p_file_name, ''), 300))
   returning id into v_id;
   return v_id;
 end $$;
@@ -41,7 +50,7 @@ language plpgsql security definer set search_path = '' as $$
 declare n int;
 begin
   perform app.require_stock_admin();
-  if not exists (select 1 from public.stock_uploads where id = p_id and by_uid = app.uid() and status = 'open') then
+  if not exists (select 1 from public.stock_uploads where id = p_id and by_uid = app.uploader() and status = 'open') then
     raise exception 'upload % is not open', p_id using errcode = 'P0002';
   end if;
   if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 5000 then
@@ -86,7 +95,7 @@ declare
   v_t0 timestamptz := clock_timestamp();
 begin
   perform app.require_stock_admin();
-  perform 1 from public.stock_uploads where id = p_id and by_uid = app.uid() and status = 'open' for update;
+  perform 1 from public.stock_uploads where id = p_id and by_uid = app.uploader() and status = 'open' for update;
   if not found then
     raise exception 'upload % is not open', p_id using errcode = 'P0002';
   end if;
@@ -112,16 +121,19 @@ begin
 
   -- Нові й змінені товари.
   with fresh as (
-    select s.barcode, s.name, s.code, s.article,
+    -- Порожні name / code / article (вигрузка 1С без назв) — лишаються як були.
+    select s.barcode, nullif(s.name, '') as name, nullif(s.code, '') as code, nullif(s.article, '') as article,
            (select coalesce(jsonb_object_agg(k, v), '{}') from jsonb_each(s.q) e(k, v)
              where k = any (v_active) and (v)::numeric > 0) as q_new
     from app.stock_staging s where s.upload_id = p_id
   ), merged as (
-    select f.barcode, f.name, f.code, f.article,
+    select f.barcode, coalesce(f.name, st.name, '') as name, coalesce(f.code, st.code, '') as code,
+           coalesce(f.article, st.article, '') as article,
            (coalesce(st.q, '{}') - v_active) || f.q_new as q, st.barcode is null as is_new
     from fresh f left join public.stock st on st.barcode = f.barcode
     where st.barcode is null
-       or st.name is distinct from f.name or st.code is distinct from f.code or st.article is distinct from f.article
+       or st.name is distinct from coalesce(f.name, st.name) or st.code is distinct from coalesce(f.code, st.code)
+       or st.article is distinct from coalesce(f.article, st.article)
        or ((st.q - v_active) || f.q_new) is distinct from st.q
   ), up as (
     insert into public.stock as t (barcode, name, code, article, q, updated_at)
@@ -150,7 +162,7 @@ begin
    where id = p_id;
 
   insert into public.admin_log (by_uid, action, details)
-  values (app.uid(), 'stockImport', jsonb_build_object(
+  values (app.uploader(), 'stockImport', jsonb_build_object(
     'stores', cardinality(v_active), 'items', v_file, 'changed', v_changed + v_ins + v_cleared,
     'removed', v_removed, 'kept', v_kept, 'seconds', v_sec));
 
@@ -165,7 +177,7 @@ language plpgsql security definer set search_path = '' as $$
 begin
   perform app.require_stock_admin();
   delete from app.stock_staging where upload_id = p_id;
-  update public.stock_uploads set status = 'failed' where id = p_id and by_uid = app.uid() and status = 'open';
+  update public.stock_uploads set status = 'failed' where id = p_id and by_uid = app.uploader() and status = 'open';
 end $$;
 
 -- Склади 1С: [{code, name, address, city, region}] — нові або змінені (shop_id не чіпається).
@@ -206,4 +218,4 @@ revoke execute on function public.stock_upload_begin(text, text), public.stock_u
   public.stores_upsert(jsonb), public.store_link(text, text) from public, anon;
 grant execute on function public.stock_upload_begin(text, text), public.stock_upload_chunk(bigint, jsonb),
   public.stock_upload_commit(bigint, text[], boolean), public.stock_upload_abort(bigint),
-  public.stores_upsert(jsonb), public.store_link(text, text) to authenticated;
+  public.stores_upsert(jsonb), public.store_link(text, text) to authenticated, service_role;

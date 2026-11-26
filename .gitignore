@@ -39,3 +39,4 @@ printer/installer/Output/
 supabase/.temp/
 supabase/.branches/
 
+scripts/node_modules/

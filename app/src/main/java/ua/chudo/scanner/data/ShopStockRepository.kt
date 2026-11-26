@@ -27,7 +27,9 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
     private fun shop(shopId: String) = db.collection(SHOPS).document(shopId)
     private fun stock(shopId: String) = shop(shopId).collection(STOCK)
 
+    // Supabase: старі shops/{id}/stock не переносяться — їх замінили залишки мережі (stock).
     suspend fun info(shopId: String): ShopStockInfo? {
+        if (Backend.isSupabase) return null
         val d = shop(shopId).get().await()
         if (!d.exists()) return null
         return ShopStockInfo(d.getTimestamp("updatedAt")?.toDate(), d.getString("updatedBy"), d.getLong("rows")?.toInt() ?: 0)
@@ -35,6 +37,7 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
 
     /** Скан в «Залишках»: ровно одно чтение `stock/bc_{код}`. `null` — товара нет в выгрузке. */
     suspend fun byBarcode(shopId: String, code: String): StockItem? {
+        if (Backend.isSupabase) return null
         val bc = code.filter(Char::isDigit).ifEmpty { return null }
         val d = stock(shopId).document(keyOf(null, bc)).get().await()
         return if (d.exists()) d.toItem() else null
@@ -45,6 +48,7 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
      * Firestore не умеет «содержит», поэтому только префикс — по запросу на вариант.
      */
     suspend fun byBrand(shopId: String, brand: String, limit: Long = 100): List<StockItem> {
+        if (Backend.isSupabase) return emptyList()
         val b = brand.trim().ifEmpty { return emptyList() }
         return listOf(b, b.uppercase()).distinct().flatMap { v ->
             val p = "ТМ $v"
@@ -72,6 +76,7 @@ class ShopStockRepository(private val db: FirebaseFirestore) {
      * и удаляем то, чего в выгрузке больше нет (бесплатный лимит Firestore — 20 000 записей в сутки).
      */
     suspend fun import(employee: Employee, rows: List<StockRow>, onProgress: (Int, Int) -> Unit): ImportResult {
+        if (Backend.isSupabase) throw StockFileException("Залишки магазину більше не завантажуються окремо — завантажте звіт мережі.")
         val old = stock(employee.shopId).get().await().documents.associate { it.id to it.toItem() }
         val fresh = rows.associateBy { keyOf(it.article, it.barcode) }
 
