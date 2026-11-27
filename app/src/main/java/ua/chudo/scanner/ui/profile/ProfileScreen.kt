@@ -110,15 +110,22 @@ fun ProfileScreen(
             if (!checking) scope.launch {
                 checking = true
                 message = null
-                runCatching { app.updater.check(force = true) }
-                checking = false
+                val checked = try {
+                    app.updater.check(force = true)
+                } finally {
+                    checking = false
+                }
                 message = when (val s = app.updater.state.value) {
                     is ua.chudo.scanner.data.UpdateState.Available -> {
                         launch { app.updater.download() }
                         "Є версія ${s.info.version} — завантажую. Далі натисніть «Встановити» на головному екрані."
                     }
                     is ua.chudo.scanner.data.UpdateState.Ready -> "Версія ${s.info.version} уже завантажена — «Встановити» на головному екрані."
-                    else -> "У вас остання версія."
+                    is ua.chudo.scanner.data.UpdateState.Downloading -> "Оновлення завантажується."
+                    is ua.chudo.scanner.data.UpdateState.NeedPermission -> "Дозвольте встановлення застосунків у налаштуваннях Android."
+                    is ua.chudo.scanner.data.UpdateState.Failed -> s.message
+                    ua.chudo.scanner.data.UpdateState.None -> if (checked) "У вас остання версія."
+                        else "Не вдалося перевірити оновлення. Спробуйте ще раз."
                 }
             }
         },

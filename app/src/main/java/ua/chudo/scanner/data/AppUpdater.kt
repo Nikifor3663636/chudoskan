@@ -13,10 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 
 /** Нова версія з GitHub Releases. */
 data class UpdateInfo(val version: String, val apkUrl: String, val notes: String)
@@ -62,15 +64,21 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull().orEmpty()
 
-    suspend fun check(force: Boolean = false) {
-        if (_state.value is UpdateState.Downloading) return
+    suspend fun check(force: Boolean = false): Boolean {
+        if (_state.value is UpdateState.Downloading) return true
         val now = System.currentTimeMillis()
         if (!force && now - sp.getLong(KEY_CHECKED, 0) < CHECK_EVERY_MS) {
             // Раніше вже знайшли нову версію — показуємо без запиту в мережу.
             cached()?.let { if (Versions.newer(it.version, currentVersion)) _state.value = UpdateState.Available(it) }
-            return
+            return true
         }
-        val info = try { latest() } catch (e: CancellationException) { throw e } catch (_: Exception) { return } ?: return
+        val info = try {
+            latest()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IOException) {
+            null
+        } ?: return false
         sp.edit {
             putLong(KEY_CHECKED, now)
             putString(KEY_VERSION, info.version); putString(KEY_URL, info.apkUrl); putString(KEY_NOTES, info.notes)
@@ -81,6 +89,7 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
             _state.value = UpdateState.None
             dir.deleteRecursively() // старі завантаження вже не потрібні
         }
+        return true
     }
 
     private fun cached(): UpdateInfo? {
@@ -90,16 +99,27 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
     }
 
     private suspend fun latest(): UpdateInfo? = withContext(Dispatchers.IO) {
+        val api = try {
+            latestFromApi()
+        } catch (_: IOException) {
+            null
+        } catch (_: org.json.JSONException) {
+            null
+        }
+        api ?: latestFromReleasePage(http, currentVersion)
+    }
+
+    private fun latestFromApi(): UpdateInfo? {
         val req = Request.Builder().url(LATEST_URL)
             .header("Accept", "application/vnd.github+json").header("User-Agent", "ChudoScan-Android").build()
-        http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) return@withContext null
-            val o = JSONObject(r.body?.string() ?: return@withContext null)
-            val tag = o.optString("tag_name").ifEmpty { return@withContext null }
-            val assets = o.optJSONArray("assets") ?: return@withContext null
+        return http.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) return null
+            val o = JSONObject(r.body?.string() ?: return null)
+            val tag = o.optString("tag_name").ifEmpty { return null }
+            val assets = o.optJSONArray("assets") ?: return null
             val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
                 .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
-                ?.optString("browser_download_url")?.ifEmpty { null } ?: return@withContext null
+                ?.optString("browser_download_url")?.ifEmpty { null } ?: return null
             UpdateInfo(tag.removePrefix("v"), apk, o.optString("body"))
         }
     }
@@ -183,4 +203,29 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
         const val KEY_URL = "url"
         const val KEY_NOTES = "notes"
     }
+}
+
+private const val RELEASES = "https://github.com/Nikifor3663636/chudoskan/releases"
+private val stableTag = Regex("v[0-9]+(?:\\.[0-9]+){1,2}")
+
+internal fun latestFromReleasePage(http: OkHttpClient, currentVersion: String): UpdateInfo? {
+    val tag = http.newCall(Request.Builder().url("$RELEASES/latest").head().build()).execute().use { response ->
+        if (!response.isSuccessful) return null
+        stableReleaseTag(response.request.url) ?: return null
+    }
+    val version = tag.removePrefix("v")
+    val apk = "$RELEASES/download/$tag/ChudoSkan-$version.apk"
+    if (Versions.newer(version, currentVersion)) {
+        http.newCall(Request.Builder().url(apk).head().build()).execute().use { response ->
+            if (!response.isSuccessful) return null
+        }
+    }
+    return UpdateInfo(version, apk, "")
+}
+
+internal fun stableReleaseTag(url: HttpUrl): String? {
+    if (url.scheme != "https" || url.host != "github.com") return null
+    val path = url.pathSegments
+    if (path.dropLast(1) != listOf("Nikifor3663636", "chudoskan", "releases", "tag")) return null
+    return path.last().takeIf(stableTag::matches)
 }
