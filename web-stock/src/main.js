@@ -240,19 +240,56 @@ async function adminView(key, search = '', offset = 0) {
     const cell = (column, row) => {
       const value = column.get(row);
       if (value == null || value === '') return '—';
-      if (column.key === 'at' || column.key === 'paired_at') return esc(when(value));
+      if (['at', 'paired_at', 'requested_at', 'seen_at'].includes(column.key)) return esc(when(value));
       return esc(typeof value === 'number' ? fmt(value) : value);
     };
     const page = rows.slice(0, PAGE_SIZE);
+    const manageDevices = key === 'deviceAccess';
+    const columns = section.columns.filter(column => !manageDevices || column.key !== 'id');
+    const deviceButtons = row => {
+      if (row.status === 'pending') return '<button type="button" data-decision="approve">Підтвердити</button> <button type="button" data-decision="block">Заблокувати</button>';
+      if (row.status === 'approved') return '<button type="button" data-decision="block">Заблокувати</button>';
+      return '';
+    };
     result.innerHTML = `${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
-      <table><thead><tr>${section.columns.map(column => `<th scope="col">${column.label}</th>`).join('')}</tr></thead>
-      <tbody>${page.map(row => `<tr>${section.columns.map(column => `<td>${cell(column, row)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+      <table><thead><tr>${columns.map(column => `<th scope="col">${column.label}</th>`).join('')}${manageDevices ? '<th scope="col">Дії</th>' : ''}</tr></thead>
+      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td>${cell(column, row)}</td>`).join('')}${manageDevices ? `<td data-device-row="${index}">${deviceButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
     </div>` : '<p class="muted">Записів немає.</p>'}
     ${offset || rows.length > PAGE_SIZE ? `<div class="row pagination">
       ${offset ? '<button type="button" id="previous-page">Назад</button>' : ''}
       <span>Сторінка ${offset / PAGE_SIZE + 1}</span>
       ${rows.length > PAGE_SIZE ? '<button type="button" id="next-page">Далі</button>' : ''}
     </div>` : ''}`;
+    if (manageDevices) {
+      result.querySelectorAll('[data-decision]').forEach(button => {
+        button.onclick = async () => {
+          const cell = button.closest('[data-device-row]');
+          const row = page[Number(cell.dataset.deviceRow)];
+          const action = button.dataset.decision;
+          const question = action === 'approve'
+            ? 'Підтвердити цей пристрій? Попередній пристрій цього типу втратить доступ.'
+            : 'Заблокувати цей пристрій? Його активні сеанси завершаться.';
+          if (!window.confirm(question)) return;
+          cell.querySelectorAll('button').forEach(control => { control.disabled = true; });
+          cell.querySelector('[role="alert"]')?.remove();
+          try {
+            const changed = must(await timed(sb.rpc('decide_device_access', { p_id: row.id, p_action: action }), WRITE_TIMEOUT, 'доступ пристрою'));
+            if (result.isConnected) {
+              if (!changed) throw new Error('Запит змінився або у вас немає доступу.');
+              await adminView(key, search, offset);
+            }
+          } catch (error) {
+            if (!result.isConnected) return;
+            const message = document.createElement('p');
+            message.className = 'error';
+            message.setAttribute('role', 'alert');
+            message.textContent = errorText(error);
+            cell.append(message);
+            cell.querySelectorAll('button').forEach(control => { control.disabled = false; });
+          }
+        };
+      });
+    }
     const previous = $('#previous-page');
     const next = $('#next-page');
     if (previous) previous.onclick = () => adminView(key, search, offset - PAGE_SIZE);
