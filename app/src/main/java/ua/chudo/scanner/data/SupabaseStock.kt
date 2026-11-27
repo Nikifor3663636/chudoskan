@@ -3,6 +3,7 @@ package ua.chudo.scanner.data
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -72,6 +73,23 @@ object SupabaseStock {
 
     suspend fun code1C(shopId: String): String? =
         db.from("shops").select(Columns.list("id", "code1c")) { filter { eq("id", shopId) } }.decodeList<ShopRow>().firstOrNull()?.code1c
+
+    suspend fun catalogPage(offset: Int, size: Int): List<SbStockRow> =
+        db.from("stock").select(Columns.list("barcode", "name", "article", "code", "q")) {
+            order("name", Order.ASCENDING)
+            order("barcode", Order.ASCENDING)
+            range(offset.toLong(), (offset + size - 1).toLong())
+        }.decodeList()
+
+    internal suspend fun offlinePage(code: String, after: String): List<SbStockRow> =
+        db.from("stock").select(Columns.list("barcode", "name", "article", "code", "q")) {
+            filter {
+                gt("q->>$code", "0")
+                if (after.isNotEmpty()) gt("barcode", after)
+            }
+            order("barcode", Order.ASCENDING)
+            limit(500)
+        }.decodeList()
 
     suspend fun storeItems(code: String, limit: Long): List<SbStockRow> =
         db.postgrest.rpc("stock_in_store", buildJsonObject { put("p_code", code); put("p_limit", limit) }).decodeList()

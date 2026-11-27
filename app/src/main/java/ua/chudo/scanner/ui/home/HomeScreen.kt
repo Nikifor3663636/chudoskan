@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Icon
@@ -76,6 +77,7 @@ fun HomeScreen(
     onSearch: (String) -> Unit,
     onOpenProduct: (String) -> Unit,
     onHistory: () -> Unit,
+    onNotifications: () -> Unit,
     onOrders: () -> Unit,
     onCart: () -> Unit,
     onHighlights: ((HighlightKind) -> Unit)?,
@@ -86,6 +88,18 @@ fun HomeScreen(
     val region by prefs.region.collectAsStateWithLifecycle()
     val history by prefs.history.collectAsStateWithLifecycle()
     val orders by app.orders.orders.collectAsStateWithLifecycle()
+    var newCount by remember(employee.uid) { mutableStateOf<Long?>(null) }
+    var promoCount by remember(employee.uid) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(employee.uid, onHighlights != null) {
+        if (onHighlights != null) kotlinx.coroutines.supervisorScope {
+            launch {
+                newCount = highlightCount(HighlightKind.NEW)
+            }
+            launch {
+                promoCount = highlightCount(HighlightKind.PROMO)
+            }
+        }
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var showRegions by rememberSaveable { mutableStateOf(false) }
     var stockAt by remember(employee.shopId) { mutableStateOf<Date?>(null) }
@@ -94,10 +108,11 @@ fun HomeScreen(
     LaunchedEffect(employee.shopId) {
         stockAt = runCatching { app.networkLookup.lastUpdated() }.getOrNull()
             ?: runCatching { app.shopStock.info(employee.shopId)?.updatedAt }.getOrNull()
+        stockAt?.let { app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.STOCK, "Залишки оновлено", employee.shop, it.time) }
     }
 
     HomeContent(
-        HomeUi(region.name, employee.shop, stockAt, query, history, orders.count { it.stage == OrderStage.NEW }, Cart.units(cart)),
+        HomeUi(region.name, employee.shop, stockAt, query, history, orders.count { it.stage == OrderStage.NEW }, Cart.units(cart), newCount, promoCount, app.orders.demo),
         onQuery = { query = it },
         onSubmit = {
             if (query.isNotBlank()) {
@@ -107,6 +122,7 @@ fun HomeScreen(
         },
         onRegion = { showRegions = true },
         onHistory = onHistory,
+        onNotifications = onNotifications,
         onOrders = onOrders,
         onCart = onCart,
         onHighlights = onHighlights,
@@ -136,6 +152,9 @@ data class HomeUi(
     val history: List<HistoryItem>,
     val newOrders: Int,
     val cartUnits: Int = 0,
+    val newCount: Long? = null,
+    val promoCount: Long? = null,
+    val ordersDemo: Boolean = false,
 )
 /** «Доступна нова версія 3.2.0 · Оновити» → завантаження з прогресом → системне встановлення. */
 @Composable
@@ -170,6 +189,14 @@ fun UpdateBanner(state: ua.chudo.scanner.data.UpdateState, onUpdate: () -> Unit)
     }
 }
 
+private suspend fun highlightCount(kind: HighlightKind): Long? = try {
+    ua.chudo.scanner.data.ProductHighlights.count(kind)
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
+} catch (_: Exception) {
+    null
+}
+
 private data class Quad(val a: String, val b: String, val c: String?, val d: Float?)
 
 /** «оновлено о 12:20» сегодня, иначе «оновлено 14.11». */
@@ -189,6 +216,7 @@ fun HomeContent(
     onSubmit: () -> Unit = {},
     onRegion: () -> Unit = {},
     onHistory: () -> Unit = {},
+    onNotifications: () -> Unit = {},
     onOrders: () -> Unit = {},
     onCart: () -> Unit = {},
     onHighlights: ((HighlightKind) -> Unit)? = null,
@@ -202,7 +230,13 @@ fun HomeContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
         ) {
             item {
-                Image(painterResource(R.drawable.logo_wordmark), "Чудо Острів", Modifier.padding(top = 8.dp, bottom = 10.dp).height(30.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Image(painterResource(R.drawable.logo_wordmark), "Чудо Острів", Modifier.padding(top = 8.dp, bottom = 10.dp).height(30.dp))
+                    Spacer(Modifier.weight(1f))
+                    androidx.compose.material3.IconButton(onClick = onNotifications) {
+                        Icon(Icons.Outlined.Notifications, "Сповіщення", tint = m.text)
+                    }
+                }
             }
             item {
                 Surface(onClick = onRegion, color = m.bg, contentColor = m.text, shape = Mine.fieldShape) {
@@ -221,6 +255,23 @@ fun HomeContent(
                 }
                 banner()
             }
+            item {
+                Text("Швидкі дії", Modifier.padding(top = 20.dp, bottom = 10.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickAction(Icons.Outlined.ShoppingCart, "Кошик", "${ui.cartUnits} шт", onCart, Modifier.weight(1f))
+                    QuickAction(
+                        Icons.Outlined.ShoppingBag, "Замовлення",
+                        if (ui.ordersDemo) "Демо · ${ui.newOrders}" else "Нові: ${ui.newOrders}",
+                        onOrders, Modifier.weight(1f), accent = ui.newOrders > 0,
+                    )
+                }
+                onHighlights?.let { open ->
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickAction(Icons.Rounded.AutoAwesome, "Новинки", ui.newCount?.let { "$it шт" }, { open(HighlightKind.NEW) }, Modifier.weight(1f))
+                        QuickAction(Icons.Outlined.LocalOffer, "Акції", ui.promoCount?.let { "$it шт" }, { open(HighlightKind.PROMO) }, Modifier.weight(1f))
+                    }
+                }
+            }
             if (ui.history.isNotEmpty()) {
                 item {
                     Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -234,23 +285,6 @@ fun HomeContent(
                                 HistoryRow(product, index < recent.lastIndex, onOpenProduct)
                             }
                         }
-                    }
-                }
-            }
-            item {
-                Text("Швидкі дії", Modifier.padding(top = 20.dp, bottom = 10.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickAction(Icons.Outlined.ShoppingCart, "Кошик", if (ui.cartUnits == 0) "Порожній" else "${ui.cartUnits} шт", onCart, Modifier.weight(1f))
-                    QuickAction(
-                        Icons.Outlined.ShoppingBag, "Замовлення",
-                        if (ui.newOrders == 0) "Нових немає" else "Нові: ${ui.newOrders}",
-                        onOrders, Modifier.weight(1f), accent = ui.newOrders > 0,
-                    )
-                }
-                onHighlights?.let { open ->
-                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickAction(Icons.Rounded.AutoAwesome, "Новинки", null, { open(HighlightKind.NEW) }, Modifier.weight(1f))
-                        QuickAction(Icons.Outlined.LocalOffer, "Акції", null, { open(HighlightKind.PROMO) }, Modifier.weight(1f))
                     }
                 }
             }

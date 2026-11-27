@@ -1,5 +1,9 @@
 package ua.chudo.scanner.ui.print
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn
@@ -234,13 +238,13 @@ fun PrintSheetContent(
             Text("Друк цінника", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = m.text)
             Text(ui.subtitle, Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary)
         }
-        preview?.invoke()
         Column {
             Text("Формат", Modifier.padding(bottom = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Template.entries.forEach { t -> MineChip(formatTitle(t), ui.format == t, { onFormat(t) }) }
             }
         }
+        preview?.invoke()
         if (ui.format.kind == LabelKind.PLAIN) OrientationPicker(ui.format, ui.landscape, onLandscape)
         if (ui.oldPrice != null && ui.format.kind == LabelKind.PLAIN) {
             Surface(shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text) {
@@ -288,26 +292,55 @@ fun PrintSheetContent(
 private fun PrintPreview(items: List<LabelItem>, format: Template, quantity: Int, promo: Boolean, landscape: Boolean) {
     val context = LocalContext.current
     val renderer = remember(context) { LabelRenderer(context) }
-    val perPage = format.layout(landscape)?.perPage
-    val pages = perPage?.let { (items.size * quantity + it - 1) / it }
-    val image by produceState<ImageBitmap?>(null, listOf(items, format, quantity, promo, landscape)) {
-        value = null
+    val layout = format.layout(landscape)
+    val capacity = layout?.perPage
+    val filled = capacity?.let { minOf(items.size * quantity, it) }
+    val pages = capacity?.let { (items.size * quantity + it - 1) / it }
+    var showSheet by rememberSaveable { mutableStateOf(false) }
+    val first = items.firstOrNull() ?: return
+    val label by produceState<ImageBitmap?>(null, first, format, promo) {
         value = withContext(Dispatchers.Default) {
-            if (perPage == null) renderer.render(items.first(), LabelFormat.of(format, promo), 100f).asImageBitmap()
-            else {
-                val firstPage = List(minOf(items.size * quantity, perPage)) { index -> items[index / quantity] }
-                renderer.sheetPreview(firstPage, format, promo, 82f, landscape).asImageBitmap()
+            renderer.render(first, LabelFormat.of(format, promo), 203.2f).asImageBitmap()
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(shape = RoundedCornerShape(8.dp), color = Mine.colors.surface, border = BorderStroke(1.dp, Mine.colors.line)) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), contentAlignment = Alignment.Center) {
+                label?.let { bitmap ->
+                    Image(
+                        bitmap, "Попередній перегляд цінника",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                            .background(if (promo) Color(ua.chudo.scanner.print.PROMO_PAPER) else Color.White),
+                    )
+                }
+            }
+        }
+        if (capacity != null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("$capacity на аркуші A4 · $pages арк.", Modifier.weight(1f), fontSize = 13.sp, color = Mine.colors.textSecondary)
+                TextButton(onClick = { showSheet = true }) { Text("Переглянути A4") }
             }
         }
     }
-    val bitmap = image
-    if (bitmap != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(if (pages == null) "Попередній перегляд" else "Аркуш 1 з $pages", fontSize = 13.sp, color = Mine.colors.textSecondary)
-            Surface(shape = RoundedCornerShape(8.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
-                Image(bitmap, "Попередній перегляд цінника", modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp).padding(8.dp))
+    if (showSheet && capacity != null && filled != null) {
+        val sheet by produceState<ImageBitmap?>(null, listOf(items, format, quantity, promo, landscape)) {
+            value = withContext(Dispatchers.Default) {
+                val cells = List(filled) { index -> items[index / quantity] }
+                renderer.sheetPreview(cells, format, promo, 100f, landscape).asImageBitmap()
             }
         }
+        AlertDialog(
+            onDismissRequest = { showSheet = false },
+            title = { Text("Аркуш A4") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${if (landscape) "Альбомна" else "Книжкова"} · $capacity місць · $filled заповнено", color = Mine.colors.textSecondary)
+                    sheet?.let { Image(it, "Розкладка цінників на першому аркуші", Modifier.fillMaxWidth()) }
+                    Text("Порожні місця не друкуються.", fontSize = 13.sp, color = Mine.colors.textSecondary)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSheet = false }) { Text("Закрити") } },
+        )
     }
 }
 

@@ -53,11 +53,12 @@ fun HighlightsScreen(
     onBack: () -> Unit,
     onProduct: (String, String?) -> Unit,
     onSearch: (String) -> Unit,
+    onBrowseCatalog: (List<String>, String) -> Unit = { _, _ -> },
     initialKind: HighlightKind = HighlightKind.NEW,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var kind by rememberSaveable(initialKind) { mutableStateOf(initialKind) }
+    val kind = initialKind
     var query by rememberSaveable { mutableStateOf("") }
     var rows by remember { mutableStateOf(emptyList<ProductHighlight>()) }
     var selected by remember { mutableStateOf<ProductHighlight?>(null) }
@@ -116,14 +117,7 @@ fun HighlightsScreen(
         Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { MineHeader("Новинки й акції", onBack) }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HighlightKind.entries.forEach { category ->
-                    FilterChip(kind == category, { kind = category }, { Text(category.title) }, enabled = !working)
-                }
-            }
-        }
+        item { MineHeader(kind.title, onBack) }
         item {
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth(), enabled = !working,
@@ -144,12 +138,12 @@ fun HighlightsScreen(
             Text(if (query.isBlank()) "Активних записів поки немає." else "За цим запитом товарів немає.")
         }
         items(rows) { row ->
-            MineCard {
-                Text(row.name, fontWeight = FontWeight.SemiBold)
-                Text(listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "))
-                row.promoPrice?.let { Text(highlightPrice(it)) }
-                TextButton({ selected = row }) { Text("Відкрити товар") }
-            }
+            CatalogRow(
+                title = row.name,
+                detail = listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "),
+                trailing = row.promoPrice?.let(::highlightPrice),
+                onClick = { selected = row },
+            )
         }
         if (loading) item { CircularProgressIndicator() }
         if (more && !loading) item {
@@ -197,6 +191,7 @@ fun HighlightsScreen(
                         try {
                             val result = ctx.chudoApp.repository.lookup(code)
                             selected = null
+                            onBrowseCatalog(rows.map { it.article.ifBlank { it.barcode } }.distinct(), code)
                             if (result is LookupResult.Single) onProduct(result.urlKey, row.barcode.ifBlank { null })
                             else onSearch(code)
                         } catch (e: CancellationException) {

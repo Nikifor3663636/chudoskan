@@ -237,7 +237,7 @@ class DesignSnapshots {
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
                         // Сьогодні о 09:30 — щоб знімок не залежав від часу запуску.
-                        ua.chudo.scanner.ui.home.HomeUi("Одеса", "ЧО 22 · ТРЦ Gagarin Plaza", todayAt930(), "", recent, 3, cartUnits = 4),
+                        ua.chudo.scanner.ui.home.HomeUi("Одеса", "ЧО 22 · ТРЦ Gagarin Plaza", todayAt930(), "", recent, 3, cartUnits = 4, newCount = 12, promoCount = 28),
                         onHighlights = {},
                     )
                 }
@@ -279,10 +279,15 @@ class DesignSnapshots {
         )
         ChudoTheme(dark = false) {
             Surface(color = Mine.colors.bg) {
-                ua.chudo.scanner.ui.product.ProductPage(
-                    lego, shops, "вул. Генуезька, 5/2, ТРЦ Gagarinn Plaza",
-                    ua.chudo.scanner.data.StockItem("10954", "5702016911114", "LEGO Duplo", 9.0), "Одеса", "5702016911114",
-                )
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) {
+                        ua.chudo.scanner.ui.product.ProductPage(
+                            lego, shops, "вул. Генуезька, 5/2, ТРЦ Gagarinn Plaza",
+                            ua.chudo.scanner.data.StockItem("10954", "5702016911114", "LEGO Duplo", 9.0), "Одеса", "5702016911114",
+                        )
+                    }
+                    ua.chudo.scanner.ui.product.ProductActions(onPrint = {}, onCart = {})
+                }
             }
         }
     }

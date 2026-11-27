@@ -71,6 +71,8 @@ fun ProfileScreen(
     onNetworkAdmin: (() -> Unit)? = null,
     /** «Мій магазин» — адмін магазину (співробітники свого магазину). */
     onMyShop: (() -> Unit)? = null,
+    onScannerSettings: () -> Unit = {},
+    onOperations: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
@@ -91,6 +93,7 @@ fun ProfileScreen(
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,
         ),
+        onScannerSettings = onScannerSettings, onOperations = onOperations,
         onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onPrinters = { onPrinters?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
@@ -184,20 +187,23 @@ fun ProfileContent(
     onPassword: () -> Unit = {},
     onLogout: () -> Unit = {},
     onCheckUpdate: () -> Unit = {},
+    onScannerSettings: () -> Unit = {},
+    onOperations: () -> Unit = {},
 ) {
     val m = Mine.colors
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         MineHeader("Профіль", onBack)
         Row(Modifier.padding(top = 12.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(ui.name, size = 64.dp)
+            Avatar(ui.name, size = 48.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(ui.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text)
-                Text("Співробітник підтверджений", Modifier.padding(top = 2.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.success)
+                Text(listOf(ui.shop, ui.phone).filter(String::isNotBlank).joinToString(" · "), Modifier.padding(top = 2.dp), fontSize = 13.sp, color = m.textSecondary)
             }
             IconButton(onClick = onEditName) { Icon(Icons.Rounded.Edit, "Змінити ім'я", tint = m.textSecondary) }
         }
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Робота", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
 
         Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text) {
             Column {
@@ -213,11 +219,31 @@ fun ProfileContent(
                     ProfileRow("Принтери", "Налаштування", onClick = onPrinters)
                     RowDivider()
                 }
-                ProfileStackedRow("Магазин", ui.shop)
-                RowDivider()
-                ProfileRow("Місто", ui.city)
-                RowDivider()
-                ProfileRow("Телефон", ui.phone)
+                ProfileRow("Історія операцій", null, onClick = onOperations)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Тема", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK).forEach { mode ->
+                Surface(
+                    onClick = { onTheme(mode) },
+                    modifier = Modifier.weight(1f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    color = if (mode == ui.theme) m.card else m.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, m.line),
+                ) {
+                    androidx.compose.foundation.layout.Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                        Text(mode.title, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = if (mode == ui.theme) FontWeight.Bold else FontWeight.Normal)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Застосунок", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text) {
+            Column {
+                ProfileRow("Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
                 RowDivider()
                 ProfileRow("Змінити пароль", null, onClick = onPassword)
                 RowDivider()
@@ -232,28 +258,10 @@ fun ProfileContent(
         }
         Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
         ui.message?.let { Text(it, Modifier.padding(start = 4.dp, top = 10.dp), fontSize = 15.sp, color = m.success) }
-        Spacer(Modifier.height(20.dp))
-        ThemePicker(ui.theme, onTheme)
         Spacer(Modifier.height(32.dp))
     }
 }
 
-/**
- * Довге значення (адреса магазину) — під підписом, до 3 рядків, а не обрізаним в один рядок поруч із підписом.
- */
-@Composable
-private fun ProfileStackedRow(label: String, value: String) {
-    val m = Mine.colors
-    Column(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 18.dp, vertical = 12.dp)) {
-        Text(label, fontSize = 14.sp, color = m.textSecondary)
-        Text(
-            value.ifBlank { "—" }, Modifier.padding(top = 2.dp), fontSize = 16.sp, lineHeight = 21.sp,
-            color = m.text, maxLines = 3, overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** Строка списка профиля: название слева, значение справа; нажимаемая — со стрелкой. */
 @Composable
 private fun ProfileRow(label: String, value: String?, danger: Boolean = false, onClick: (() -> Unit)? = null) {
     val m = Mine.colors
@@ -262,11 +270,10 @@ private fun ProfileRow(label: String, value: String?, danger: Boolean = false, o
             .heightIn(min = 56.dp).padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            label, Modifier.weight(1f), fontSize = 16.sp,
-            fontWeight = if (danger) FontWeight.Medium else FontWeight.Normal, color = if (danger) m.logout else m.text,
-        )
-        value?.let { Text(it, Modifier.padding(start = 12.dp), fontSize = 14.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (danger) m.logout else m.text)
+            value?.let { Text(it, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = m.textSecondary) }
+        }
         if (onClick != null && !danger) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(20.dp), tint = m.textSecondary)
     }
 }

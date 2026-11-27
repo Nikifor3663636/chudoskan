@@ -132,6 +132,7 @@ class ResultsViewModel(
 fun ResultsScreen(
     shopId: String,
     onBack: () -> Unit,
+    onBrowseProducts: (List<String>) -> Unit = {},
     onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
@@ -164,6 +165,7 @@ fun ResultsScreen(
                         is LookupResult.Single -> Loading("Відкриваємо товар…")
                         is LookupResult.Many -> ManyList(r) { urlKey ->
                             val bc = r.barcode.takeIf { r.via !is Via.Direct }
+                            onBrowseProducts(r.items.map { it.urlKey }.distinct())
                             onOpenProduct(urlKey, bc, null, false)
                         }
                         is LookupResult.NotFound -> Column(

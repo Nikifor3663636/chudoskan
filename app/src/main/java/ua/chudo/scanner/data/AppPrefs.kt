@@ -21,8 +21,61 @@ data class HistoryItem(
     val priceKop: Long? = null,
 )
 
+data class ScannerOptions(val sound: Boolean = false, val vibrate: Boolean = true, val continuous: Boolean = true)
+
+enum class ActivityKind(val title: String) { PRINT("Друк"), ORDER("Замовлення"), SCAN("Скани"), CART("Кошик"), STOCK("Залишки"), PRINTER("Принтери") }
+
+data class ShopActivity(val kind: ActivityKind, val title: String, val detail: String, val time: Long)
+
 class AppPrefs(context: Context) {
     private val sp = context.getSharedPreferences("chudo", Context.MODE_PRIVATE)
+
+    private val _scanner = MutableStateFlow(
+        ScannerOptions(sp.getBoolean("scan_sound", false), sp.getBoolean("scan_vibrate", true), sp.getBoolean("scan_continuous", true)),
+    )
+    val scanner: StateFlow<ScannerOptions> = _scanner.asStateFlow()
+
+    fun setScanner(options: ScannerOptions) {
+        sp.edit {
+            putBoolean("scan_sound", options.sound)
+            putBoolean("scan_vibrate", options.vibrate)
+            putBoolean("scan_continuous", options.continuous)
+        }
+        _scanner.value = options
+    }
+
+    private val _activityRevision = MutableStateFlow(0)
+    val activityRevision = _activityRevision.asStateFlow()
+
+    private fun activityKey(employee: Employee) = "activity_${employee.uid}_${employee.shopId}"
+
+    fun activities(employee: Employee): List<ShopActivity> = runCatching {
+        val saved = JSONArray(sp.getString(activityKey(employee), "[]"))
+        List(saved.length()) { index ->
+            val row = saved.getJSONObject(index)
+            ShopActivity(ActivityKind.valueOf(row.getString("kind")), row.getString("title"), row.getString("detail"), row.getLong("time"))
+        }
+    }.getOrDefault(emptyList())
+
+    @Synchronized
+    fun addActivity(employee: Employee, kind: ActivityKind, title: String, detail: String, time: Long = System.currentTimeMillis()) {
+        val event = ShopActivity(kind, title, detail, time)
+        val old = activities(employee)
+        if (event in old) return
+        val rows = JSONArray()
+        (listOf(event) + old).sortedByDescending { it.time }.take(100).forEach {
+            rows.put(JSONObject().put("kind", it.kind.name).put("title", it.title).put("detail", it.detail).put("time", it.time))
+        }
+        sp.edit { putString(activityKey(employee), rows.toString()) }
+        _activityRevision.update { it + 1 }
+    }
+
+    fun notificationsReadAt(employee: Employee): Long = sp.getLong(activityKey(employee) + "_read", 0)
+
+    fun readNotifications(employee: Employee, time: Long) {
+        sp.edit { putLong(activityKey(employee) + "_read", time) }
+        _activityRevision.update { it + 1 }
+    }
 
     val allRegions: List<Region> = regions()
 

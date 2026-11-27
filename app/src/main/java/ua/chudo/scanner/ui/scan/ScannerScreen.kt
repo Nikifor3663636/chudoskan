@@ -54,6 +54,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.media.AudioManager
+import android.media.ToneGenerator
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ua.chudo.scanner.chudoApp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -150,7 +154,16 @@ private fun CameraScreen(
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
-    val currentOnBarcode by rememberUpdatedState(onBarcode)
+    val feedback by ctx.chudoApp.prefs.scanner.collectAsStateWithLifecycle()
+    val tone = remember(feedback.sound) {
+        if (feedback.sound) runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 45) }.getOrNull() else null
+    }
+    DisposableEffect(tone) { onDispose { tone?.release() } }
+    val onSuccessfulScan by rememberUpdatedState<(String) -> Unit> {
+        if (feedback.vibrate) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 100)
+        onBarcode(it)
+    }
     val previewView = remember { PreviewView(ctx).apply {
         scaleType = PreviewView.ScaleType.FILL_CENTER
         if (onManual != null) implementationMode = PreviewView.ImplementationMode.COMPATIBLE
@@ -200,13 +213,11 @@ private fun CameraScreen(
                                 if (value != null && value == last && value != blocked) {
                                     blocked = value
                                     blockedSeenAt = now
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    currentOnBarcode(value)
+                                    onSuccessfulScan(value)
                                 }
                             } else if (value != null && value == last && !done) {
                                 done = true
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                currentOnBarcode(value)
+                                onSuccessfulScan(value)
                             }
                             last = value
                         }

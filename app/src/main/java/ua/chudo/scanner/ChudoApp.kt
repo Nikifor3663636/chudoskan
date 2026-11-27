@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 /** Ручной DI: всё приложение — один контейнер. */
 class ChudoApp : Application() {
     val prefs by lazy { AppPrefs(this) }
+    val offlineStock by lazy { ua.chudo.scanner.data.OfflineStock(this) }
 
     private val okHttp by lazy {
         OkHttpClient.Builder()

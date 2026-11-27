@@ -2,6 +2,8 @@ package ua.chudo.scanner.ui.stock
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
@@ -56,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,6 +85,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ua.chudo.scanner.ui.common.MinePrimaryButton
 import kotlinx.coroutines.withContext
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.AppPrefs
@@ -482,6 +486,7 @@ fun StockScreen(
     onScannedConsumed: () -> Unit,
     /** Адмін залишків / мережі: «Завантажити файл 1С» на всю мережу (розподіл по магазинах). */
     onNetworkUpload: (() -> Unit)? = null,
+    onOpenCatalogProduct: ((String, List<String>) -> Unit)? = null,
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     val info by vm.info.collectAsStateWithLifecycle()
@@ -494,6 +499,30 @@ fun StockScreen(
     var query by rememberSaveable { mutableStateOf("") }
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
+    var catalog by remember(employee.shopId) { mutableStateOf(emptyList<ua.chudo.scanner.data.SbStockRow>()) }
+    var catalogCursor by remember(employee.shopId) { mutableStateOf(0) }
+    var catalogMore by remember(employee.shopId) { mutableStateOf(true) }
+    var catalogLoading by remember(employee.shopId) { mutableStateOf(true) }
+    var catalogError by remember(employee.shopId) { mutableStateOf(false) }
+    var catalogRevision by remember(employee.shopId) { mutableStateOf(0) }
+    LaunchedEffect(employee.shopId, catalogRevision) {
+        if (ua.chudo.scanner.data.Backend.isSupabase) {
+            catalogError = false
+            catalogLoading = true
+            try {
+                val page = ua.chudo.scanner.data.SupabaseStock.catalogPage(catalogCursor, 30)
+                catalogCursor += page.size
+                catalog = (catalog + page).distinctBy { it.barcode }
+                catalogMore = page.size == 30
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                catalogError = true
+            } finally {
+                catalogLoading = false
+            }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.readFile(ctx, it) }
     }
@@ -518,7 +547,26 @@ fun StockScreen(
             )
         }
         when (val st = s) {
-            StockState.Idle -> {}
+            StockState.Idle -> if (ua.chudo.scanner.data.Backend.isSupabase) {
+                item {
+                    Text("Каталог товарів", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                items(catalog, key = { "catalog-" + it.barcode }) { row ->
+                    CatalogRow(
+                        row.name.ifBlank { row.barcode },
+                        listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "),
+                        onClick = { query = row.barcode; vm.scanned(row.barcode) },
+                    )
+                }
+                item {
+                    when {
+                        catalogError -> MinePrimaryButton("Повторити завантаження", { catalogRevision++ })
+                        catalogLoading -> CircularProgressIndicator()
+                        catalogMore -> MinePrimaryButton("Показати ще товари", { catalogRevision++ })
+                        catalog.isEmpty() -> Text("У каталозі поки немає товарів.")
+                    }
+                }
+            }
             is StockState.Loading -> item {
                 Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Mine.colors.accent)
@@ -559,7 +607,26 @@ fun StockScreen(
             }
             is StockState.Ready -> {
                 val net = st.net
-                item { ProductHeader(st.product, st.item, net) }
+                item {
+                    val index = catalog.indexOfFirst { it.barcode == net?.barcode }
+                    val swipe = if (index >= 0) Modifier.pointerInput(index, catalog) {
+                        var distance = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { distance = 0f },
+                            onDragEnd = {
+                                val neighbor = when {
+                                    distance < -64.dp.toPx() -> catalog.getOrNull(index + 1)
+                                    distance > 64.dp.toPx() -> catalog.getOrNull(index - 1)
+                                    else -> null
+                                }
+                                neighbor?.let { query = it.barcode; vm.scanned(it.barcode) }
+                            },
+                        ) { change, amount -> change.consume(); distance += amount }
+                    } else Modifier
+                    Column(Modifier.fillMaxWidth().then(swipe)) {
+                        ProductHeader(st.product, st.item, net)
+                    }
+                }
                 if (net != null) {
                     item { NetworkStockCard(net) }
                     // Адмін бачить товар одразу в усіх магазинах мережі.
@@ -568,6 +635,9 @@ fun StockScreen(
                     item {
                         val chosen = selected.any { it.barcode == net.barcode }
                         MineButton(if (chosen) "Прибрати з цінників" else "Додати до цінників", { vm.toggleSelected(net) }, Modifier.fillMaxWidth())
+                        onOpenCatalogProduct?.let { open ->
+                            MineButton("Картка товару", { open(net.barcode, catalog.map { it.barcode }) }, Modifier.fillMaxWidth())
+                        }
                     }
                 } else {
                     item { MyShopCard(employee, st, info != null) }
@@ -780,7 +850,7 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
  * (один документ на кілька аркушів у «Друк цінників»).
  */
 @Composable
-fun LabelBatchScreen(vm: StockViewModel, onBack: () -> Unit, onFindProduct: () -> Unit) {
+fun LabelBatchScreen(employee: Employee, vm: StockViewModel, onBack: () -> Unit, onFindProduct: () -> Unit) {
     val m = Mine.colors
     val selected by vm.selected.collectAsStateWithLifecycle()
     val loading by vm.changedLoading.collectAsStateWithLifecycle()
@@ -822,5 +892,9 @@ fun LabelBatchScreen(vm: StockViewModel, onBack: () -> Unit, onFindProduct: () -
             tone = MineTone.ACCENT, enabled = selected.isNotEmpty() && progress == null,
         )
     }
-    printTags?.let { PrintSheet(it, onDismiss = vm::closePrint, onDone = vm::printed) }
+    val prefs = LocalContext.current.chudoApp.prefs
+    printTags?.let { tags -> PrintSheet(tags, onDismiss = vm::closePrint, onDone = { message ->
+        prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.PRINT, "Друк пакета цінників", "${tags.size} товарів")
+        vm.printed(message)
+    }) }
 }

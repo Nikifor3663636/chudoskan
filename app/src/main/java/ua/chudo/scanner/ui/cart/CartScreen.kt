@@ -78,8 +78,9 @@ import java.text.DecimalFormat
  * Далі тут з'явиться «Оплатити» (ПРРО) — суми вже в копійках.
  */
 @Composable
-fun CartScreen(onBack: () -> Unit, onScan: () -> Unit) {
-    val cart = LocalContext.current.chudoApp.cart
+fun CartScreen(employee: ua.chudo.scanner.data.Employee, onBack: () -> Unit, onScan: () -> Unit) {
+    val app = LocalContext.current.chudoApp
+    val cart = app.cart
     val lines by cart.lines.collectAsStateWithLifecycle()
     var payment by remember { mutableStateOf<TerminalPaymentDraft?>(null) }
     val available = remember(lines) { TerminalPaymentDraft.fromCart(lines) }
@@ -87,6 +88,10 @@ fun CartScreen(onBack: () -> Unit, onScan: () -> Unit) {
         lines, onBack = onBack, onScan = onScan,
         onQty = cart::setQty, onRemove = cart::remove, onRetry = cart::retry, onClear = cart::clear,
         onTerminal = { payment = available }, terminalReady = available != null,
+        onShowCashier = {
+            app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.CART, "Кошик показано касиру",
+                "${Cart.units(lines)} шт · ${Cart.money(Cart.total(lines))}")
+        },
     )
     payment?.let { draft ->
         AlertDialog(
@@ -109,6 +114,7 @@ fun CartContent(
     onClear: () -> Unit = {},
     onTerminal: (() -> Unit)? = null,
     terminalReady: Boolean = false,
+    onShowCashier: () -> Unit = {},
 ) {
     val m = Mine.colors
     var confirmClear by rememberSaveable { mutableStateOf(false) }
@@ -137,7 +143,7 @@ fun CartContent(
         ) {
             items(lines, key = { it.barcode }) { l -> LineCard(l, onQty, onRemove, onRetry) }
         }
-        Footer(lines, onScan, onCashier = { cashier = true }, onTerminal = onTerminal, terminalReady = terminalReady)
+        Footer(lines, onScan, onCashier = { onShowCashier(); cashier = true }, onTerminal = onTerminal, terminalReady = terminalReady)
     }
 
     if (confirmClear) AlertDialog(

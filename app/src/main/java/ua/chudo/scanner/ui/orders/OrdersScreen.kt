@@ -54,7 +54,8 @@ import ua.chudo.scanner.ui.theme.Mine
 /** «Замовлення»: интернет-заказы на самовывоз, сборка сканером. */
 @Composable
 fun OrdersScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit, scanned: String?, onScannedConsumed: () -> Unit) {
-    val repo = LocalContext.current.chudoApp.orders
+    val app = LocalContext.current.chudoApp
+    val repo = app.orders
     val orders by repo.orders.collectAsStateWithLifecycle()
     val activeNumber by repo.activeNumber.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(OrderStage.NEW) }
@@ -67,7 +68,9 @@ fun OrdersScreen(employee: Employee, onBack: () -> Unit, onScan: () -> Unit, sca
         onScannedConsumed()
         val msg = when (val r = repo.scan(code)) {
             is ScanResult.Added -> "+1 · ${r.name} (${r.order.picked} з ${r.order.items})"
-            is ScanResult.Completed -> "Замовлення № ${r.order.number} зібрано"
+            is ScanResult.Completed -> "Замовлення № ${r.order.number} зібрано".also { message ->
+                if (!repo.demo) app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.ORDER, message, goods(r.order.items))
+            }
             ScanResult.NotInOrder -> "Цього товару немає в замовленні"
             ScanResult.AlreadyEnough -> "Цей товар уже зібрано повністю"
             ScanResult.NothingPicking -> "Спочатку обери замовлення в «Нові»"

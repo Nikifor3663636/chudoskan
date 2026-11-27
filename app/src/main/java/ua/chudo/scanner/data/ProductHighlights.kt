@@ -1,6 +1,9 @@
 package ua.chudo.scanner.data
 
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Count
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -35,6 +38,13 @@ object ProductHighlights {
             put("p_barcode", barcode.orEmpty())
             put("p_article", article.orEmpty())
         }).decodeList()
+
+    suspend fun count(kind: HighlightKind): Long? =
+        db.from("product_highlights").select(Columns.list("kind")) {
+            filter { eq("kind", kind.key) }
+            count(Count.EXACT)
+            limit(1)
+        }.countOrNull()
 
     const val PAGE_SIZE = 50
 

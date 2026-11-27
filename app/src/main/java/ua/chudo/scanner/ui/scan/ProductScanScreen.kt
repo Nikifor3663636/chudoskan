@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ fun ProductScanScreen(
     onCart: (String?) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
+    val options by app.prefs.scanner.collectAsStateWithLifecycle()
     var code by rememberSaveable { mutableStateOf<String?>(null) }
     var summary by remember(code) { mutableStateOf<ScanSummary?>(null) }
     var loading by remember(code) { mutableStateOf(code != null) }
@@ -65,10 +67,16 @@ fun ProductScanScreen(
     LaunchedEffect(code, employee.shopId) {
         val barcode = code ?: return@LaunchedEffect
         summary = run {
-            val net = optional { app.networkLookup.byBarcode(employee.shopId, barcode) }
-            val lookup = optional { app.repository.lookup(barcode, net) } as? LookupResult.Single
+            val cached = optional { app.offlineStock.byBarcode(employee, barcode) }
+            val live = if (cached == null) optional { app.networkLookup.byBarcode(employee.shopId, barcode) }?.let { it to true }
+                else optional {
+                    kotlinx.coroutines.withTimeoutOrNull(2500) { app.networkLookup.byBarcode(employee.shopId, barcode) to true }
+                }
+            val offline = cached != null && live == null
+            val net = if (offline) cached else live?.first
+            val lookup = if (offline) null else optional { app.repository.lookup(barcode, net) } as? LookupResult.Single
             val product = lookup?.let { optional { app.repository.details(it.urlKey) } }
-            val flags = if (Backend.isSupabase) {
+            val flags = if (Backend.isSupabase && !offline) {
                 optional { ProductHighlights.forProduct(barcode, product?.article ?: net?.item?.article) }.orEmpty()
             } else emptyList()
             ScanSummary(
@@ -77,7 +85,7 @@ fun ProductScanScreen(
                 price = flags.firstNotNullOfOrNull { it.promoPrice } ?: product?.price?.finalPrice,
                 own = net?.own,
                 otherStore = net?.city?.firstOrNull()?.let { store -> "${store.name} · ${formatQuantity(store.qty)} шт" },
-                stockTime = updatedText(net?.updatedAt),
+                stockTime = updatedText(net?.updatedAt)?.let { if (offline) "Офлайн · $it" else it },
                 flags = flags.mapNotNull { flag -> HighlightKind.entries.firstOrNull { it.key == flag.kind }?.badge },
             )
         }
@@ -117,9 +125,14 @@ fun ProductScanScreen(
         }
     }
     ScannerScreen(
-        onBarcode = { if (!manual) code = it },
+        onBarcode = {
+            if (!manual) {
+                app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.SCAN, "Штрихкод відскановано", it)
+                if (options.continuous) code = it else onSearch(it)
+            }
+        },
         onClose = onClose,
-        continuous = true,
+        continuous = options.continuous,
         result = result,
         onManual = { manual = true },
         onCartMode = {

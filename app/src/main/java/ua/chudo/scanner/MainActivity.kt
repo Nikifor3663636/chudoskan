@@ -110,6 +110,9 @@ private object Routes {
     const val STOCK = "stock"
     const val ORDERS = "orders"
     const val PROFILE = "profile"
+    const val SCANNER_SETTINGS = "scanner-settings"
+    const val OPERATIONS = "operations"
+    const val NOTIFICATIONS = "notifications"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
     const val SCAN_ORDERS = "scan?mode=$ORDERS_MODE"
@@ -211,6 +214,10 @@ private fun AppNav(home: Employee) {
 
 @Composable
 private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employee, modifier: Modifier, onActAs: (ShopEntry) -> Unit) {
+    fun setCatalog(entry: androidx.navigation.NavBackStackEntry, items: List<String>, selected: String) {
+        entry.savedStateHandle["catalogBrowse"] = ArrayList(items)
+        entry.savedStateHandle["catalogIndex"] = items.indexOf(selected)
+    }
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
@@ -221,12 +228,27 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 vm = rememberStockViewModel(employee, homeEntry),
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[STOCK_CODE] = null },
+                onOpenCatalogProduct = { barcode, items ->
+                    setCatalog(entry, items, barcode)
+                    nav.navigate(Routes.results(barcode))
+                },
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
+        }
+        composable(Routes.OPERATIONS) {
+            ua.chudo.scanner.ui.profile.ActivityScreen(employee, { nav.popBackStack() })
+        }
+        composable(Routes.NOTIFICATIONS) {
+            ua.chudo.scanner.ui.profile.ActivityScreen(employee, { nav.popBackStack() }, notifications = true)
+        }
+        composable(Routes.SCANNER_SETTINGS) {
+            ua.chudo.scanner.ui.profile.ScannerSettingsScreen(employee) { nav.popBackStack() }
         }
         composable(Routes.PROFILE) {
             ProfileScreen(
                 employee, onBack = { nav.popBackStack() },
+                onScannerSettings = { nav.navigate(Routes.SCANNER_SETTINGS) },
+                onOperations = { nav.navigate(Routes.OPERATIONS) },
                 onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
@@ -264,7 +286,8 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 canUpload = employee.stockAdmin || employee.superAdmin,
                 initialKind = kind,
                 onBack = { nav.popBackStack() },
-                onProduct = { key, barcode -> nav.navigate(Routes.product(key, barcode)) },
+                onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
+                onBrowseCatalog = { items, selected -> setCatalog(entry, items, selected) },
                 onSearch = { nav.navigate(Routes.results(it)) },
             )
         }
@@ -273,6 +296,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         composable(Routes.LABELS) { entry ->
             val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
             LabelBatchScreen(
+                employee = employee,
                 vm = rememberStockViewModel(employee, homeEntry),
                 onBack = { nav.popBackStack() },
                 onFindProduct = { nav.navigate(Routes.STOCK) { popUpTo(Routes.HOME); launchSingleTop = true } },
@@ -294,6 +318,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onSearch = { nav.navigate(Routes.results(it)) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onHistory = { nav.navigate(Routes.HISTORY) },
+                onNotifications = { nav.navigate(Routes.NOTIFICATIONS) },
                 onOrders = { nav.navigate(Routes.ORDERS) },
                 onCart = { nav.navigate(Routes.CART) },
                 onHighlights = if (Backend.isSupabase) ({ kind -> nav.navigate(Routes.highlights(kind)) }) else null,
@@ -306,7 +331,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             )
         }
         composable(Routes.CART) {
-            ua.chudo.scanner.ui.cart.CartScreen(onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.SCAN_CART) })
+            ua.chudo.scanner.ui.cart.CartScreen(employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.SCAN_CART) })
         }
         composable(
             Routes.SCAN,
@@ -347,8 +372,9 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onClose = { nav.popBackStack() },
             )
         }
-        composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) {
+        composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) { resultsEntry ->
             ResultsScreen(
+                onBrowseProducts = { resultsEntry.savedStateHandle["productBrowse"] = ArrayList(it) },
                 shopId = employee.shopId,
                 onBack = { nav.popBackStack() },
                 onOpenProduct = { urlKey, bc, scanned, replace ->
@@ -367,8 +393,29 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 navArgument("print") { type = NavType.BoolType; defaultValue = false },
             ),
         ) { entry ->
+            val source = nav.previousBackStackEntry
+            val siblings = source?.savedStateHandle?.get<ArrayList<String>>("productBrowse").orEmpty()
+            val index = siblings.indexOf(entry.arguments?.getString("urlKey"))
+            val catalog = source?.savedStateHandle?.get<ArrayList<String>>("catalogBrowse").orEmpty()
+            val catalogIndex = source?.savedStateHandle?.get<Int>("catalogIndex") ?: -1
+            fun adjacent(offset: Int): (() -> Unit)? {
+                if (index >= 0) {
+                    val key = siblings.getOrNull(index + offset) ?: return null
+                    return { if (nav.popBackStack()) nav.navigate(Routes.product(key, null)) }
+                }
+                if (source == null || catalogIndex < 0) return null
+                val query = catalog.getOrNull(catalogIndex + offset) ?: return null
+                return {
+                    if (nav.popBackStack()) {
+                        source.savedStateHandle["catalogIndex"] = catalogIndex + offset
+                        nav.navigate(Routes.results(query))
+                    }
+                }
+            }
             ProductScreen(
-                employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) },
+                onPreviousProduct = adjacent(-1),
+                onNextProduct = adjacent(1),
+                employee = employee, onBack = { nav.popBackStack() }, onScan = { nav.navigate(Routes.scan()) },
                 openPrint = entry.arguments?.getBoolean("print") == true,
             )
         }

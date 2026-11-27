@@ -125,6 +125,17 @@ class LabelRenderer(context: Context) {
                 c.drawRect(x.toFloat(), y.toFloat(), (x + cw).toFloat(), (y + ch).toFloat(), paper)
             }
         }
+        val guides = Paint().apply {
+            color = Color.rgb(205, 211, 219)
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+            pathEffect = DashPathEffect(floatArrayOf(4f, 3f), 0f)
+        }
+        val (cellWidth, cellHeight) = sizeDots(f, dpi)
+        repeat(l.perPage) { index ->
+            val (x, y) = cellOrigin(l, index, dpi)
+            c.drawRect(x.toFloat(), y.toFloat(), (x + cellWidth).toFloat(), (y + cellHeight).toFloat(), guides)
+        }
         c.drawBitmap(ink, 0f, 0f, null)
         return out
     }

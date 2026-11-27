@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.Print
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material3.AlertDialog
@@ -312,6 +313,18 @@ fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
         onDispose { runCatching { ctx.unregisterReceiver(receiver) } }
     }
 
+    val knownStates = remember(employee.shopId) { mutableMapOf<String, Boolean>() }
+    LaunchedEffect(status, records, agents) {
+        (records.orEmpty() + agents).forEach { printer ->
+            val ok = status[printer.id]?.ok ?: return@forEach
+            val previous = knownStates.put(printer.id, ok) ?: return@forEach
+            if (previous != ok) app.prefs.addActivity(
+                employee, ua.chudo.scanner.data.ActivityKind.PRINTER,
+                if (ok) "Принтер знову онлайн" else "Принтер не відповідає", printer.displayName,
+            )
+        }
+    }
+
     val list = records.orEmpty()
     // «Основний для»: выбор этой сессии, иначе первый отвечающий принтер вида.
     val main = LabelKind.entries.associateWith { k ->
@@ -387,32 +400,31 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
     ) {
         item {
             MineHeader("Принтери", a.onBack) {
-                IconButton(onClick = a.onHelp) { Icon(Icons.AutoMirrored.Rounded.HelpOutline, "Допомога", tint = m.text) }
+                IconButton(onClick = a.onRefresh, enabled = !ui.scanning, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Rounded.Refresh, "Оновити список принтерів", tint = m.text)
+                }
             }
-            Text(
-                "Принтер налаштовується один раз. Далі друкуєш з картки товару однією кнопкою.",
-                Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp), fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary,
-            )
+            if (ui.scanning) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
         }
-        item {
-            MinePrimaryButton("Знайти принтери", a.onRefresh, icon = Icons.Rounded.Search, busy = ui.scanning)
-        }
-        item(key = "h-net") { SectionTitle("У мережі") }
+        item(key = "h-net") { SectionTitle("У мережі магазину") }
         items(network, key = { it.id }) { r -> RecordCard(r, ui, a) }
         items(ui.unknown, key = { "u" + it.ip }) { d -> UnknownCard(d, a.onAddUnknown) }
         if (network.isEmpty() && ui.unknown.isEmpty() && !ui.scanning) item(key = "e-net") { Empty("У мережі принтерів не знайдено.") }
 
-        item(key = "h-usb") { SectionTitle("USB") }
+        if (ui.usb.isNotEmpty()) item(key = "h-usb") { SectionTitle("USB") }
         items(ui.usb, key = { it.id }) { r -> RecordCard(r, ui, a) }
-        if (ui.usb.isEmpty()) item(key = "e-usb") { Empty("Підключи принтер кабелем USB OTG — він з'явиться тут.") }
 
-        item(key = "h-pc") { SectionTitle("Через комп'ютер (Godex)") }
+        item(key = "h-pc") { SectionTitle("Через комп’ютер") }
         items(ui.pcs, key = { "card" + it.uid }) { pc -> PcCardView(pc, a.onUnpairPc) }
         items(viaPc, key = { "pc" + it.id }) { r -> RecordCard(r, ui, a) }
         if (viaPc.isEmpty() && ui.pcs.isEmpty()) item(key = "e-pc") { Empty("Встанови на комп'ютер з Godex програму «ЧудоСкан Друк» і підключи його кодом.") }
         item(key = "pair") { MineButton("Підключити комп'ютер", a.onPairPc, Modifier.fillMaxWidth()) }
         item {
-            MineButton("Додати принтер за IP", a.onManual, Modifier.fillMaxWidth().padding(bottom = 24.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MineButton("Додати за IP", a.onManual, Modifier.weight(1f))
+                MineButton("Допомога", a.onHelp, Modifier.weight(1f))
+            }
+            Empty("Мережеві принтери спільні для телефонів магазину.")
         }
     }
 }
@@ -432,38 +444,26 @@ private fun RecordCard(r: PrinterRecord, ui: PrintersUi, a: PrintersActions) {
     val m = Mine.colors
     val status = ui.status[r.id]
     val inRegistry = ui.records.any { it.id == r.id } || r.transport == Link.USB
+    val address = r.address
+    val title = r.name.ifBlank { r.model.ifBlank { address } }
+    val main = if (ui.main[r.kind] == r.id) "основний для ${kindShort(r.kind)}" else null
     MineCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MineIconBox(if (r.kind == LabelKind.STICKY) Icons.Rounded.Sell else Icons.Rounded.Print)
-            Spacer(Modifier.width(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(if (r.kind == LabelKind.STICKY) Icons.Rounded.Sell else Icons.Rounded.Print, null, tint = m.text)
             Column(Modifier.weight(1f)) {
-                val address = r.address
-                val title = r.name.ifBlank { r.model.ifBlank { address } }
-                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 2)
-                if (address.isNotBlank() && title != address && !title.endsWith(" · $address")) {
-                    Text(address, fontSize = 14.sp, color = m.textSecondary, maxLines = 2)
-                }
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text, maxLines = 2)
+                val caption = listOfNotNull(address.takeIf { it.isNotBlank() && !title.contains(it) }, main).joinToString(" · ")
+                if (caption.isNotEmpty()) Text(caption, fontSize = 13.sp, color = m.textSecondary)
             }
-        }
-        if (ui.main[r.kind] == r.id) {
-            Spacer(Modifier.height(10.dp))
-            Surface(shape = RoundedCornerShape(8.dp), color = m.accentTone, contentColor = m.accent) {
-                Text("Основний для ${kindShort(r.kind)}", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        StatusLine(status, inRegistry)
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (status?.ok == false) {
-                MineButton("Знайти знову", { a.onFindAgain(r) }, Modifier.weight(1f), MineTone.DANGER)
+                MineButton("Знайти", { a.onFindAgain(r) }, tone = MineTone.DANGER)
             } else {
-                MineButton(
-                    "Тест друку", { a.onTest(r) }, Modifier.weight(1f), MineTone.ACCENT,
-                    enabled = ui.testing == null, busy = ui.testing == r.id,
-                )
+                MineButton("Тест", { a.onTest(r) }, enabled = ui.testing == null, busy = ui.testing == r.id)
             }
-            if (ui.records.any { it.id == r.id }) MineButton("Змінити", { a.onEdit(r) }, Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { StatusLine(status, inRegistry) }
+            if (ui.records.any { it.id == r.id }) TextButton(onClick = { a.onEdit(r) }) { Text("Змінити") }
         }
     }
 }
