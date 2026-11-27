@@ -12,7 +12,9 @@ export const adminSections = {
   },
   staff: {
     title: 'Співробітники', table: 'users', search: 'name', order: 'uid',
-    columns: [by('name', "Ім'я"), by('shop', 'Магазин'), by('approved', 'Стан', row => row.approved ? 'Підтверджено' : 'Очікує')],
+    columns: [by('name', 'Співробітник'), by('shop', 'Магазин'), by('admin', 'Роль', staffRole),
+      by('approved', 'Статус', row => row.approved ? 'Активний' : 'Очікує')],
+    fields: ['uid', 'phone', 'stock_admin', 'super_admin'],
   },
   printers: {
     title: 'Принтери', table: 'printers', search: 'model', order: 'shop_id', tie: 'id',
@@ -42,6 +44,13 @@ export const adminSections = {
 
 export const PAGE_SIZE = 30;
 
+function staffRole(row) {
+  if (row.super_admin) return 'Адмін мережі';
+  if (row.stock_admin) return 'Адмін залишків';
+  if (row.admin) return 'Адмін магазину';
+  return 'Консультант';
+}
+
 export function canViewSection(key, account) {
   if (['audit', 'security', 'deviceAccess'].includes(key)) return account.superAdmin;
   if (key === 'history' || ['stock', 'new', 'promo'].includes(key)) return account.canImport;
@@ -49,10 +58,18 @@ export function canViewSection(key, account) {
   return account.canImport || account.shopAdmin;
 }
 
-export function adminQuery(client, key, search, offset) {
+export function adminQuery(client, key, search, offset, status = '') {
   const section = adminSections[key];
-  let query = client.from(section.table).select(section.columns.map(column => column.key).join(','));
-  if (search) query = query.ilike(section.search, '%' + search.replace(/[\\%_]/g, '\\$&') + '%');
+  let query = client.from(section.table).select([...section.columns.map(column => column.key), ...(section.fields ?? [])].join(','));
+  if (search) {
+    const pattern = '%' + search.replace(/[\\%_]/g, '\\$&') + '%';
+    if (key === 'staff') {
+      const operand = '"' + pattern.replace(/[\\"]/g, '\\$&') + '"';
+      query = query.or(['name', 'phone', 'shop'].map(field => field + '.ilike.' + operand).join(','));
+    } else query = query.ilike(section.search, pattern);
+  }
+  if (key === 'staff' && ['pending', 'approved'].includes(status)) query = query.eq('approved', status === 'approved');
+  if (key === 'deviceAccess' && ['pending', 'approved', 'blocked'].includes(status)) query = query.eq('status', status);
   query = query.order(section.order, { ascending: !section.descending });
   if (section.tie) query = query.order(section.tie);
   return query.range(offset, offset + PAGE_SIZE);

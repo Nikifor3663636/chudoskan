@@ -131,8 +131,8 @@ onAuthStateChanged(auth, async (user) => {
       return;
     }
     me = { uid: user.uid, name: (u.name || 'Адмін').slice(0, 100), canImport, shopAdmin, superAdmin: u.superAdmin === true };
-    if (canImport) await homeView();
-    else await adminView('staff');
+    if (sb && canViewSection('staff', me)) await adminView('staff');
+    else await homeView();
   } catch (e) {
     render(`<div class="card"><p class="error">${esc(errorText(e))}</p><button id="out">Вийти</button></div>`);
     $('#out').onclick = () => signOut(auth);
@@ -150,39 +150,60 @@ const importKinds = [
 
 const icon = (path) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 
+const navIcons = {
+  products: 'M4 7l8-4 8 4v10l-8 4-8-4z M4 7l8 4 8-4 M12 11v10',
+  shops: 'M3 10h18l-2-6H5z M5 10v10h14V10 M10 20v-6h4v6 M3 10c0 4 6 4 6 0 0 4 6 4 6 0 0 4 6 4 6 0',
+  staff: 'M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M14 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M20 20v-2a4 4 0 0 0-3-4',
+  printers: 'M6 8V3h12v5 M6 17H3V8h18v9h-3 M6 14h12v7H6z M17 11h1',
+  devices: 'M3 4h18v13H3z M8 21h8 M12 17v4',
+  deviceAccess: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M11 17h2',
+  security: 'M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z M9 11l2 2 4-4',
+  audit: 'M3 12a9 9 0 1 1 2 6 M3 6v6h6 M12 7v5l3 2',
+};
+
 function importWorkspace(active, heading, content) {
-  const kinds = (sb ? importKinds : importKinds.slice(0, 1)).filter(({ key }) => canViewSection(key, me));
-  const tables = sb ? Object.entries(adminSections).filter(([key]) => canViewSection(key, me)) : [];
+  const sections = Object.fromEntries(Object.entries(adminSections).map(([key, item]) =>
+    [key, { key, label: item.title, path: navIcons[key] }]));
+  const imports = Object.fromEntries(importKinds.map(item => [item.key, item]));
+  const groups = [
+    ['Робота', [sections.products, imports.stock, imports.new, imports.promo]],
+    ['Мережа', [sections.shops, sections.staff, sections.printers, sections.devices]],
+    ['Безпека', [sections.deviceAccess, sections.security, sections.audit]],
+    ['Дані', [imports.history]],
+  ].map(([label, items]) => [label, items.filter(item =>
+    (sb || item.key === 'stock') && canViewSection(item.key, me))]);
+  const scope = me.superAdmin ? 'Уся мережа' : me.shopAdmin ? 'Мій магазин' : 'Залишки мережі';
   render(`<div class="workspace">
     <nav class="import-nav" aria-label="Розділи адміністратора">
-      ${kinds.length ? `<div class="nav-section">
-        <span class="nav-group">Імпорт з 1С</span>
-        ${kinds.map(({ key, label, path }) =>
-          `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${icon(path)}${label}</button>`).join('')}
-      </div>` : ''}
-      ${tables.length ? `<div class="nav-section">
-        <span class="nav-group">Адміністрування</span>
-        ${tables.map(([key, item]) => `<button type="button" data-kind="${key}" ${key === active ? 'aria-current="page"' : ''}>${item.title}</button>`).join('')}
-      </div>` : ''}
+      <div class="sidebar-brand"><img src="../logo.svg" alt=""><strong>ЧудоСкан</strong><small>Адмін</small></div>
+      <div class="sidebar-scope">${icon(navIcons.shops)}<div><strong>${scope}</strong><small>${me.superAdmin ? 'Адмін мережі' : me.shopAdmin ? 'Адмін магазину' : 'Адмін залишків'}</small></div></div>
+      <select class="mobile-nav" aria-label="Розділ адміністратора">
+        ${groups.filter(([, items]) => items.length).map(([label, items]) => `<optgroup label="${label}">
+          ${items.map(item => `<option value="${item.key}" ${item.key === active ? 'selected' : ''}>${item.label}</option>`).join('')}
+        </optgroup>`).join('')}
+      </select>
+      ${groups.filter(([, items]) => items.length).map(([label, items]) => `<div class="nav-section">
+        <span class="nav-group">${label}</span>
+        ${items.map(item => `<button type="button" data-kind="${item.key}" ${item.key === active ? 'aria-current="page"' : ''}>${icon(item.path)}${item.label}</button>`).join('')}
+      </div>`).join('')}
+      <div class="account"><span>${esc(me.name)}</span><button class="link" id="out">Вийти</button></div>
     </nav>
     <section aria-labelledby="import-title">
-      <div class="page-head">
-        <h1 id="import-title">${esc(heading)}</h1>
-        <div class="account"><span class="muted">${esc(me.name)}</span><button class="link" id="out">Вийти</button></div>
-      </div>
-      ${content}
+      <header class="page-head"><div><h1 id="import-title">${esc(heading)}</h1><small>${scope}</small></div></header>
+      <div class="page-body">${content}</div>
     </section>
   </div>`);
   $('#out').onclick = () => signOut(auth);
-  app.querySelectorAll('[data-kind]').forEach((button) => {
-    button.onclick = () => {
-      const kind = button.dataset.kind;
-      if (kind === active) return;
-      if (kind === 'stock') homeView();
-      else if (kind === 'history') historyView();
-      else if (adminSections[kind]) adminView(kind);
-      else highlightsView(kind);
-    };
+  const navigate = kind => {
+    if (kind === active) return;
+    if (kind === 'stock') homeView();
+    else if (kind === 'history') historyView();
+    else if (adminSections[kind]) adminView(kind);
+    else highlightsView(kind);
+  };
+  $('.mobile-nav').onchange = event => navigate(event.currentTarget.value);
+  app.querySelectorAll('[data-kind]').forEach(button => {
+    button.onclick = () => navigate(button.dataset.kind);
   });
 }
 
@@ -219,64 +240,100 @@ async function homeView(note = '') {
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) start(f); };
 }
 
-async function adminView(key, search = '', offset = 0) {
+const STAFF_FILTERS = [['', 'Усі'], ['pending', 'Очікують'], ['approved', 'Активні']];
+
+async function adminView(key, search = '', offset = 0, status = '') {
   const section = adminSections[key];
   if (!me || !canViewSection(key, me)) return;
-  importWorkspace(key, section.title, `<div class="card">
-    <form id="admin-search" class="row">
-      <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="Пошук" maxlength="100">
-      <button type="submit">Знайти</button>
-    </form>
-    <div id="admin-results" aria-live="polite"><p class="muted">Завантаження…</p></div>
+  const staff = key === 'staff';
+  const manageDevices = key === 'deviceAccess';
+  const filters = staff ? STAFF_FILTERS : manageDevices ? [...STAFF_FILTERS, ['blocked', 'Заблоковані']] : [];
+  importWorkspace(key, section.title, `<div class="card admin-panel">
+    <div class="admin-toolbar">
+      <form id="admin-search" class="row">
+        <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="${staff ? 'Ім’я, телефон, магазин' : 'Пошук'}" maxlength="100">
+        <button type="submit">Знайти</button>
+      </form>
+      ${filters.length ? `<div class="filters" role="group" aria-label="Статус">${filters.map(([value, label]) =>
+        `<button type="button" data-filter="${value}" aria-pressed="${value === status}">${label}</button>`).join('')}</div>` : ''}
+    </div>
+    <div id="admin-results" aria-live="polite"><p class="admin-message muted">Завантаження…</p></div>
   </div>`);
   const result = $('#admin-results');
   $('#admin-search').onsubmit = event => {
     event.preventDefault();
-    adminView(key, new FormData(event.currentTarget).get('search').trim());
+    adminView(key, new FormData(event.currentTarget).get('search').trim(), 0, status);
   };
+  app.querySelectorAll('[data-filter]').forEach(button => {
+    button.onclick = () => adminView(key, search, 0, button.dataset.filter);
+  });
   try {
-    const rows = must(await timed(adminQuery(sb, key, search, offset), READ_TIMEOUT, section.title));
+    const rows = must(await timed(adminQuery(sb, key, search, offset, status), READ_TIMEOUT, section.title));
     if (!result.isConnected) return;
     const cell = (column, row) => {
       const value = column.get(row);
+      if (staff && column.key === 'name') {
+        const name = String(row.name || '').trim() || 'Без імені';
+        const initials = name.split(/\s+/u).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase();
+        return `<div class="staff-person"><span class="initials" aria-hidden="true">${esc(initials)}</span>
+          <div><strong>${esc(name)}</strong>${row.phone ? `<small>${esc(row.phone)}</small>` : ''}</div></div>`;
+      }
       if (value == null || value === '') return '—';
+      if (staff && column.key === 'approved') {
+        return `<span class="status-pill ${row.approved ? 'approved' : 'pending'}">${esc(value)}</span>`;
+      }
+      if (manageDevices && column.key === 'status') {
+        const state = ['approved', 'pending', 'blocked', 'replaced'].includes(row.status) ? row.status : '';
+        return `<span class="status-pill ${state}">${esc(value)}</span>`;
+      }
       if (['at', 'paired_at', 'requested_at', 'seen_at'].includes(column.key)) return esc(when(value));
       return esc(typeof value === 'number' ? fmt(value) : value);
     };
     const page = rows.slice(0, PAGE_SIZE);
-    const manageDevices = key === 'deviceAccess';
     const columns = section.columns.filter(column => !manageDevices || column.key !== 'id');
-    const deviceButtons = row => {
+    const canApproveStaff = staff && (me.superAdmin || me.shopAdmin);
+    const rowButtons = row => {
+      if (canApproveStaff) {
+        return !row.approved && row.uid !== me.uid
+          ? '<button type="button" data-decision="approveStaff">Підтвердити</button>' : '';
+      }
       if (row.status === 'pending') return '<button type="button" data-decision="approve">Підтвердити</button> <button type="button" data-decision="block">Заблокувати</button>';
       if (row.status === 'approved') return '<button type="button" data-decision="block">Заблокувати</button>';
       return '';
     };
+    const hasActions = manageDevices || canApproveStaff;
     result.innerHTML = `${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
-      <table><thead><tr>${columns.map(column => `<th scope="col">${column.label}</th>`).join('')}${manageDevices ? '<th scope="col">Дії</th>' : ''}</tr></thead>
-      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td>${cell(column, row)}</td>`).join('')}${manageDevices ? `<td data-device-row="${index}">${deviceButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
-    </div>` : '<p class="muted">Записів немає.</p>'}
+      <table><thead><tr>${columns.map(column => `<th scope="col">${column.label}</th>`).join('')}${hasActions ? '<th scope="col">Дії</th>' : ''}</tr></thead>
+      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td>${cell(column, row)}</td>`).join('')}${hasActions ? `<td data-action-row="${index}">${rowButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
+    </div>` : `<p class="admin-message muted">${search || status ? 'За цим фільтром нічого не знайдено.' : 'Записів немає.'}</p>`}
     ${offset || rows.length > PAGE_SIZE ? `<div class="row pagination">
       ${offset ? '<button type="button" id="previous-page">Назад</button>' : ''}
       <span>Сторінка ${offset / PAGE_SIZE + 1}</span>
       ${rows.length > PAGE_SIZE ? '<button type="button" id="next-page">Далі</button>' : ''}
     </div>` : ''}`;
-    if (manageDevices) {
+    if (hasActions) {
       result.querySelectorAll('[data-decision]').forEach(button => {
         button.onclick = async () => {
-          const cell = button.closest('[data-device-row]');
-          const row = page[Number(cell.dataset.deviceRow)];
+          const cell = button.closest('[data-action-row]');
+          const row = page[Number(cell.dataset.actionRow)];
           const action = button.dataset.decision;
-          const question = action === 'approve'
-            ? 'Підтвердити цей пристрій? Попередній пристрій цього типу втратить доступ.'
-            : 'Заблокувати цей пристрій? Його активні сеанси завершаться.';
+          const question = {
+            approveStaff: `Підтвердити доступ для ${row.name || 'співробітника'}?`,
+            approve: 'Підтвердити цей пристрій? Попередній пристрій цього типу втратить доступ.',
+            block: 'Заблокувати цей пристрій? Його активні сеанси завершаться.',
+          }[action];
           if (!window.confirm(question)) return;
           cell.querySelectorAll('button').forEach(control => { control.disabled = true; });
           cell.querySelector('[role="alert"]')?.remove();
           try {
-            const changed = must(await timed(sb.rpc('decide_device_access', { p_id: row.id, p_action: action }), WRITE_TIMEOUT, 'доступ пристрою'));
+            const request = action === 'approveStaff'
+              ? sb.from('users').update({ approved: true, approved_by: me.uid, changed_at: new Date().toISOString() })
+                .eq('uid', row.uid).eq('approved', false).select('uid').maybeSingle()
+              : sb.rpc('decide_device_access', { p_id: row.id, p_action: action });
+            const changed = must(await timed(request, WRITE_TIMEOUT, 'підтвердження доступу'));
             if (result.isConnected) {
               if (!changed) throw new Error('Запит змінився або у вас немає доступу.');
-              await adminView(key, search, offset);
+              await adminView(key, search, Math.max(0, page.length === 1 && status ? offset - PAGE_SIZE : offset), status);
             }
           } catch (error) {
             if (!result.isConnected) return;
@@ -292,12 +349,12 @@ async function adminView(key, search = '', offset = 0) {
     }
     const previous = $('#previous-page');
     const next = $('#next-page');
-    if (previous) previous.onclick = () => adminView(key, search, offset - PAGE_SIZE);
-    if (next) next.onclick = () => adminView(key, search, offset + PAGE_SIZE);
+    if (previous) previous.onclick = () => adminView(key, search, offset - PAGE_SIZE, status);
+    if (next) next.onclick = () => adminView(key, search, offset + PAGE_SIZE, status);
   } catch (error) {
     if (!result.isConnected) return;
     result.innerHTML = `<p class="error" role="alert">${esc(errorText(error))}</p><button type="button" id="retry-admin">Повторити</button>`;
-    $('#retry-admin').onclick = () => adminView(key, search, offset);
+    $('#retry-admin').onclick = () => adminView(key, search, offset, status);
   }
 }
 

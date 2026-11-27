@@ -38,3 +38,18 @@ test('admin search uses one whitelisted field, escaped text and stable paginatio
   ]);
   assert.equal(adminSections.products.columns.at(-1).get({ q: { 21: 3, 31: 7 } }), 10);
 });
+
+test('staff search covers name, phone and shop while device filters match a specific status', () => {
+  const calls = [];
+  const client = {};
+  for (const method of ['from', 'select', 'or', 'eq', 'order', 'range']) {
+    client[method] = (...args) => { calls.push([method, ...args]); return client; };
+  }
+  adminQuery(client, 'staff', 'Одеса, ЧО 22', 0, 'pending');
+  assert.deepEqual(calls[2], ['or',
+    'name.ilike."%Одеса, ЧО 22%",phone.ilike."%Одеса, ЧО 22%",shop.ilike."%Одеса, ЧО 22%"']);
+  assert.deepEqual(calls[3], ['eq', 'approved', false]);
+  calls.length = 0;
+  adminQuery(client, 'deviceAccess', '', 0, 'blocked');
+  assert.deepEqual(calls[2], ['eq', 'status', 'blocked']);
+});
