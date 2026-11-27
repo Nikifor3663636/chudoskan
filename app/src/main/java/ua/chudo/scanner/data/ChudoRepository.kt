@@ -20,6 +20,7 @@ import uniffi.chudo_core.upcTitle
 sealed interface Via {
     data object Direct : Via
     data object Remembered : Via
+    data object StockArticle : Via
     data class UpcArticle(val article: String) : Via
     data class UpcTitle(val title: String) : Via
 }
@@ -73,13 +74,30 @@ class ChudoRepository(
      * 3. для штрихкода: UPCitemdb → вероятные артикулы → поиск каждого;
      * 4. для штрихкода: название из UPCitemdb → поиск по тексту.
      */
-    suspend fun lookup(raw: String, onStep: (String) -> Unit = {}): LookupResult {
+    suspend fun lookup(
+        raw: String,
+        stock: NetAvailability? = null,
+        onStep: (String) -> Unit = {},
+    ): LookupResult {
         val q = classifyQuery(raw)
         val code = q.normalized
         val barcode = code.takeIf { isBarcode(q.kind) }
 
         barcode?.let { bc ->
             prefs.rememberedProduct(bc)?.let { return LookupResult.Single(code, bc, it, Via.Remembered) }
+        }
+
+        if (stock != null && stock.barcode == barcode) {
+            val article = stock.item.article.trim()
+            if (article.isNotEmpty()) {
+                onStep("Шукаємо артикул $article з 1С…")
+                val exact = search(article).filter { it.exactMatch }.singleOrNull()
+                if (exact != null) return LookupResult.Single(code, barcode, exact.urlKey, Via.StockArticle)
+            }
+            onStep("Шукаємо «$code» на сайті…")
+            val exact = search(code).filter { it.exactMatch }.singleOrNull()
+            if (exact != null) return LookupResult.Single(code, barcode, exact.urlKey, Via.Direct)
+            return LookupResult.NotFound(code, barcode, emptyList())
         }
 
         onStep("Шукаємо «$code» на сайті…")

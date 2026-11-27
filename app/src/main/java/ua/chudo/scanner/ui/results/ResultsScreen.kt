@@ -61,7 +61,10 @@ import kotlinx.coroutines.launch
 import ua.chudo.scanner.ChudoApp
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Backend
-import ua.chudo.scanner.data.ChudoRepository
+import ua.chudo.scanner.data.NetAvailability
+import ua.chudo.scanner.ui.stock.NetworkStockCard
+import uniffi.chudo_core.classifyQuery
+import uniffi.chudo_core.isBarcode
 import ua.chudo.scanner.data.ProductHighlight
 import ua.chudo.scanner.data.ProductHighlights
 import ua.chudo.scanner.data.HighlightKind
@@ -80,12 +83,13 @@ import uniffi.chudo_core.Lang
 sealed interface ResultsState {
     data class Loading(val step: String) : ResultsState
     data class Done(val result: LookupResult) : ResultsState
+    data class Stock(val availability: NetAvailability) : ResultsState
     data class Failed(val error: UiError) : ResultsState
 }
 
 class ResultsViewModel(
-    private val repo: ChudoRepository,
     private val app: ChudoApp,
+    private val shopId: String,
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
@@ -99,13 +103,25 @@ class ResultsViewModel(
         job?.cancel()
         job = viewModelScope.launch {
             _state.value = ResultsState.Loading("Шукаємо…")
+            val classified = classifyQuery(query)
+            val stock = if (isBarcode(classified.kind)) {
+                try {
+                    app.networkLookup.byBarcode(shopId, classified.normalized)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            } else null
+
             _state.value = try {
-                val step: (String) -> Unit = { _state.value = ResultsState.Loading(it) }
-                ResultsState.Done(repo.lookup(query, step))
+                val result = app.repository.lookup(query, stock) { _state.value = ResultsState.Loading(it) }
+                if (result is LookupResult.NotFound && stock != null) ResultsState.Stock(stock)
+                else ResultsState.Done(result)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ResultsState.Failed(e.toUiError())
+                stock?.let { ResultsState.Stock(it) } ?: ResultsState.Failed(e.toUiError())
             }
         }
     }
@@ -114,12 +130,13 @@ class ResultsViewModel(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
+    shopId: String,
     onBack: () -> Unit,
     onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: ResultsViewModel = viewModel(factory = viewModelFactory {
-        initializer { ResultsViewModel(app.repository, app, createSavedStateHandle()) }
+        initializer { ResultsViewModel(app, shopId, createSavedStateHandle()) }
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -142,6 +159,7 @@ fun ResultsScreen(
                     is ResultsState.Failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         ErrorState(s.error, siteSearchUrl(Lang.UA, vm.query), vm::load)
                     }
+                    is ResultsState.Stock -> StockResult(s.availability)
                     is ResultsState.Done -> when (val r = s.result) {
                         is LookupResult.Single -> Loading("Відкриваємо товар…")
                         is LookupResult.Many -> ManyList(r) { urlKey ->
@@ -169,6 +187,20 @@ fun ResultsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StockResult(stock: NetAvailability) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(stock.item.name.ifBlank { stock.barcode }, style = MaterialTheme.typography.titleLarge, color = Mine.colors.text)
+        stock.item.article.takeIf { it.isNotBlank() }?.let {
+            Text("Артикул $it", color = Mine.colors.textSecondary)
+        }
+        NetworkStockCard(stock, Modifier.fillMaxWidth())
     }
 }
 
@@ -240,7 +272,7 @@ private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
 }
 
 private fun viaNote(via: Via): String? = when (via) {
-    Via.Direct, Via.Remembered -> null
+    Via.Direct, Via.Remembered, Via.StockArticle -> null
     is Via.UpcArticle -> "Штрихкод знайшли у відкритій базі, артикул ${via.article}. Обери свій товар — ми його запам'ятаємо."
     is Via.UpcTitle -> "Шукали за назвою з відкритої бази: «${via.title}». Перевір, що це саме твій товар."
 }

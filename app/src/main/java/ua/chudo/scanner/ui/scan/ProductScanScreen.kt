@@ -25,8 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.supervisorScope
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Backend
 import ua.chudo.scanner.data.Employee
@@ -55,7 +53,7 @@ fun ProductScanScreen(
     onSearch: (String) -> Unit,
     onProduct: (String, String) -> Unit,
     onPrint: (String, String) -> Unit,
-    onCart: () -> Unit,
+    onCart: (String?) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     var code by rememberSaveable { mutableStateOf<String?>(null) }
@@ -66,11 +64,10 @@ fun ProductScanScreen(
 
     LaunchedEffect(code, employee.shopId) {
         val barcode = code ?: return@LaunchedEffect
-        summary = supervisorScope {
-            val stock = async { optional { app.networkLookup.byBarcode(employee.shopId, barcode) } }
-            val lookup = optional { app.repository.lookup(barcode) } as? LookupResult.Single
+        summary = run {
+            val net = optional { app.networkLookup.byBarcode(employee.shopId, barcode) }
+            val lookup = optional { app.repository.lookup(barcode, net) } as? LookupResult.Single
             val product = lookup?.let { optional { app.repository.details(it.urlKey) } }
-            val net = stock.await()
             val flags = if (Backend.isSupabase) {
                 optional { ProductHighlights.forProduct(barcode, product?.article ?: net?.item?.article) }.orEmpty()
             } else emptyList()
@@ -125,7 +122,11 @@ fun ProductScanScreen(
         continuous = true,
         result = result,
         onManual = { manual = true },
-        onCartMode = onCart,
+        onCartMode = {
+            val scanned = code
+            code = null
+            onCart(scanned)
+        },
     )
     if (manual) AlertDialog(
         onDismissRequest = { manual = false },

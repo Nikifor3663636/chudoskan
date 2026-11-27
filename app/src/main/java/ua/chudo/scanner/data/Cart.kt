@@ -142,7 +142,7 @@ class CartRepository(
             val av = runCatching { net.byBarcode(shopId, bc) }.getOrNull()
             var siteFailed = false
             val site = try {
-                (repo.lookup(bc) as? LookupResult.Single)?.let { repo.details(it.urlKey) }
+                (repo.lookup(bc, av) as? LookupResult.Single)?.let { repo.details(it.urlKey) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {

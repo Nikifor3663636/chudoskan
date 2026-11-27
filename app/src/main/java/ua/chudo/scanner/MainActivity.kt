@@ -313,8 +313,8 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             arguments = listOf(navArgument("mode") { type = NavType.StringType; defaultValue = "barcode" }),
         ) { entry ->
             val arg = entry.arguments?.getString("mode").orEmpty()
+            val cart = LocalContext.current.chudoApp.cart
             if (arg == CART_MODE) {
-                val cart = LocalContext.current.chudoApp.cart
                 val last by cart.last.collectAsStateWithLifecycle()
                 ScannerScreen(onBarcode = cart::add, onClose = { nav.popBackStack() }, continuous = true, status = last)
                 return@composable
@@ -332,7 +332,10 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                     onSearch = { code -> nav.navigate(Routes.results(code)) },
                     onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
                     onPrint = { key, barcode -> nav.navigate(Routes.product(key, null, barcode, print = true)) },
-                    onCart = { nav.navigate(Routes.CART) },
+                    onCart = { barcode ->
+                        barcode?.let(cart::add)
+                        nav.navigate(Routes.CART)
+                    },
                 )
                 return@composable
             }
@@ -346,6 +349,7 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
         }
         composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) {
             ResultsScreen(
+                shopId = employee.shopId,
                 onBack = { nav.popBackStack() },
                 onOpenProduct = { urlKey, bc, scanned, replace ->
                     nav.navigate(Routes.product(urlKey, bc, scanned)) {
