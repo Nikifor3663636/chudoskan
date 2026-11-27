@@ -83,9 +83,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_digest: [u8; 32] = hex::decode(env::var("ANDROID_SIGNING_SHA256")?)?
         .try_into()
         .map_err(|_| "ANDROID_SIGNING_SHA256 must be a 32-byte digest")?;
+    let tls = TlsConnector::builder()
+        .disable_built_in_roots(true)
+        .add_root_certificate(native_tls::Certificate::from_pem(include_bytes!(
+            "../supabase-prod-ca-2021.crt"
+        ))?)
+        .build()?;
     let state = Arc::new(Gateway {
         database,
-        tls: MakeTlsConnector::new(TlsConnector::new()?),
+        tls: MakeTlsConnector::new(tls),
         http: HttpClient::builder()
             .timeout(Duration::from_secs(8))
             .redirect(reqwest::redirect::Policy::none())
