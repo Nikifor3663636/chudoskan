@@ -74,6 +74,8 @@ jobs:
           rm -f site/app/*.map
           mkdir -p site/stock
           cp web-stock/index.html web-stock/dist/app.js site/stock/
+          # Version the admin scripts so browsers pick up new releases immediately.
+          sed -i "s/src=\"app\.js\"/src=\"app.js?v=$GITHUB_SHA\"/; s/src=\"config\.js\"/src=\"config.js?v=$GITHUB_SHA\"/" site/stock/index.html
           # Публічний ключ Web API і id проєкту (доступ до даних вирішують firestore.rules).
           if [ -f app/google-services.json ]; then
             python3 -c 'import json; g=json.load(open("app/google-services.json")); print("window.CHUDO_FIREBASE=" + json.dumps({"apiKey": g["client"][0]["api_key"][0]["current_key"], "projectId": g["project_info"]["project_id"]}) + ";")' > site/stock/config.js
