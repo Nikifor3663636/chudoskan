@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,7 +40,7 @@ import ua.chudo.scanner.data.HighlightReport
 import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.data.ProductHighlight
 import ua.chudo.scanner.data.ProductHighlights
-import ua.chudo.scanner.ui.common.MineCard
+import ua.chudo.scanner.ui.common.MineChip
 import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.common.MinePrimaryButton
 import java.text.NumberFormat
@@ -60,7 +59,9 @@ fun HighlightsScreen(
     val scope = rememberCoroutineScope()
     val kind = initialKind
     val promo = kind == HighlightKind.PROMO
-    val sheet = (ctx.applicationContext as ua.chudo.scanner.ChudoApp).promoSheet
+    val sheet = ctx.chudoApp.promoSheet
+    var productsTab by rememberSaveable { mutableStateOf(false) }
+    val showProducts = !promo || productsTab
     var campaigns by remember { mutableStateOf<List<ua.chudo.scanner.data.PromoCampaign>?>(null) }
     var campaignError by remember { mutableStateOf(false) }
     var currentCampaign by remember { mutableStateOf<ua.chudo.scanner.data.PromoCampaign?>(null) }
@@ -81,7 +82,9 @@ fun HighlightsScreen(
             delay(ua.chudo.scanner.data.PromoSheet.REFRESH_MS)
         }
     }
-    var query by rememberSaveable { mutableStateOf("") }
+    var productQuery by rememberSaveable { mutableStateOf("") }
+    var campaignQuery by rememberSaveable { mutableStateOf("") }
+    val query = if (showProducts) productQuery else campaignQuery
     var rows by remember { mutableStateOf(emptyList<ProductHighlight>()) }
     var selected by remember { mutableStateOf<ProductHighlight?>(null) }
     var preview by remember { mutableStateOf<Pair<HighlightKind, List<ProductHighlight>>?>(null) }
@@ -116,7 +119,8 @@ fun HighlightsScreen(
         }
     }
 
-    LaunchedEffect(kind, query, refresh) {
+    LaunchedEffect(kind, showProducts, productQuery, refresh) {
+        if (!showProducts) return@LaunchedEffect
         rows = emptyList()
         more = false
         listError = false
@@ -140,16 +144,23 @@ fun HighlightsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item { MineHeader(kind.title, onBack) }
+        if (promo) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MineChip("Акції", !productsTab, { productsTab = false })
+                MineChip("Акційні товари", productsTab, { productsTab = true })
+            }
+        }
         item {
             OutlinedTextField(
-                query, { query = it }, Modifier.fillMaxWidth(), enabled = !working,
-                label = { Text(if (promo) "Акція, товар, штрихкод або артикул" else "Назва, штрихкод або артикул") }, singleLine = true, shape = Mine.fieldShape,
+                query, { if (showProducts) productQuery = it else campaignQuery = it },
+                Modifier.fillMaxWidth(), enabled = !working,
+                label = { Text(if (showProducts) "Назва, штрихкод або артикул" else "Назва акції, ТМ або постачальник") },
+                singleLine = true, shape = Mine.fieldShape,
             )
         }
-        if (promo) {
-            item { Text("Акції з Google Таблиці", style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+        if (!showProducts) {
             if (campaignError) item {
-                Text(if (campaigns == null) "Не вдалося завантажити таблицю акцій." else "Не вдалося оновити таблицю акцій.")
+                Text(if (campaigns == null) "Не вдалося завантажити акції." else "Не вдалося оновити акції.")
                 TextButton({ campaignRefresh++ }) { Text("Оновити") }
             } else if (campaigns == null) item { CircularProgressIndicator() }
             val visible = campaigns.orEmpty().filter { campaign ->
@@ -166,53 +177,58 @@ fun HighlightsScreen(
                     onClick = { currentCampaign = campaign },
                 )
             }
-            item { Text("Акційні товари", style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
         }
-        if (canUpload) item {
-            MinePrimaryButton("Завантажити звіт «${kind.title}»", {
-                picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream"))
-            }, enabled = !working)
-            Text("Колонки .xlsx — назва та штрихкод або артикул. Дати й акційна ціна за наявності.")
-        }
-        if (note.isNotEmpty()) item { Text(note) }
-        if (listError) item {
-            Text("Не вдалося завантажити список.")
-            TextButton({ refresh++ }) { Text("Повторити") }
-        } else if (!loading && rows.isEmpty()) item {
-            Text(if (query.isBlank()) "Активних записів поки немає." else "За цим запитом товарів немає.")
-        }
-        items(rows) { row ->
-            CatalogRow(
-                title = row.name,
-                detail = listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "),
-                trailing = row.promoPrice?.let(::highlightPrice),
-                onClick = { selected = row },
-            )
-        }
-        if (loading) item { CircularProgressIndicator() }
-        if (more && !loading) item {
-            TextButton({
-                val category = kind
-                val search = query
-                val offset = rows.size
-                val revision = refresh
-                loading = true
-                scope.launch {
-                    try {
-                        val page = ProductHighlights.page(category, search.trim(), offset)
-                        if (category == kind && search == query && revision == refresh) {
-                            rows = (rows + page).distinct()
-                            more = page.size == ProductHighlights.PAGE_SIZE
+        if (showProducts) {
+            if (canUpload) item {
+                MinePrimaryButton("Завантажити звіт «${kind.title}»", {
+                    picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream"))
+                }, enabled = !working)
+                Text("Колонки .xlsx — назва та штрихкод або артикул. Дати й акційна ціна за наявності.")
+            }
+            if (note.isNotEmpty()) item { Text(note) }
+            if (listError) item {
+                Text("Не вдалося завантажити список.")
+                TextButton({ refresh++ }) { Text("Повторити") }
+            } else if (!loading && rows.isEmpty()) item {
+                Text(when {
+                    query.isNotBlank() -> "За цим запитом товарів немає."
+                    promo -> "Акційні товари ще не опубліковано."
+                    else -> "Активних новинок поки немає."
+                })
+            }
+            items(rows) { row ->
+                CatalogRow(
+                    title = row.name,
+                    detail = listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "),
+                    trailing = row.promoPrice?.let(::highlightPrice),
+                    onClick = { selected = row },
+                )
+            }
+            if (loading) item { CircularProgressIndicator() }
+            if (more && !loading) item {
+                TextButton({
+                    val category = kind
+                    val search = query
+                    val offset = rows.size
+                    val revision = refresh
+                    loading = true
+                    scope.launch {
+                        try {
+                            val page = ProductHighlights.page(category, search.trim(), offset)
+                            if (category == kind && search == productQuery && revision == refresh) {
+                                rows = (rows + page).distinct()
+                                more = page.size == ProductHighlights.PAGE_SIZE
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            if (category == kind && search == productQuery) note = "Не вдалося завантажити наступні товари."
+                        } finally {
+                            if (category == kind && search == productQuery && revision == refresh) loading = false
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        if (category == kind && search == query) note = "Не вдалося завантажити наступні товари."
-                    } finally {
-                        if (category == kind && search == query && revision == refresh) loading = false
                     }
-                }
-            }) { Text("Показати ще") }
+                }) { Text("Показати ще") }
+            }
         }
     }
 
