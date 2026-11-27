@@ -74,7 +74,7 @@ fun ScannerSettingsScreen(employee: ua.chudo.scanner.data.Employee, onBack: () -
             Text("Офлайн", Modifier.padding(16.dp), color = m.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Setting(
                 "Зберігати залишки свого магазину",
-                if (loading) "Завантаження…" else snapshot?.let { "${it.rows.size} товарів · до 3 днів" } ?: "Завантажте копію залишків для сканування без мережі",
+                if (loading) "Завантаження…" else snapshot?.let { "${it.rows.size} товарів · до 3 днів" } ?: "Завантажте копію залишків для пошуку й сканування без мережі",
                 snapshot != null,
                 enabled = !loading,
                 onChange = ::changeCache,
@@ -97,7 +97,13 @@ private fun Setting(title: String, detail: String, checked: Boolean, enabled: Bo
             Text(title, fontWeight = FontWeight.SemiBold, color = m.text, fontSize = 16.sp)
             Text(detail, color = m.textSecondary, fontSize = 13.sp)
         }
-        Switch(checked, onCheckedChange = null, enabled = enabled)
+        Switch(
+            checked, onCheckedChange = null, enabled = enabled,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = m.bg, checkedTrackColor = m.text, checkedBorderColor = m.text,
+                uncheckedThumbColor = m.textSecondary, uncheckedTrackColor = m.field, uncheckedBorderColor = m.outline,
+            ),
+        )
     }
     HorizontalDivider(color = m.line)
 }

@@ -1,6 +1,17 @@
 package ua.chudo.scanner.ui.results
 
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.HorizontalDivider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.data.OfflineStockItem
+import ua.chudo.scanner.data.search
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
@@ -80,16 +91,17 @@ import ua.chudo.scanner.ui.common.toUiError
 import uniffi.chudo_core.siteSearchUrl
 import uniffi.chudo_core.Lang
 
-sealed interface ResultsState {
+internal sealed interface ResultsState {
     data class Loading(val step: String) : ResultsState
     data class Done(val result: LookupResult) : ResultsState
     data class Stock(val availability: NetAvailability) : ResultsState
     data class Failed(val error: UiError) : ResultsState
+    data class Offline(val updatedAt: Long?, val matches: List<OfflineStockItem>) : ResultsState
 }
 
-class ResultsViewModel(
+internal class ResultsViewModel(
     private val app: ChudoApp,
-    private val shopId: String,
+    private val employee: Employee,
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
@@ -103,26 +115,45 @@ class ResultsViewModel(
         job?.cancel()
         job = viewModelScope.launch {
             _state.value = ResultsState.Loading("Шукаємо…")
-            val classified = classifyQuery(query)
-            val stock = if (isBarcode(classified.kind)) {
-                try {
-                    app.networkLookup.byBarcode(shopId, classified.normalized)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    null
-                }
-            } else null
+            val manager = app.getSystemService(ConnectivityManager::class.java)
+            val connected = manager?.getNetworkCapabilities(manager.activeNetwork)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ?: false
+            val snapshot = app.offlineStock.load(employee)
+            val online = when {
+                !connected -> null
+                snapshot == null -> lookupOnline()
+                else -> withTimeoutOrNull(4_000L) { lookupOnline() }
+            }
+            val matches = if (online == null || online is ResultsState.Failed ||
+                online is ResultsState.Done && online.result is LookupResult.NotFound
+            ) snapshot?.let { withContext(Dispatchers.Default) { it.search(query) } }.orEmpty()
+            else emptyList()
+            _state.value = if (online == null || matches.isNotEmpty()) {
+                ResultsState.Offline(snapshot?.updatedAt, matches)
+            } else online
+        }
+    }
 
-            _state.value = try {
-                val result = app.repository.lookup(query, stock) { _state.value = ResultsState.Loading(it) }
-                if (result is LookupResult.NotFound && stock != null) ResultsState.Stock(stock)
-                else ResultsState.Done(result)
+    private suspend fun lookupOnline(): ResultsState {
+        val classified = classifyQuery(query)
+        val stock = if (isBarcode(classified.kind)) {
+            try {
+                app.networkLookup.byBarcode(employee.shopId, classified.normalized)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                stock?.let { ResultsState.Stock(it) } ?: ResultsState.Failed(e.toUiError())
+            } catch (_: Exception) {
+                null
             }
+        } else null
+
+        return try {
+            val result = app.repository.lookup(query, stock) { _state.value = ResultsState.Loading(it) }
+            if (result is LookupResult.NotFound && stock != null) ResultsState.Stock(stock)
+            else ResultsState.Done(result)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            stock?.let { ResultsState.Stock(it) } ?: ResultsState.Failed(e.toUiError())
         }
     }
 }
@@ -130,14 +161,14 @@ class ResultsViewModel(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
-    shopId: String,
+    employee: Employee,
     onBack: () -> Unit,
     onBrowseProducts: (List<String>) -> Unit = {},
     onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
     val vm: ResultsViewModel = viewModel(factory = viewModelFactory {
-        initializer { ResultsViewModel(app, shopId, createSavedStateHandle()) }
+        initializer { ResultsViewModel(app, employee, createSavedStateHandle()) }
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
@@ -161,6 +192,7 @@ fun ResultsScreen(
                         ErrorState(s.error, siteSearchUrl(Lang.UA, vm.query), vm::load)
                     }
                     is ResultsState.Stock -> StockResult(s.availability)
+                    is ResultsState.Offline -> OfflineResults(s, vm::load)
                     is ResultsState.Done -> when (val r = s.result) {
                         is LookupResult.Single -> Loading("Відкриваємо товар…")
                         is LookupResult.Many -> ManyList(r) { urlKey ->
@@ -188,6 +220,43 @@ fun ResultsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OfflineResults(result: ResultsState.Offline, onRetry: () -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        item {
+            val date = result.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
+            Text(
+                date?.let { "Офлайн · залишки вашого магазину станом на $it" }
+                    ?: "Офлайн-каталог недоступний. Завантажте залишки в налаштуваннях сканера, коли з’явиться інтернет.",
+                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                color = Mine.colors.textSecondary,
+            )
+        }
+        if (result.matches.isEmpty()) item {
+            MessageState(
+                icon = Icons.Rounded.SearchOff,
+                title = if (result.updatedAt == null) "Немає з’єднання" else "У збережених залишках нічого не знайдено",
+                text = if (result.updatedAt == null) "Підключіться до інтернету, щоб завантажити каталог." else "Спробуйте іншу назву, артикул або штрихкод.",
+                primary = "Повторити пошук" to onRetry,
+            )
+        }
+        items(result.matches) { item ->
+            Surface(color = Mine.colors.card) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(item.name.ifBlank { item.barcode }, style = MaterialTheme.typography.titleMedium)
+                        Text(listOf(item.article, item.code, item.barcode).filter(String::isNotBlank).distinct().joinToString(" · "),
+                            color = Mine.colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text("${java.text.NumberFormat.getInstance().format(item.quantity)} шт", color = Mine.colors.success)
+                }
+            }
+            HorizontalDivider(color = Mine.colors.line)
         }
     }
 }

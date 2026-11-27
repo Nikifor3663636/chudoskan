@@ -255,6 +255,22 @@ fun HomeContent(
                 }
                 banner()
             }
+            if (ui.history.isNotEmpty()) {
+                item {
+                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Нещодавні", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
+                        TextButton(onClick = onHistory) { Text("Історія", color = m.link) }
+                    }
+                    Surface(shape = Mine.cardShape, color = m.card, border = BorderStroke(1.dp, m.line)) {
+                        Column(Modifier.padding(horizontal = 10.dp)) {
+                            val recent = ui.history.take(4)
+                            recent.forEachIndexed { index, product ->
+                                HistoryRow(product, index < recent.lastIndex, onOpenProduct)
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 Text("Швидкі дії", Modifier.padding(top = 20.dp, bottom = 10.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,22 +285,6 @@ fun HomeContent(
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         QuickAction(Icons.Rounded.AutoAwesome, "Новинки", ui.newCount?.let { "$it шт" }, { open(HighlightKind.NEW) }, Modifier.weight(1f))
                         QuickAction(Icons.Outlined.LocalOffer, "Акції", ui.promoCount?.let { "$it шт" }, { open(HighlightKind.PROMO) }, Modifier.weight(1f))
-                    }
-                }
-            }
-            if (ui.history.isNotEmpty()) {
-                item {
-                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Нещодавні", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-                        TextButton(onClick = onHistory) { Text("Історія", color = m.link) }
-                    }
-                    Surface(shape = Mine.cardShape, color = m.card, border = BorderStroke(1.dp, m.line)) {
-                        Column(Modifier.padding(horizontal = 10.dp)) {
-                            val recent = ui.history.take(4)
-                            recent.forEachIndexed { index, product ->
-                                HistoryRow(product, index < recent.lastIndex, onOpenProduct)
-                            }
-                        }
                     }
                 }
             }

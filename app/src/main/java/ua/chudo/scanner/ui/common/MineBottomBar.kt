@@ -61,7 +61,7 @@ fun MineBottomBar(
 ) {
     val m = Mine.colors
     Column(Modifier.fillMaxWidth().background(m.card).navigationBarsPadding()) {
-        HorizontalDivider(color = m.line)
+        HorizontalDivider(color = if (m.dark) m.line else Color(0xFFE7E1DA))
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp), verticalAlignment = Alignment.CenterVertically) {
             TabItem(MainTab.HOME, tab, Icons.Outlined.Home, "Головна", onTab)
             TabItem(MainTab.LABELS, tab, Icons.Rounded.Print, "Друк цінників", onTab)

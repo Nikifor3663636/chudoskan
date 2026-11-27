@@ -1,5 +1,6 @@
 package ua.chudo.scanner.ui.profile
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -191,40 +200,40 @@ fun ProfileContent(
     onOperations: () -> Unit = {},
 ) {
     val m = Mine.colors
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())) {
         MineHeader("Профіль", onBack)
-        Row(Modifier.padding(top = 12.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().background(m.card).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(ui.name, size = 48.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(ui.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text)
+                Text(ui.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text)
                 Text(listOf(ui.shop, ui.phone).filter(String::isNotBlank).joinToString(" · "), Modifier.padding(top = 2.dp), fontSize = 13.sp, color = m.textSecondary)
             }
             IconButton(onClick = onEditName) { Icon(Icons.Rounded.Edit, "Змінити ім'я", tint = m.textSecondary) }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Робота", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        Text("Робота", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
 
-        Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text) {
+        Surface(Modifier.fillMaxWidth(), color = m.card, contentColor = m.text) {
             Column {
                 if (ui.networkAdmin) {
-                    ProfileRow("Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
+                    ProfileRow(Icons.Outlined.Groups, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
                     RowDivider()
                 }
                 if (ui.myShop) {
-                    ProfileRow("Мій магазин", "Співробітники", onClick = onMyShop)
+                    ProfileRow(Icons.Outlined.Group, "Мій магазин", "Співробітники", onClick = onMyShop)
                     RowDivider()
                 }
                 if (ui.admin) {
-                    ProfileRow("Принтери", "Налаштування", onClick = onPrinters)
+                    ProfileRow(Icons.Outlined.Print, "Принтери", "Налаштування", onClick = onPrinters)
                     RowDivider()
                 }
-                ProfileRow("Історія операцій", null, onClick = onOperations)
+                ProfileRow(Icons.Outlined.History, "Історія операцій", null, onClick = onOperations)
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Тема", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Тема", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK).forEach { mode ->
                 Surface(
                     onClick = { onTheme(mode) },
@@ -240,20 +249,21 @@ fun ProfileContent(
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Застосунок", Modifier.padding(bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
-        Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text) {
+        Text("Застосунок", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        Surface(Modifier.fillMaxWidth(), color = m.card, contentColor = m.text) {
             Column {
-                ProfileRow("Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
+                ProfileRow(Icons.Outlined.Settings, "Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
                 RowDivider()
-                ProfileRow("Змінити пароль", null, onClick = onPassword)
+                ProfileRow(Icons.Outlined.Lock, "Змінити пароль", null, onClick = onPassword)
                 RowDivider()
                 ProfileRow(
+                    Icons.Outlined.Download,
                     "Перевірити оновлення",
                     if (ui.checking) "Перевіряю…" else ui.version.takeIf { it.isNotEmpty() }?.let { "Версія $it" },
                     onClick = onCheckUpdate,
                 )
                 RowDivider()
-                ProfileRow("Вийти", null, danger = true, onClick = onLogout)
+                ProfileRow(Icons.Outlined.Logout, "Вийти", null, danger = true, onClick = onLogout)
             }
         }
         Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
@@ -263,13 +273,15 @@ fun ProfileContent(
 }
 
 @Composable
-private fun ProfileRow(label: String, value: String?, danger: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun ProfileRow(icon: ImageVector, label: String, value: String?, danger: Boolean = false, onClick: (() -> Unit)? = null) {
     val m = Mine.colors
     Row(
         Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .heightIn(min = 56.dp).padding(horizontal = 18.dp, vertical = 14.dp),
+            .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(icon, null, Modifier.size(20.dp), tint = if (danger) m.logout else m.text)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (danger) m.logout else m.text)
             value?.let { Text(it, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = m.textSecondary) }

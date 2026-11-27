@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -239,15 +240,14 @@ fun PrintSheetContent(
             Text(ui.subtitle, Modifier.padding(top = 4.dp), fontSize = 14.sp, lineHeight = 20.sp, color = m.textSecondary)
         }
         Column {
-            Text("Формат", Modifier.padding(bottom = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Template.entries.forEach { t -> MineChip(formatTitle(t), ui.format == t, { onFormat(t) }) }
             }
         }
         preview?.invoke()
         if (ui.format.kind == LabelKind.PLAIN) OrientationPicker(ui.format, ui.landscape, onLandscape)
         if (ui.oldPrice != null && ui.format.kind == LabelKind.PLAIN) {
-            Surface(shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text) {
+            Surface(shape = Mine.fieldShape, color = m.card, contentColor = m.text) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Акційний цінник", fontSize = 16.sp, fontWeight = FontWeight.Medium)
@@ -257,7 +257,7 @@ fun PrintSheetContent(
                     Switch(
                         ui.promo, onPromo,
                         colors = SwitchDefaults.colors(
-                            checkedTrackColor = m.accent, checkedThumbColor = m.onAccent, checkedBorderColor = Color.Transparent,
+                            checkedTrackColor = m.text, checkedThumbColor = m.bg, checkedBorderColor = m.text,
                             uncheckedTrackColor = m.surface, uncheckedThumbColor = m.textSecondary, uncheckedBorderColor = m.outline,
                         ),
                     )

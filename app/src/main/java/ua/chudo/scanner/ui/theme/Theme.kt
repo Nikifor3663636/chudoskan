@@ -73,7 +73,7 @@ val MineDark = MineColors(
 
 val MineLight = MineColors(
     dark = false,
-    bg = Color(0xFFF7F5F2), surface = Color(0xFFFCFAF7), card = Color(0xFFFFFFFF), line = Color(0xFFE7E1DA),
+    bg = Color(0xFFF3F4F6), surface = Color(0xFFFFFFFF), card = Color(0xFFFFFFFF), line = Color(0xFFE1E3E8),
     outline = Color(0xFFC9CDD4), text = Color(0xFF15171C), textSecondary = Color(0xFF545B67),
     accent = Color(0xFFFF7500), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFFFFF0E3),
     danger = Color(0xFFFCEAE8), onDanger = Color(0xFFB42620), success = Color(0xFF1E7F47),
@@ -85,8 +85,8 @@ val LocalMine = staticCompositionLocalOf { MineDark }
 
 /** Токены текущей темы: `Mine.colors.accent`. */
 object Mine {
-    val fieldShape = RoundedCornerShape(18.dp)
-    val cardShape = RoundedCornerShape(24.dp)
+    val fieldShape = RoundedCornerShape(8.dp)
+    val cardShape = RoundedCornerShape(12.dp)
     val pillShape = RoundedCornerShape(50)
     val colors: MineColors @Composable get() = LocalMine.current
 }

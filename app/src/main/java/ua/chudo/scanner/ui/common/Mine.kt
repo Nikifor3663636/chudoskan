@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.theme.Mine
 
-/** Основная кнопка: на всю ширину, 56 dp, «таблетка», акцент. */
+/** Основная кнопка: на всю ширину, 56 dp, акцент. */
 @Composable
 fun MinePrimaryButton(
     text: String,
@@ -58,7 +58,7 @@ fun MinePrimaryButton(
     Button(
         onClick = onClick, enabled = enabled && !busy,
         modifier = modifier.fillMaxWidth().heightIn(min = height),
-        shape = Mine.pillShape,
+        shape = Mine.fieldShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = m.accent, contentColor = m.onAccent,
             disabledContainerColor = m.accent.copy(alpha = 0.5f), disabledContentColor = m.onAccent.copy(alpha = 0.7f),
@@ -130,12 +130,12 @@ fun StatusDot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).clip(CircleShape).background(color))
 }
 
-/** Заголовок экрана: «назад», 26 sp жирный, справа — действие. */
+/** Заголовок экрана с навигацией и дополнительным действием. */
 @Composable
 fun MineHeader(title: String, onBack: () -> Unit, action: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", tint = Mine.colors.text) }
-        Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.headlineMedium, color = Mine.colors.text)
+        Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp), color = Mine.colors.text)
         action()
     }
 }
@@ -145,9 +145,9 @@ fun MineHeader(title: String, onBack: () -> Unit, action: @Composable () -> Unit
 fun MineChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 48.dp) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, modifier = modifier.heightIn(min = height), shape = Mine.pillShape,
-        color = if (selected) m.accentTone else Color.Transparent,
-        contentColor = if (selected) m.link else m.text,
+        onClick = onClick, modifier = modifier.heightIn(min = height), shape = Mine.fieldShape,
+        color = if (selected) m.text else m.card,
+        contentColor = if (selected) m.bg else m.text,
         border = if (selected) null else BorderStroke(1.dp, m.outline),
     ) {
         Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
