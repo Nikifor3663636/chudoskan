@@ -2,6 +2,7 @@ package ua.chudo.scanner.data
 
 import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.PostgresAction
@@ -11,6 +12,10 @@ import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -73,6 +78,9 @@ object SupabaseUsers {
     suspend fun profile(uid: String): UserRow? =
         db.from("users").select { filter { eq("uid", uid) } }.decodeList<UserRow>().firstOrNull()
 
+    suspend fun deviceLoginProfile(): UserRow? =
+        db.postgrest.rpc("device_login_profile").decodeList<UserRow>().firstOrNull()
+
     /** Анкета під час реєстрації — завжди непідтверджена (ролі ставить RLS / Dashboard). Уже є — переписати (до підтвердження). */
     suspend fun saveProfile(uid: String, name: String, phone: String, region: String, shop: String, shopId: String) {
         val fields = buildJsonObject {
@@ -91,7 +99,16 @@ object SupabaseUsers {
     }
 
     /** Зміни рядків таблиці (Realtime, з тими самими RLS). [filter] — напр. «uid=eq.abc». */
-    fun changes(table: String, filter: String? = null): Flow<Unit> = callbackFlow {
+    fun changes(table: String, filter: String? = null): Flow<Unit> =
+        if (DeviceGateway.enabled) flow {
+            // Realtime change checks don't receive the PostgREST device-session header.
+            while (currentCoroutineContext().isActive) {
+                delay(10_000)
+                emit(Unit)
+            }
+        } else realtimeChanges(table, filter)
+
+    private fun realtimeChanges(table: String, filter: String?): Flow<Unit> = callbackFlow {
         val ch = db.channel("$table-${filter ?: "all"}-${System.nanoTime()}")
         val flow = ch.postgresChangeFlow<PostgresAction>(schema = "public") {
             this.table = table

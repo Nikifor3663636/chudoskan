@@ -7,3 +7,13 @@ publish = false
 [dependencies]
 p256 = { version = "0.13", features = ["ecdsa"] }
 postgres = "0.19"
+base64 = "0.22"
+hex = "0.4"
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
+native-tls = "0.2"
+octet-attest-verify = { version = "=2.6.0", features = ["keyattest"] }
+postgres-native-tls = "0.5"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny_http = "0.12"

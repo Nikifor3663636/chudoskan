@@ -6,6 +6,7 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
+import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -35,6 +36,22 @@ object Supabase {
             accessToken = { FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.token }
             install(Postgrest) { serializer = io.github.jan.supabase.serializer.KotlinXSerializer(json) }
             install(Realtime)
+            if (DeviceGateway.enabled) {
+                val supabaseHost = java.net.URI(BuildConfig.SUPABASE_URL).host
+                httpEngine = OkHttp.create {
+                    config { followRedirects(false); followSslRedirects(false) }
+                    addInterceptor { chain ->
+                        val request = chain.request()
+                        val session = if (request.url.isHttps && request.url.host == supabaseHost) {
+                            FirebaseAuth.getInstance().currentUser?.uid?.let(DeviceGateway::sessionFor)
+                        } else null
+                        val authenticated = session?.let {
+                            request.newBuilder().header("X-Device-Session", it).build()
+                        } ?: request
+                        chain.proceed(authenticated)
+                    }
+                }
+            }
         }
     }
 

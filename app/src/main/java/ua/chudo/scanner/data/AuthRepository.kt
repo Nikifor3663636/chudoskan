@@ -9,6 +9,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +62,8 @@ sealed interface AuthState {
     data class NoProfile(val phone: String) : AuthState
     data class Pending(val employee: Employee) : AuthState
     data class Ready(val employee: Employee) : AuthState
+    data object DevicePending : AuthState
+    data object DeviceBlocked : AuthState
     data class Failed(val message: String) : AuthState
 }
 
@@ -100,6 +104,7 @@ class AuthRepository(context: Context) {
         profileListener = null
         profileJob?.cancel()
         profileJob = null
+        DeviceGateway.clear()
         if (user == null) {
             _state.value = AuthState.SignedOut
             return
@@ -132,12 +137,41 @@ class AuthRepository(context: Context) {
         }
         try {
             Supabase.ensureRole(user)
-            read()
-            SupabaseUsers.changes("users", "uid=eq.${user.uid}").collect { runCatching { read() } }
+            if (DeviceGateway.enabled) {
+                watchDeviceAccess(user)
+            } else {
+                read()
+                SupabaseUsers.changes("users", "uid=eq.${user.uid}").collect { runCatching { read() } }
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             if (auth.currentUser?.uid == user.uid) _state.value = AuthState.Failed(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private suspend fun watchDeviceAccess(user: FirebaseUser) {
+        while (auth.currentUser?.uid == user.uid) {
+            val next = try {
+                val employee = SupabaseUsers.deviceLoginProfile()?.employee(phoneOf(user))
+                when {
+                    employee == null -> AuthState.NoProfile(phoneOf(user))
+                    !employee.approved -> AuthState.Pending(employee)
+                    else -> when (DeviceGateway.check(user)) {
+                        DeviceAccess.Pending -> AuthState.DevicePending
+                        DeviceAccess.Blocked -> AuthState.DeviceBlocked
+                        DeviceAccess.Approved -> AuthState.Ready(employee)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                AuthState.Failed("Не вдалося перевірити доступ. Повторюємо автоматично.")
+            }
+            if (auth.currentUser?.uid != user.uid) return
+            if (next !is AuthState.Ready) DeviceGateway.clear()
+            _state.value = next
+            delay(30_000)
         }
     }
 
