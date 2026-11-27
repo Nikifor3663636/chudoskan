@@ -1,5 +1,14 @@
 package ua.chudo.scanner.ui.print
 
+import androidx.compose.ui.graphics.Color
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextOverflow
+import ua.chudo.scanner.R
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -394,120 +403,160 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
     val m = Mine.colors
     val network = ui.records.filter { it.transport == Link.TCP }
     val viaPc = ui.records.filter { it.transport == Link.AGENT } + ui.agents
-    LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
-            MineHeader("Принтери", a.onBack) {
-                IconButton(onClick = a.onRefresh, enabled = !ui.scanning, modifier = Modifier.size(52.dp)) {
-                    Icon(Icons.Rounded.Refresh, "Оновити список принтерів", tint = m.text)
+            Row(
+                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = a.onBack, modifier = Modifier.size(40.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
+                }
+                Text("Принтери", Modifier.weight(1f).padding(start = 4.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+                IconButton(onClick = a.onRefresh, enabled = !ui.scanning, modifier = Modifier.size(40.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_refresh_cw), "Знайти знову", Modifier.size(20.dp), tint = m.textSecondary)
                 }
             }
-            if (ui.scanning) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (ui.scanning) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth(), color = m.accent, trackColor = m.line)
         }
         item(key = "h-net") { SectionTitle("У мережі магазину") }
-        items(network, key = { it.id }) { r -> RecordCard(r, ui, a) }
-        items(ui.unknown, key = { "u" + it.ip }) { d -> UnknownCard(d, a.onAddUnknown) }
+        items(network, key = { it.id }) { r -> RecordRow(r, ui, a) }
+        items(ui.unknown, key = { "u" + it.ip }) { d -> UnknownRow(d, a.onAddUnknown) }
         if (network.isEmpty() && ui.unknown.isEmpty() && !ui.scanning) item(key = "e-net") { Empty("У мережі принтерів не знайдено.") }
 
         if (ui.usb.isNotEmpty()) item(key = "h-usb") { SectionTitle("USB") }
-        items(ui.usb, key = { it.id }) { r -> RecordCard(r, ui, a) }
+        items(ui.usb, key = { it.id }) { r -> RecordRow(r, ui, a) }
 
         item(key = "h-pc") { SectionTitle("Через комп’ютер") }
-        items(ui.pcs, key = { "card" + it.uid }) { pc -> PcCardView(pc, a.onUnpairPc) }
-        items(viaPc, key = { "pc" + it.id }) { r -> RecordCard(r, ui, a) }
-        if (viaPc.isEmpty() && ui.pcs.isEmpty()) item(key = "e-pc") { Empty("Встанови на комп'ютер з Godex програму «ЧудоСкан Друк» і підключи його кодом.") }
-        item(key = "pair") { MineButton("Підключити комп'ютер", a.onPairPc, Modifier.fillMaxWidth()) }
+        items(ui.pcs, key = { "card" + it.uid }) { pc -> PcRow(pc, a.onUnpairPc) }
+        items(viaPc, key = { "pc" + it.id }) { r -> RecordRow(r, ui, a) }
+        item(key = "pair") {
+            LinkRow(R.drawable.ic_redesign_plus, "Підключити комп’ютер", "Код з програми «ЧудоСкан Друк»", a.onPairPc)
+            LinkRow(R.drawable.ic_redesign_plus, "Додати за IP", "Мережевий принтер, порт 9100", a.onManual)
+            LinkRow(R.drawable.ic_redesign_settings, "Допомога", "Як підключити принтер", a.onHelp)
+        }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MineButton("Додати за IP", a.onManual, Modifier.weight(1f))
-                MineButton("Допомога", a.onHelp, Modifier.weight(1f))
-            }
-            Empty("Мережеві принтери спільні для телефонів магазину.")
+            Text(
+                "Принтери знаходяться автоматично й спільні для всіх телефонів магазину.",
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp), fontSize = 13.sp, color = m.textTertiary,
+            )
         }
     }
 }
 
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary)
+    val m = Mine.colors
+    Column {
+        Text(text, Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+        HorizontalDivider(color = m.line)
+    }
 }
 
 @Composable
 private fun Empty(text: String) {
-    Text(text, Modifier.padding(horizontal = 4.dp), fontSize = 14.sp, color = Mine.colors.textSecondary)
+    val m = Mine.colors
+    Column(Modifier.fillMaxWidth().background(m.card)) {
+        Text(text, Modifier.padding(horizontal = 16.dp, vertical = 14.dp), fontSize = 14.sp, color = m.textSecondary)
+        HorizontalDivider(color = m.line)
+    }
+}
+
+/** Рядок списку як у дизайні: іконка, назва, підпис, дія справа. */
+@Composable
+private fun PrinterRow(
+    @DrawableRes icon: Int,
+    title: String,
+    onClick: (() -> Unit)?,
+    sub: @Composable () -> Unit,
+    trailing: @Composable () -> Unit = {},
+) {
+    val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().background(m.card).then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = m.textSecondary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            sub()
+        }
+        trailing()
+    }
+    HorizontalDivider(color = m.line)
 }
 
 @Composable
-private fun RecordCard(r: PrinterRecord, ui: PrintersUi, a: PrintersActions) {
+private fun RowSub(text: String, color: Color = Mine.colors.textTertiary, dot: Color? = null) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        dot?.let { StatusDot(it, Modifier.size(8.dp)) }
+        Text(text, fontSize = 13.sp, lineHeight = 17.sp, color = color)
+    }
+}
+
+/** Мала кнопка «Тест» / «Знайти» / «Відключити». */
+@Composable
+private fun SmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, busy: Boolean = false, danger: Boolean = false) {
+    val m = Mine.colors
+    Surface(
+        onClick = onClick, enabled = enabled && !busy, modifier = Modifier.height(36.dp),
+        shape = RoundedCornerShape(6.dp), color = if (danger) Color.Transparent else m.card,
+        contentColor = if (danger) m.danger else m.text,
+        border = if (danger) null else BorderStroke(1.dp, m.outline),
+    ) {
+        Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = m.accent)
+            else Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun RecordRow(r: PrinterRecord, ui: PrintersUi, a: PrintersActions) {
     val m = Mine.colors
     val status = ui.status[r.id]
     val inRegistry = ui.records.any { it.id == r.id } || r.transport == Link.USB
     val address = r.address
-    val title = r.name.ifBlank { r.model.ifBlank { address } }
+    val title = listOf(r.name, r.model).filter(String::isNotBlank).distinct().joinToString(" · ").ifBlank { address }
     val main = if (ui.main[r.kind] == r.id) "основний для ${kindShort(r.kind)}" else null
-    MineCard {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(if (r.kind == LabelKind.STICKY) Icons.Rounded.Sell else Icons.Rounded.Print, null, tint = m.text)
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text, maxLines = 2)
-                val caption = listOfNotNull(address.takeIf { it.isNotBlank() && !title.contains(it) }, main).joinToString(" · ")
-                if (caption.isNotEmpty()) Text(caption, fontSize = 13.sp, color = m.textSecondary)
-            }
-            if (status?.ok == false) {
-                MineButton("Знайти", { a.onFindAgain(r) }, tone = MineTone.DANGER)
-            } else {
-                MineButton("Тест", { a.onTest(r) }, enabled = ui.testing == null, busy = ui.testing == r.id)
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { StatusLine(status, inRegistry) }
-            if (ui.records.any { it.id == r.id }) TextButton(onClick = { a.onEdit(r) }) { Text("Змінити") }
-        }
+    val icon = if (r.transport == Link.AGENT) R.drawable.ic_redesign_laptop else R.drawable.ic_redesign_printer
+    val edit: (() -> Unit)? = if (ui.records.any { it.id == r.id }) ({ a.onEdit(r) }) else null
+    PrinterRow(
+        icon, title, onClick = edit,
+        sub = {
+            val caption = listOfNotNull(address.takeIf { it.isNotBlank() && !title.contains(it) }, main).joinToString(" · ")
+            if (caption.isNotEmpty()) RowSub(caption)
+            if (status == null) RowSub("Перевіряю…")
+            else if (status.ok != true || !inRegistry) RowSub(
+                status.text + if (!inRegistry) " · ще не в реєстрі" else "",
+                color = if (status.ok == false) m.warningText else m.textTertiary,
+                dot = when (status.ok) { true -> m.success; false -> m.warning; null -> m.outline },
+            )
+        },
+    ) {
+        if (status?.ok == false) SmallButton("Знайти", { a.onFindAgain(r) })
+        else SmallButton("Тест", { a.onTest(r) }, enabled = ui.testing == null, busy = ui.testing == r.id)
     }
 }
 
 @Composable
-private fun StatusLine(s: PrinterStatus?, inRegistry: Boolean) {
-    val m = Mine.colors
-    Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.padding(top = 5.dp)) {
-            if (s == null) {
-                CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = m.textSecondary)
-            } else {
-                StatusDot(
-                    when (s.ok) {
-                        true -> m.success
-                        false -> m.warning
-                        null -> m.outline
-                    },
-                )
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            (s?.text ?: "Перевіряю…") + if (!inRegistry) " · ще не в реєстрі" else "",
-            fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium,
-            color = if (s?.ok == false) m.warningText else m.text,
-        )
+private fun LinkRow(@DrawableRes icon: Int, title: String, sub: String, onClick: () -> Unit) {
+    PrinterRow(icon, title, onClick, sub = { RowSub(sub) }) {
+        Icon(painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(18.dp), tint = Mine.colors.textTertiary)
     }
 }
 
 /** Неопознанное устройство на 9100: администратор говорит, что это, и оно попадает в реестр. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun UnknownCard(d: Discovered, onAdd: (Discovered, LabelKind) -> Unit) {
-    val m = Mine.colors
-    MineCard(padding = 16.dp) {
-        Text(d.model ?: d.name ?: "Невідомий пристрій", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.text)
-        Text("${d.ip} · порт ${d.port} відкритий", fontSize = 14.sp, color = m.textSecondary)
-        Spacer(Modifier.height(10.dp))
-        Text("Що це за принтер?", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text)
-        Spacer(Modifier.height(8.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MineChip("Етикетки 40×24", false, { onAdd(d, LabelKind.STICKY) })
-            MineChip("A4", false, { onAdd(d, LabelKind.PLAIN) })
+private fun UnknownRow(d: Discovered, onAdd: (Discovered, LabelKind) -> Unit) {
+    PrinterRow(
+        R.drawable.ic_redesign_printer, d.model ?: d.name ?: "Невідомий пристрій", onClick = null,
+        sub = { RowSub("${d.ip} · порт ${d.port} · що це за принтер?") },
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SmallButton("40×24", { onAdd(d, LabelKind.STICKY) })
+            SmallButton("A4", { onAdd(d, LabelKind.PLAIN) })
         }
     }
 }
@@ -600,24 +649,24 @@ private fun ManualDialog(onDismiss: () -> Unit, onAdd: (String, LabelKind) -> Un
     )
 }
 
-/** Картка ПК: на зв'язку, Godex і стан, черга, остання помилка, версія; «Відключити». */
+/** ПК з «ЧудоСкан Друк»: на зв'язку, Godex і стан, черга, остання помилка; «Відключити». */
 @Composable
-private fun PcCardView(pc: PcCard, onUnpair: (PcCard) -> Unit) {
+private fun PcRow(pc: PcCard, onUnpair: (PcCard) -> Unit) {
     val m = Mine.colors
-    MineCard(padding = 16.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(if (pc.online && pc.printerOk && pc.printer != null) m.success else m.warning)
-            Spacer(Modifier.width(8.dp))
-            Text(pc.pcName, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(if (pc.online) "на зв'язку" else "немає зв'язку", fontSize = 14.sp, color = if (pc.online) m.success else m.warningText)
-        }
-        Text(
-            pc.printer?.let { "$it — ${(pc.printerText ?: "готовий").lowercase()}" } ?: "Godex не знайдено",
-            Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 20.sp, color = if (pc.printerOk && pc.printer != null) m.text else m.warningText,
-        )
-        Text("У черзі: ${pc.queue}" + (if (pc.version.isNotBlank()) " · версія ${pc.version}" else ""), fontSize = 14.sp, color = m.textSecondary)
-        if (pc.lastError.isNotBlank()) Text("Остання помилка: ${pc.lastError}", fontSize = 14.sp, lineHeight = 19.sp, color = m.warningText)
-        MineButton("Відключити", { onUnpair(pc) }, Modifier.padding(top = 10.dp).fillMaxWidth(), tone = MineTone.DANGER)
+    val ok = pc.online && pc.printerOk && pc.printer != null
+    PrinterRow(
+        R.drawable.ic_redesign_laptop, pc.printer?.let { "Етикетки · $it" } ?: "ПК «${pc.pcName}»", onClick = null,
+        sub = {
+            RowSub(
+                "ПК «${pc.pcName}» ${if (pc.online) "онлайн" else "немає зв'язку"} · у черзі ${pc.queue}",
+                dot = if (ok) m.success else m.warning,
+            )
+            if (pc.printer == null) RowSub("Godex не знайдено", color = m.warningText)
+            else if (!pc.printerOk) RowSub(pc.printerText ?: "Godex не готовий", color = m.warningText)
+            if (pc.lastError.isNotBlank()) RowSub("Остання помилка: ${pc.lastError}", color = m.warningText)
+        },
+    ) {
+        SmallButton("Відключити", { onUnpair(pc) }, danger = true)
     }
 }
 

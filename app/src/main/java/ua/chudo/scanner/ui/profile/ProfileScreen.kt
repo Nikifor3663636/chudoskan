@@ -56,6 +56,7 @@ import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.ui.auth.PasswordDialog
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.formatPhone
+import ua.chudo.scanner.ui.common.maskPhone
 import ua.chudo.scanner.ui.theme.Mine
 import ua.chudo.scanner.ui.theme.ThemeMode
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,8 +92,8 @@ fun ProfileScreen(
     val theme by app.prefs.themeMode.collectAsStateWithLifecycle()
     ProfileContent(
         ProfileUi(
-            name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
-            shop = employee.actingCode?.let { "ЧО $it · ${employee.shop}" } ?: employee.shop, role = role,
+            name = employee.name, phone = maskPhone(formatPhone(employee.phone)), city = region?.name ?: employee.region,
+            shop = employee.actingCode?.let { "ЧО $it" } ?: employee.shop, role = role,
             theme = theme, admin = onPrinters != null, message = message,
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,

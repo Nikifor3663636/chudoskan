@@ -100,6 +100,7 @@ import ua.chudo.scanner.ui.common.Shimmer
 import ua.chudo.scanner.ui.common.openMap
 import ua.chudo.scanner.ui.common.openUrl
 import ua.chudo.scanner.ui.common.shareText
+import ua.chudo.scanner.ui.common.shopsOfCity
 import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.ui.theme.Mine
 import uniffi.chudo_core.Lang
@@ -173,7 +174,7 @@ fun ProductScreen(
 
     Box(Modifier.fillMaxSize().background(Mine.colors.bg)) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(onBack, onShare = { ctx.shareText(listOfNotNull(p?.name, url).joinToString("\n")) }, onSite = { ctx.openUrl(url) }, onScan = onScan)
+            TopBar(onBack, onShare = { ctx.shareText(listOfNotNull(p?.name, url).joinToString("\n")) }, onScan = onScan)
             PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = { vm.load(refresh = true) }, modifier = Modifier.weight(1f)) {
                 when {
                     s.loading -> ProductSkeleton()
@@ -382,7 +383,7 @@ fun ProductPage(
 private val H = 16.dp
 
 @Composable
-private fun TopBar(onBack: () -> Unit, onShare: () -> Unit, onSite: () -> Unit, onScan: () -> Unit) {
+private fun TopBar(onBack: () -> Unit, onShare: () -> Unit, onScan: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Mine.colors.bg).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -391,7 +392,6 @@ private fun TopBar(onBack: () -> Unit, onShare: () -> Unit, onSite: () -> Unit, 
         ProductIconButton(R.drawable.ic_redesign_chevron_left, "Назад", onBack, 24)
         Spacer(Modifier.weight(1f))
         ProductIconButton(R.drawable.ic_redesign_external_link, "Поділитися посиланням", onShare)
-        ProductIconButton(R.drawable.ic_redesign_store, "Відкрити на сайті", onSite)
         ProductIconButton(R.drawable.ic_redesign_scan_barcode, "Сканувати", onScan)
     }
 }
@@ -543,26 +543,22 @@ private fun OwnStock(quantity: Double) {
 private fun NetworkStores(net: NetAvailability, myShop: String) {
     val m = Mine.colors
     val total = qtyText(net.item.q.values.sum())
-    var expanded by rememberSaveable(net.barcode) { mutableStateOf(false) }
+    var all by rememberSaveable(net.barcode) { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = H, end = H, top = 20.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(net.cityName?.let { "Магазини · $it" } ?: "Залишки мережі", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+        Text(net.cityName?.let { shopsOfCity(it) } ?: "Залишки мережі", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
         Text(
-            if (expanded) "Згорнути" else "Усі $total шт у мережі",
-            Modifier.then(if (net.item.q.isNotEmpty()) Modifier.clickable { expanded = !expanded } else Modifier),
+            "Усі $total шт у мережі",
+            Modifier.then(if (net.item.q.isNotEmpty()) Modifier.clickable { all = true } else Modifier),
             fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link,
         )
     }
-    val visible = if (expanded) {
-        val cityNames = net.city.associate { it.code to it.name }
-        net.item.q.entries.sortedWith(compareByDescending<Map.Entry<String, Double>> { it.key == net.ownCode }.thenByDescending { it.value })
-            .map { (code, qty) ->
-                val name = if (code == net.ownCode) myShop.ifBlank { "Ваш магазин" } else cityNames[code] ?: "Склад $code"
-                StoreQty(code, name, qty)
-            }
-    } else net.city.take(3)
+    if (all) ua.chudo.scanner.ui.stock.NetworkAvailabilityDialog(
+        net.item, net.ownCode, myShop, net.item.name.ifBlank { net.barcode }, net.updatedAt,
+    ) { all = false }
+    val visible = net.city.take(3)
     if (visible.isNotEmpty()) HorizontalDivider(color = m.line)
     visible.forEach { shop ->
         Row(

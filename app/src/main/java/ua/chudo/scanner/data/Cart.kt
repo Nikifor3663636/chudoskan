@@ -80,8 +80,11 @@ object Cart {
         groupingSeparator = ' '; decimalSeparator = ','
     })
 
-    /** 123450 → «1 234,50 ₴». */
-    fun money(kop: Long): String = MONEY.format(kop / 100.0) + " ₴"
+    /** 123450 → «1 234,50 ₴», 64900 → «649 ₴»: копійки лише коли вони є. */
+    fun money(kop: Long): String {
+        val text = MONEY.format(kop / 100.0)
+        return (if (kop % 100L == 0L) text.removeSuffix(",00") else text) + " ₴"
+    }
 }
 
 /**

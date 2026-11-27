@@ -47,7 +47,7 @@ import ua.chudo.scanner.ui.common.MainTab
 import ua.chudo.scanner.ui.common.MineBottomBar
 import ua.chudo.scanner.ui.orders.OrdersContent
 import ua.chudo.scanner.ui.orders.OrdersUi
-import ua.chudo.scanner.ui.auth.LoginMineShell
+import ua.chudo.scanner.ui.auth.AuthPage
 import ua.chudo.scanner.ui.print.PrintSheetContent
 import ua.chudo.scanner.ui.print.PrintSheetUi
 import ua.chudo.scanner.ui.print.PrinterLine
@@ -137,10 +137,93 @@ class DesignSnapshots {
 
     @Test fun loginMineLight() = login(dark = false)
 
+    @Test fun authPending() = paparazzi.snapshot {
+        ChudoTheme(dark = false) { ua.chudo.scanner.ui.auth.PendingPage("ЧО 22 · ТРЦ Gagarin Plaza") {} }
+    }
+
+    @Test fun authSplash() = paparazzi.snapshot {
+        ChudoTheme(dark = false) { ua.chudo.scanner.ui.auth.AuthSplash("3.3.13") }
+    }
+
+    private val demoStores = mapOf(
+        "22" to ua.chudo.scanner.data.StoreDoc("ЧО 22 · ТРЦ Gagarin Plaza", "Одеса", "s22"),
+        "62" to ua.chudo.scanner.data.StoreDoc("ЧО 62 · ТЦ Рів’єра", "Одеса", null),
+        "77" to ua.chudo.scanner.data.StoreDoc("ЧО 77 · ТЦ Острів", "Одеса", null),
+        "69" to ua.chudo.scanner.data.StoreDoc("ЧО 69 · ТЦ Маяк", "Одеса", null),
+        "5" to ua.chudo.scanner.data.StoreDoc("ЧО 5 · ТРЦ Victoria Gardens", "Львів", null),
+    )
+
+    @Test fun historyRedesign() = paparazzi.snapshot {
+        val zone = java.time.ZoneId.of("Europe/Kyiv")
+        val today = java.time.LocalDate.of(2026, 11, 26)
+        fun at(day: java.time.LocalDate, h: Int, min: Int) = day.atTime(h, min).atZone(zone).toInstant().toEpochMilli()
+        val events = listOf(
+            ua.chudo.scanner.data.ShopActivity(ua.chudo.scanner.data.ActivityKind.PRINT, "Надруковано 2 цінники 68×38", "LEGO DUPLO Потяг · «Каса»", at(today, 10, 42)),
+            ua.chudo.scanner.data.ShopActivity(ua.chudo.scanner.data.ActivityKind.ORDER, "Зібрано №100045790", "3 товари", at(today, 10, 18)),
+            ua.chudo.scanner.data.ShopActivity(ua.chudo.scanner.data.ActivityKind.SCAN, "Скан: Crackin’ Eggs динозавр", "у магазині 12 шт", at(today, 10, 5)),
+            ua.chudo.scanner.data.ShopActivity(ua.chudo.scanner.data.ActivityKind.PRINT, "Пакет: 34 цінники", "після завантаження 1С · «Каса»", at(today.minusDays(1), 18, 20)),
+        )
+        ChudoTheme(dark = false) { ua.chudo.scanner.ui.profile.ActivityContent(events, 0, false, {}, {}, zone, today) }
+    }
+
+    @Test fun myShopRedesign() = paparazzi.snapshot {
+        fun member(uid: String, name: String, approved: Boolean, admin: Boolean = false) =
+            ua.chudo.scanner.data.StaffMember(uid, name, "+380675551218", "s22", "ЧО 22", "odesa", approved, admin)
+        val staff = listOf(
+            member("1", "Ірина Савчук", false),
+            member("2", "Олена Коваль", true, admin = true),
+            member("3", "Андрій Мельник", true),
+            member("4", "Світлана Бондар", true),
+        )
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.admin.MyShopContent("ЧО 22 · ТРЦ Gagarin Plaza", staff, null, null, false, { false }, {}, {}, {}, {})
+        }
+    }
+
+    @Test fun orderPickRedesign() = paparazzi.snapshot {
+        val order = DemoOrders.load("").first { it.stage == OrderStage.PICKING }
+        ChudoTheme(dark = false) { ua.chudo.scanner.ui.orders.OrderPickContent(order, {}, {}, {}, {}, {}, {}) }
+    }
+
+    @Test fun networkAvailabilityRedesign() = paparazzi.snapshot {
+        val item = ua.chudo.scanner.data.NetItem(
+            "LEGO DUPLO Потяг із цифрами", "BOC022446", "10954", mapOf("22" to 3.0, "62" to 5.0, "77" to 2.0, "69" to 1.0, "5" to 6.0),
+        )
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.stock.NetworkAvailabilityContent(
+                ua.chudo.scanner.ui.stock.networkCities(item, demoStores, "22", "ЧО 22 · ТРЦ Gagarin Plaza"),
+                "LEGO DUPLO Потяг із цифрами", todayAt930(), {},
+            )
+        }
+    }
+
+    @Test fun stockOverviewRedesign() = paparazzi.snapshot {
+        val rows = listOf(
+            ua.chudo.scanner.data.SbStockRow("5702016911114", "LEGO DUPLO Потяг із цифрами", article = "10954", q = mapOf("22" to 1.0, "62" to 5.0)),
+            ua.chudo.scanner.data.SbStockRow("6903317562084", "Crackin’ Eggs динозавр у яйці", article = "SK014D2", q = mapOf("62" to 4.0)),
+        )
+        ChudoTheme(dark = false) {
+            Column(Modifier.fillMaxSize().background(Mine.colors.bg)) {
+                ua.chudo.scanner.ui.stock.StockTitle("ЧО 22 · ТРЦ Gagarin Plaza")
+                ua.chudo.scanner.ui.stock.StockBanner(
+                    ua.chudo.scanner.data.ShopStockInfo(todayAt930(), "Марина", 21870), 46, Modifier.padding(horizontal = 16.dp),
+                )
+                ua.chudo.scanner.ui.stock.StockSegments(
+                    ua.chudo.scanner.ui.stock.StockTab.LOW,
+                    mapOf(ua.chudo.scanner.ui.stock.StockTab.PROMO to 48L, ua.chudo.scanner.ui.stock.StockTab.NEW to 12L), {},
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+                )
+                ua.chudo.scanner.ui.stock.lowStock(rows, "22", demoStores).forEach { ua.chudo.scanner.ui.stock.LowStockRow(it) {} }
+                ua.chudo.scanner.ui.stock.StockSection("Для адміна залишків")
+                ua.chudo.scanner.ui.stock.StockLinkRow(ua.chudo.scanner.R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "«Ведомость по партиям», .xlsx") {}
+            }
+        }
+    }
+
     private fun login(dark: Boolean) = paparazzi.snapshot {
         ChudoTheme(dark = dark) {
-            LoginMineShell(onToggleTheme = {}) {
-                LoginMineForm("671234567", "", null, false, {}, {}, {}, {}, {})
+            AuthPage {
+                LoginMineForm("671234567", "chudo2026", null, false, {}, {}, {}, {}, {})
             }
         }
     }

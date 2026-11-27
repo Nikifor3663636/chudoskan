@@ -214,6 +214,37 @@ fun ResultsScreen(
     var draft by rememberSaveable(vm.query) { mutableStateOf(vm.query) }
     var shopOnly by rememberSaveable(vm.query) { mutableStateOf(false) }
     var promoOnly by rememberSaveable(vm.query) { mutableStateOf(false) }
+    var newOnly by rememberSaveable(vm.query) { mutableStateOf(false) }
+    // Кількість у своєму магазині для рядків результатів — за артикулом (залишки 1С).
+    val own = remember(vm.query) { androidx.compose.runtime.mutableStateMapOf<String, Double>() }
+    LaunchedEffect(state) {
+        val many = (state as? ResultsState.Done)?.result as? LookupResult.Many ?: return@LaunchedEffect
+        kotlinx.coroutines.supervisorScope {
+            many.items.mapNotNull { it.article?.takeIf(String::isNotBlank) }.distinct().take(40).forEach { article ->
+                launch {
+                    val key = articleKey(article)
+                    if (key in own) return@launch
+                    val qty = try {
+                        app.networkLookup.byArticle(employee.shopId, article).firstOrNull()?.own
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (qty != null) own[key] = qty
+                }
+            }
+        }
+    }
+    val newArticles by androidx.compose.runtime.produceState(emptySet<String>(), newOnly, vm.query) {
+        if (newOnly && Backend.isSupabase) value = try {
+            ProductHighlights.page(HighlightKind.NEW, vm.query, 0).map { articleKey(it.article) }.toSet()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
     LaunchedEffect(vm.query) { if (vm.query.isNotBlank()) onQueryUsed(vm.query) }
     fun submit() {
         val clean = draft.trim()
@@ -236,16 +267,14 @@ fun ResultsScreen(
         ResultsHeader(draft, { draft = it }, onBack, ::submit, focus) {
             if (vm.query.isNotEmpty()) onSearch("") else draft = ""
         }
-        val hasOffline = (state as? ResultsState.Offline)?.matches.orEmpty().isNotEmpty()
-        val hasPrices = ((state as? ResultsState.Done)?.result as? LookupResult.Many)
-            ?.items.orEmpty().any { it.price != null }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (hasOffline) SearchChip("Є в магазині", selected = shopOnly, onClick = { shopOnly = !shopOnly })
-            if (hasPrices) SearchChip("Акції", selected = promoOnly, onClick = { promoOnly = !promoOnly })
+            SearchChip("Є в магазині", selected = shopOnly, onClick = { shopOnly = !shopOnly })
+            SearchChip("Акції", selected = promoOnly, onClick = { promoOnly = !promoOnly })
+            SearchChip("Новинки", selected = newOnly, onClick = { newOnly = !newOnly })
             SearchChip("Каталог", icon = R.drawable.ic_redesign_layout_grid, onClick = onCatalog)
         }
         Box(Modifier.fillMaxSize()) {
@@ -272,8 +301,9 @@ fun ResultsScreen(
                             }
                         } else Loading("Відкриваємо товар…")
                         is LookupResult.Many -> {
-                            val items = if (promoOnly) r.items.filter { it.price?.let { price -> price.regularPrice > price.finalPrice + 0.001 } == true } else r.items
-                            ManyList(r, items, selectedProduct) { urlKey ->
+                            val filters = SearchFilters(shopOnly, promoOnly, newOnly)
+                            val items = applySearchFilters(r.items, filters, own, newArticles)
+                            ManyList(r, items, selectedProduct, own, filters.any) { urlKey ->
                                 val bc = r.barcode.takeIf { r.via !is Via.Direct }
                                 onBrowseProducts(items.map { it.urlKey }.distinct())
                                 onOpenProduct(urlKey, bc, null, false)
@@ -315,52 +345,87 @@ fun ResultsScreen(
 @Composable
 private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRetry: () -> Unit) {
     val matches = if (shopOnly) result.matches.filter { it.quantity > 0 } else result.matches
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+    val m = Mine.colors
+    LazyColumn(Modifier.fillMaxSize()) {
         item {
             val date = result.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
-            Text(
-                date?.let { "Офлайн · залишки вашого магазину станом на $it" }
-                    ?: "Офлайн-каталог недоступний. Завантажте залишки в налаштуваннях сканера, коли з’явиться інтернет.",
-                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                color = Mine.colors.textSecondary,
-            )
+            Row(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                    .background(m.warningTint, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(painterResource(R.drawable.ic_redesign_triangle_alert), null, Modifier.padding(top = 1.dp).size(18.dp), tint = m.warningText)
+                Text(
+                    date?.let { "Офлайн · залишки вашого магазину станом на $it" }
+                        ?: "Офлайн-каталог недоступний. Завантажте залишки в налаштуваннях сканера, коли з’явиться інтернет.",
+                    fontSize = 14.sp, lineHeight = 19.6.sp, color = m.warningText,
+                )
+            }
         }
         if (matches.isEmpty()) item {
-            MessageState(
-                icon = Icons.Rounded.SearchOff,
-                title = if (result.updatedAt == null) "Немає з’єднання" else "У збережених залишках нічого не знайдено",
-                text = if (result.updatedAt == null) "Підключіться до інтернету, щоб завантажити каталог." else "Спробуйте іншу назву, артикул або штрихкод.",
-                primary = "Повторити пошук" to onRetry,
-            )
+            SearchEmptyState(
+                R.drawable.ic_redesign_package_search,
+                title = if (result.updatedAt == null) "Немає з’єднання" else "Нічого не знайшли",
+                message = if (result.updatedAt == null) "Підключіться до інтернету, щоб завантажити каталог." else "Спробуйте іншу назву, артикул або штрихкод.",
+                top = 48,
+            ) { SearchChip("Повторити пошук", onClick = onRetry) }
+        } else item {
+            SearchSection("${matches.size} ${goodsWord(matches.size)}")
+            HorizontalDivider(color = m.line)
         }
         items(matches) { item ->
-            Surface(color = Mine.colors.card) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(item.name.ifBlank { item.barcode }, style = MaterialTheme.typography.titleMedium)
-                        Text(listOf(item.article, item.code, item.barcode).filter(String::isNotBlank).distinct().joinToString(" · "),
-                            color = Mine.colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Text("${java.text.NumberFormat.getInstance().format(item.quantity)} шт", color = Mine.colors.success)
+            Row(
+                Modifier.fillMaxWidth().background(m.card).heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(48.dp).background(m.surface, RoundedCornerShape(6.dp)).border(1.dp, m.line, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { SearchIcon(R.drawable.ic_redesign_package, 22) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(item.name.ifBlank { item.barcode }, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        listOf(item.article.takeIf(String::isNotBlank)?.let { "арт. $it" }, item.code, item.barcode)
+                            .filterNotNull().filter(String::isNotBlank).distinct().joinToString(" · "),
+                        fontSize = 13.sp, color = m.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
+                Text(
+                    if (item.quantity > 0) "${java.text.NumberFormat.getInstance().format(item.quantity)} шт" else "немає",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        item.quantity <= 0 -> m.textTertiary
+                        item.quantity <= 2 -> m.warningText
+                        else -> m.success
+                    },
+                )
             }
-            HorizontalDivider(color = Mine.colors.line)
+            HorizontalDivider(color = m.line)
         }
     }
 }
 
+private fun goodsWord(n: Int) = when {
+    n % 100 in 11..14 -> "товарів"
+    n % 10 == 1 -> "товар"
+    n % 10 in 2..4 -> "товари"
+    else -> "товарів"
+}
+
 @Composable
 private fun StockResult(stock: NetAvailability) {
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(stock.item.name.ifBlank { stock.barcode }, style = MaterialTheme.typography.titleLarge, color = Mine.colors.text)
-        stock.item.article.takeIf { it.isNotBlank() }?.let {
-            Text("Артикул $it", color = Mine.colors.textSecondary)
+    val m = Mine.colors
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stock.item.name.ifBlank { stock.barcode }, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            Text(
+                listOfNotNull(stock.item.article.takeIf(String::isNotBlank)?.let { "Арт. $it" }, stock.item.code.takeIf(String::isNotBlank)?.let { "Код 1С $it" }, stock.barcode)
+                    .joinToString(" · "),
+                fontSize = 13.sp, color = m.textTertiary,
+            )
+            Text("Товару немає на сайті мережі — показуємо залишки з 1С.", Modifier.padding(top = 4.dp), fontSize = 13.sp, color = m.textSecondary)
         }
-        NetworkStockCard(stock, Modifier.fillMaxWidth())
+        NetworkStockCard(stock, Modifier.padding(horizontal = 16.dp).fillMaxWidth())
     }
 }
 
@@ -377,10 +442,13 @@ private fun HighlightMatches(query: String, barcode: String?) {
             }
         }
     }
+    if (matches.isNotEmpty()) {
+        SearchSection("Є в акціях і новинках")
+        HorizontalDivider(color = Mine.colors.line)
+    }
     matches.forEach { match ->
-        val kind = HighlightKind.entries.firstOrNull { it.key == match.kind }
-        val price = match.promoPrice?.let { " · ${highlightPrice(it)}" }.orEmpty()
-        Text("${match.name} · ${kind?.badge.orEmpty()}$price", Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+        val kind = HighlightKind.entries.firstOrNull { it.key == match.kind } ?: HighlightKind.NEW
+        ua.chudo.scanner.ui.stock.HighlightProductRow(match, kind) {}
     }
 }
 
@@ -539,7 +607,14 @@ private fun Loading(step: String) {
 }
 
 @Composable
-private fun ManyList(r: LookupResult.Many, products: List<ProductSummary>, selectedProduct: String?, onClick: (String) -> Unit) {
+private fun ManyList(
+    r: LookupResult.Many,
+    products: List<ProductSummary>,
+    selectedProduct: String?,
+    own: Map<String, Double>,
+    filtered: Boolean,
+    onClick: (String) -> Unit,
+) {
     val m = Mine.colors
     LazyColumn {
         item {
@@ -554,7 +629,12 @@ private fun ManyList(r: LookupResult.Many, products: List<ProductSummary>, selec
             viaNote(r.via)?.let { ViaNote(it) }
             if (products.isNotEmpty()) HorizontalDivider(color = m.line)
         }
-        if (products.isEmpty()) item { SearchEmptyState(R.drawable.ic_redesign_package_search, message = "Акційних товарів за цим запитом немає") }
+        if (products.isEmpty()) item {
+            SearchEmptyState(
+                R.drawable.ic_redesign_package_search,
+                message = if (filtered) "За цими фільтрами товарів немає" else "Нічого не знайшли",
+            )
+        }
         items(products, key = { it.id }) { item ->
             val selected = item.urlKey == selectedProduct
             Row(
@@ -587,7 +667,17 @@ private fun ManyList(r: LookupResult.Many, products: List<ProductSummary>, selec
                     val price = item.price
                     if (price != null && price.regularPrice > price.finalPrice + 0.001) {
                         Text(Cart.money((price.regularPrice * 100).roundToLong()), fontSize = 13.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
-                    } else {
+                    } else own[articleKey(item.article)]?.let { qty ->
+                        Text(
+                            if (qty > 0) "${java.text.NumberFormat.getInstance().format(qty)} шт" else "немає",
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                            color = when {
+                                qty <= 0 -> m.textTertiary
+                                qty <= 2 -> m.warningText
+                                else -> m.success
+                            },
+                        )
+                    } ?: run {
                         val available = item.stock == StockStatus.IN_STOCK
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             StatusDot(if (available) m.success else m.outline, Modifier.size(8.dp))

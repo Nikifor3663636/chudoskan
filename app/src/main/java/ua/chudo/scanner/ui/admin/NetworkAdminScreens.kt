@@ -321,7 +321,14 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
     val cityOfShop = d?.entries.orEmpty().filter { it.shopId != null }.associate { it.shopId!! to it.city }
     fun cityOf(s: StaffMember) = cityOfShop[s.shopId] ?: s.region
 
-    LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    if (ownShopOnly) MyShopContent(
+        employee.shop, d?.staff, error, message, busy,
+        canReject = { s -> StaffAction.REJECT in NetworkAdmin.actions(s, employee.uid, false) },
+        onBack = onBack,
+        onApprove = { s -> vm.apply(s, StaffAction.APPROVE, null) { message = it } },
+        onReject = { s -> confirm = Triple(s, StaffAction.REJECT, null) },
+        onOpen = { chosen = it },
+    ) else LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { MineHeader(if (ownShopOnly) "Мій магазин" else "Співробітники", onBack) }
         if (ownShopOnly) item { Text(employee.shop, Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, color = m.textSecondary) }
         item { MineSearchField(query, { query = it }, "Ім'я, телефон або магазин", {}) }

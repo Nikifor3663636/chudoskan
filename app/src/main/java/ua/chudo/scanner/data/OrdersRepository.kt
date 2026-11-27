@@ -135,6 +135,22 @@ class OrdersRepository(private val source: OrdersSource = DemoOrders) {
         return if (done) ScanResult.Completed(updated) else ScanResult.Added(line.name, updated)
     }
 
+    /**
+     * Позначити рядок вручну (товар без штрихкоду або не читається): зібрано повністю,
+     * повторне натискання знімає позначку. Усе зібрано — замовлення «Готові».
+     */
+    @Synchronized
+    fun togglePicked(number: String, index: Int): PickupOrder? {
+        val order = _orders.value.firstOrNull { it.number == number && it.stage == OrderStage.PICKING } ?: return null
+        val line = order.lines.getOrNull(index) ?: return null
+        val lines = order.lines.mapIndexed { at, item -> if (at == index) item.copy(picked = if (line.done) 0 else line.qty) else item }
+        val done = lines.all { it.done }
+        val updated = order.copy(lines = lines, stage = if (done) OrderStage.READY else OrderStage.PICKING)
+        _orders.update { list -> list.map { if (it.number == number) updated else it } }
+        if (done && _activeNumber.value == number) _activeNumber.value = null
+        return updated
+    }
+
     /** Покупатель забрал заказ. */
     @Synchronized
     fun issue(number: String, paymentReceived: Boolean = false): Boolean {

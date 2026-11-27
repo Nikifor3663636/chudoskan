@@ -7,7 +7,7 @@ import {
   setDoc, startAfter, writeBatch,
 } from 'firebase/firestore';
 import { match, parseReport, plan, storesToWrite, StockFileError } from './report.js';
-import { adminQuery, adminSections, canViewSection, PAGE_SIZE } from './admin.js';
+import { adminQuery, adminSections, canViewSection, commandMatches, navCount, PAGE_SIZE, shopLines, toCsv } from './admin.js';
 import { highlightReport } from './highlights.js';
 import { readXlsx } from './xlsx.js';
 import { loadSiteShops } from './siteShops.js';
@@ -131,6 +131,7 @@ onAuthStateChanged(auth, async (user) => {
       return;
     }
     me = { uid: user.uid, name: (u.name || 'Адмін').slice(0, 100), canImport, shopAdmin, superAdmin: u.superAdmin === true };
+    await loadCounts();
     if (sb && canViewSection('staff', me)) await adminView('staff');
     else await homeView();
   } catch (e) {
@@ -165,28 +166,127 @@ const navIcons = {
   history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /> <path d="M12 7v5l4 2" />',
   search: '<circle cx="11" cy="11" r="8" /> <path d="m21 21-4.3-4.3" />',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /> <polyline points="16 17 21 12 16 7" /> <line x1="21" x2="9" y1="12" y2="12" />',
+  keyboard: '<path d="M10 8h.01" /> <path d="M12 12h.01" /> <path d="M14 8h.01" /> <path d="M16 12h.01" /> <path d="M18 8h.01" /> <path d="M6 8h.01" /> <path d="M7 16h10" /> <path d="M8 12h.01" /> <rect width="20" height="16" x="2" y="4" rx="2" />',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <polyline points="7 10 12 15 17 10" /> <line x1="12" x2="12" y1="15" y2="3" />',
+  clock: '<circle cx="12" cy="12" r="10" /> <path d="M12 6v6l4 2" />',
 
 };
 const navIcon = key => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${navIcons[key]}</svg>`;
 
-function importWorkspace(active, heading, content) {
+// Лічильники бічного меню: товари, магазини, принтери, анкети на підтвердження. Оновлюються після входу й дій.
+let counts = {};
+
+async function loadCounts() {
+  if (!sb || !me) return;
+  const count = async (table, filter = q => q) => {
+    const r = await timed(filter(sb.from(table).select('*', { count: 'exact', head: true })), READ_TIMEOUT, 'лічильники').catch(() => null);
+    return r && !r.error ? r.count ?? 0 : null;
+  };
+  const meta = (await timed(sb.from('meta_stock').select('items, stores').maybeSingle(), READ_TIMEOUT, 'лічильники').catch(() => null))?.data;
+  const staffVisible = canViewSection('staff', me);
+  const [shops, printers, pending, staffAll, approved] = await Promise.all([
+    canViewSection('shops', me) ? count('shops') : null,
+    canViewSection('printers', me) ? count('printers') : null,
+    staffVisible ? count('users', q => q.eq('approved', false).neq('shop', '')) : null,
+    staffVisible ? count('users') : null,
+    staffVisible ? count('users', q => q.eq('approved', true)) : null,
+  ]);
+  counts = { products: meta?.items ?? null, stores: meta?.stores ?? null, shops, printers, pending, staffAll, approved };
+}
+
+function navItems() {
   const sections = Object.fromEntries(Object.entries(adminSections).map(([key, item]) =>
     [key, { key, label: item.title }]));
   const imports = Object.fromEntries(importKinds.map(item => [item.key, item]));
-  const groups = [
+  return [
     ['Робота', [sections.products, imports.stock, imports.new, imports.promo]],
     ['Мережа', [sections.shops, sections.staff, sections.printers, sections.devices]],
     ['Безпека', [sections.deviceAccess, sections.security, sections.audit]],
     ['Дані', [imports.history]],
   ].map(([label, items]) => [label, items.filter(item =>
     (sb || item.key === 'stock') && canViewSection(item.key, me))]);
+}
+
+function navigateTo(kind) {
+  if (kind === 'stock') homeView();
+  else if (kind === 'history') historyView();
+  else if (adminSections[kind]) adminView(kind);
+  else highlightsView(kind);
+}
+
+/** «Перейти до…» (Ctrl+K): пошук розділу за назвою, Enter — перехід. */
+function openCommands() {
+  if ($('.cmd-wrap')) return;
+  const items = navItems().flatMap(([, list]) => list);
+  const wrap = document.createElement('div');
+  wrap.className = 'cmd-wrap';
+  wrap.innerHTML = `<div class="cmd-box" role="dialog" aria-modal="true" aria-label="Перейти до розділу">
+    <label class="search-field">${navIcon('search')}<input type="search" placeholder="Перейти до…" aria-label="Перейти до розділу"></label>
+    <div class="cmd-list" role="listbox"></div></div>`;
+  document.body.append(wrap);
+  const input = wrap.querySelector('input');
+  const list = wrap.querySelector('.cmd-list');
+  let selected = 0;
+  const close = () => wrap.remove();
+  const draw = () => {
+    const found = commandMatches(items, input.value);
+    selected = Math.min(selected, Math.max(0, found.length - 1));
+    list.innerHTML = found.length ? found.map((item, index) => `<button type="button" role="option" data-go="${item.key}" aria-selected="${index === selected}">${navIcon(item.key)}${esc(item.label)}</button>`).join('')
+      : '<p class="muted">Нічого не знайдено</p>';
+    list.querySelectorAll('[data-go]').forEach(button => { button.onclick = () => { close(); navigateTo(button.dataset.go); }; });
+    return found;
+  };
+  input.oninput = () => { selected = 0; draw(); };
+  input.onkeydown = event => {
+    const found = commandMatches(items, input.value);
+    if (event.key === 'ArrowDown') { selected = Math.min(selected + 1, found.length - 1); draw(); event.preventDefault(); }
+    if (event.key === 'ArrowUp') { selected = Math.max(selected - 1, 0); draw(); event.preventDefault(); }
+    if (event.key === 'Enter' && found[selected]) { close(); navigateTo(found[selected].key); }
+  };
+  wrap.onclick = event => { if (event.target === wrap) close(); };
+  wrap.onkeydown = event => { if (event.key === 'Escape') close(); };
+  draw();
+  input.focus();
+}
+
+/** Гарячі клавіші: Ctrl+K — розділи, «/» — пошук у таблиці, Esc — закрити. */
+function openShortcuts() {
+  if ($('.cmd-wrap')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'cmd-wrap';
+  wrap.innerHTML = `<div class="cmd-box" role="dialog" aria-modal="true" aria-labelledby="keys-title">
+    <h2 id="keys-title">Гарячі клавіші</h2>
+    <dl class="keys"><dt><kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Перейти до розділу</dd><dt><kbd>/</kbd></dt><dd>Пошук у таблиці</dd><dt><kbd>Esc</kbd></dt><dd>Закрити вікно</dd></dl>
+    <button type="button" id="keys-close">Закрити</button></div>`;
+  document.body.append(wrap);
+  const close = () => wrap.remove();
+  wrap.querySelector('#keys-close').onclick = close;
+  wrap.onclick = event => { if (event.target === wrap) close(); };
+  wrap.onkeydown = event => { if (event.key === 'Escape') close(); };
+  wrap.querySelector('#keys-close').focus();
+}
+
+document.addEventListener('keydown', event => {
+  if (!me || !$('.workspace')) return;
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName ?? '');
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); openCommands(); }
+  else if (event.key === '/' && !typing) {
+    const search = $('#admin-search input');
+    if (search) { event.preventDefault(); search.focus(); }
+  }
+});
+
+function importWorkspace(active, heading, content, actions = '', sub = '') {
+  const groups = navItems();
   const role = me.superAdmin ? 'Адмін мережі' : me.shopAdmin ? 'Адмін магазину' : 'Адмін залишків';
   const initials = me.name.trim().split(/\s+/u).slice(0, 2).map(part => Array.from(part)[0] ?? '').join('').toUpperCase();
   const scope = me.superAdmin ? 'Уся мережа' : me.shopAdmin ? 'Мій магазин' : 'Залишки мережі';
+  const scopeNote = me.superAdmin && counts.stores ? `${counts.stores} магазинів` : role;
+  const crumb = sub || (me.superAdmin && counts.stores ? `${scope} · ${counts.stores} магазинів` : scope);
   render(`<div class="workspace">
     <nav class="import-nav" aria-label="Розділи адміністратора">
-      <div class="sidebar-brand"><img src="../logo.svg" alt=""><strong>ЧудоСкан</strong></div>
-      <div class="sidebar-scope">${navIcon("shops")}<div><strong>${scope}</strong><small>${role}</small></div></div>
+      <div class="sidebar-brand"><img src="../logo.svg" alt=""><strong>ЧудоСкан</strong><span class="tag">Адмін</span></div>
+      <div class="sidebar-scope">${navIcon("shops")}<div><strong>${scope}</strong><small>${esc(scopeNote)}</small></div></div>
       <select class="mobile-nav" aria-label="Розділ адміністратора">
         ${groups.filter(([, items]) => items.length).map(([label, items]) => `<optgroup label="${label}">
           ${items.map(item => `<option value="${item.key}" ${item.key === active ? 'selected' : ''}>${item.label}</option>`).join('')}
@@ -195,27 +295,29 @@ function importWorkspace(active, heading, content) {
       <div class="sidebar-links">
         ${groups.filter(([, items]) => items.length).map(([label, items]) => `<div class="nav-section">
           <span class="nav-group">${label}</span>
-          ${items.map(item => `<button type="button" data-kind="${item.key}" ${item.key === active ? 'aria-current="page"' : ''}>${navIcon(item.key)}${item.label}</button>`).join('')}
+          ${items.map(item => {
+            const count = navCount(item.key, counts);
+            return `<button type="button" data-kind="${item.key}" ${item.key === active ? 'aria-current="page"' : ''}>${navIcon(item.key)}${item.label}${count ? `<span class="cnt${count.attention ? ' attn' : ''}">${count.text}</span>` : ''}</button>`;
+          }).join('')}
         </div>`).join('')}
       </div>
       <div class="account">
-        <span class="initials" aria-hidden="true">${esc(initials)}</span><span class="account-name">${esc(me.name)}</span>
-        <button type="button" class="link" id="out" aria-label="Вийти" title="Вийти">${navIcon('out')}</button>
+        <span class="initials" aria-hidden="true">${esc(initials)}</span>
+        <span class="account-name">${esc(me.name)}<small>${role}</small></span>
+        <button type="button" class="link icon-only" id="keys" aria-label="Гарячі клавіші" title="Гарячі клавіші">${navIcon('keyboard')}</button>
+        <button type="button" class="link icon-only" id="out" aria-label="Вийти" title="Вийти">${navIcon('out')}</button>
       </div>
     </nav>
     <section aria-labelledby="import-title">
-      <header class="page-head"><h1 id="import-title">${esc(heading)}</h1><small>${scope}</small></header>
+      <header class="page-head"><div><h1 id="import-title">${esc(heading)}</h1><small>${esc(crumb)}</small></div>
+        <button type="button" class="cmd" id="cmd">${navIcon('search')}<span>Перейти до…</span><kbd>Ctrl</kbd><kbd>K</kbd></button>${actions}</header>
       <div class="page-body">${content}</div>
     </section>
   </div>`);
   $('#out').onclick = () => signOut(auth);
-  const navigate = kind => {
-    if (kind === active) return;
-    if (kind === 'stock') homeView();
-    else if (kind === 'history') historyView();
-    else if (adminSections[kind]) adminView(kind);
-    else highlightsView(kind);
-  };
+  $('#keys').onclick = openShortcuts;
+  $('#cmd').onclick = openCommands;
+  const navigate = kind => { if (kind !== active) navigateTo(kind); };
   $('.mobile-nav').onchange = event => navigate(event.currentTarget.value);
   app.querySelectorAll('[data-kind]').forEach(button => {
     button.onclick = () => navigate(button.dataset.kind);
@@ -263,19 +365,24 @@ async function adminView(key, search = '', offset = 0, status = '') {
   const staff = key === 'staff';
   const manageDevices = key === 'deviceAccess';
   const filters = staff ? STAFF_FILTERS : manageDevices ? [...STAFF_FILTERS, ['blocked', 'Заблоковані']] : [];
-  importWorkspace(key, section.title, `<div class="card admin-panel">
+  const filterCount = value => staff ? { '': counts.staffAll, pending: counts.pending, approved: counts.approved }[value] : null;
+  const pendingWord = n => n % 10 === 1 && n % 100 !== 11 ? 'анкета чекає' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'анкети чекають' : 'анкет чекають';
+  const banner = staff && counts.pending && status !== 'pending'
+    ? `<div class="banner warn" role="status">${navIcon('clock')}<span><b>${counts.pending} ${pendingWord(counts.pending)} підтвердження.</b> Виберіть рядки й натисніть «Підтвердити».</span><button type="button" class="link" data-filter="pending">Показати</button></div>`
+    : '';
+  importWorkspace(key, section.title, `${banner}<div class="card admin-panel">
     <div class="admin-toolbar">
       <form id="admin-search" class="row">
         <label class="search-field">${navIcon('search')}
-          <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="${staff ? 'Ім’я, телефон, магазин' : 'Пошук'}" maxlength="100">
+          <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="${section.placeholder ?? 'Пошук'}" maxlength="100">
+          <kbd aria-hidden="true">/</kbd>
         </label>
-        <button type="submit">Знайти</button>
       </form>
       ${filters.length ? `<div class="filters" role="group" aria-label="Статус">${filters.map(([value, label]) =>
-        `<button type="button" data-filter="${value}" aria-pressed="${value === status}">${label}</button>`).join('')}</div>` : ''}
+        `<button type="button" data-filter="${value}" aria-pressed="${value === status}">${label}${filterCount(value) != null ? ` <span class="n">${fmt(filterCount(value))}</span>` : ''}</button>`).join('')}</div>` : ''}
     </div>
     <div id="admin-results" aria-live="polite"><p class="admin-message muted">Завантаження…</p></div>
-  </div>`);
+  </div>`, `<button type="button" class="head-action" id="export" disabled>${navIcon('download')}Експорт</button>`, section.sub ?? '');
   const result = $('#admin-results');
   $('#admin-search').onsubmit = event => {
     event.preventDefault();
@@ -296,6 +403,10 @@ async function adminView(key, search = '', offset = 0, status = '') {
           <div><strong>${esc(name)}</strong>${row.phone ? `<small>${esc(row.phone)}</small>` : ''}</div></div>`;
       }
       if (value == null || value === '') return '—';
+      if (staff && column.key === 'shop') {
+        const [shopName, mall] = shopLines(value);
+        return `<div class="cell-2"><span>${esc(shopName)}</span>${mall ? `<small>${esc(mall)}</small>` : ''}</div>`;
+      }
       if (staff && column.key === 'approved') {
         return `<span class="status-pill ${row.approved ? 'approved' : 'pending'}">${esc(value)}</span>`;
       }
@@ -304,6 +415,10 @@ async function adminView(key, search = '', offset = 0, status = '') {
         return `<span class="status-pill ${state}">${esc(value)}</span>`;
       }
       if (['at', 'paired_at', 'requested_at', 'seen_at'].includes(column.key)) return esc(when(value));
+      if (key === 'products' && column.key === 'name') {
+        return `<div class="product-cell"><span class="thumb" aria-hidden="true">${navIcon('products')}</span><span class="cell-title">${esc(value)}</span></div>`;
+      }
+      if (key === 'products' && column.key === 'q') return `${esc(fmt(value))} шт`;
       return esc(typeof value === 'number' ? fmt(value) : value);
     };
     const page = rows.slice(0, PAGE_SIZE);
@@ -324,9 +439,13 @@ async function adminView(key, search = '', offset = 0, status = '') {
       return '';
     };
     const hasActions = manageDevices || canApproveStaff;
-    result.innerHTML = `${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
-      <table><thead><tr>${columns.map(column => `<th scope="col" class="${columnClass(column)}">${column.label}</th>`).join('')}${hasActions ? '<th scope="col">Дії</th>' : ''}</tr></thead>
-      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td class="${columnClass(column)}">${key === "products" && column.key === "name" ? `<span class="cell-title">${cell(column, row)}</span>` : cell(column, row)}</td>`).join('')}${hasActions ? `<td data-action-row="${index}">${rowButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
+    const selectable = row => canApproveStaff && !row.approved && row.uid !== me.uid;
+    const bulk = canApproveStaff && page.some(selectable);
+    result.innerHTML = `${bulk ? `<div class="bulkbar" hidden><b>Вибрано: <span id="bulk-count">0</span></b>
+      <button type="button" id="bulk-approve">Підтвердити</button><button type="button" id="bulk-clear">Скасувати вибір</button></div>` : ''}
+    ${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
+      <table><thead><tr>${bulk ? '<th scope="col" class="sel-col"><input type="checkbox" id="select-all" aria-label="Вибрати всі анкети"></th>' : ''}${columns.map(column => `<th scope="col" class="${columnClass(column)}">${column.label}</th>`).join('')}${hasActions ? '<th scope="col">Дії</th>' : ''}</tr></thead>
+      <tbody>${page.map((row, index) => `<tr>${bulk ? `<td class="sel-col">${selectable(row) ? `<input type="checkbox" data-select="${index}" aria-label="Вибрати ${esc(row.name || 'анкету')}">` : ''}</td>` : ''}${columns.map(column => `<td class="${columnClass(column)}">${cell(column, row)}</td>`).join('')}${hasActions ? `<td data-action-row="${index}">${rowButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
     </div>` : `<p class="admin-message muted">${search || status ? 'За цим фільтром нічого не знайдено.' : 'Записів немає.'}</p>`}
     ${offset || rows.length > PAGE_SIZE ? `<div class="row pagination">
       ${offset ? '<button type="button" id="previous-page">Назад</button>' : ''}
@@ -355,6 +474,7 @@ async function adminView(key, search = '', offset = 0, status = '') {
             const changed = must(await timed(request, WRITE_TIMEOUT, 'підтвердження доступу'));
             if (result.isConnected) {
               if (!changed) throw new Error('Запит змінився або у вас немає доступу.');
+              await loadCounts();
               await adminView(key, search, Math.max(0, page.length === 1 && status ? offset - PAGE_SIZE : offset), status);
             }
           } catch (error) {
@@ -368,6 +488,53 @@ async function adminView(key, search = '', offset = 0, status = '') {
           }
         };
       });
+    }
+    const exportButton = $('#export');
+    if (exportButton && page.length) {
+      exportButton.disabled = false;
+      exportButton.onclick = () => {
+        const blob = new Blob([toCsv(columns, page)], { type: 'text/csv;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${section.title}.csv`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      };
+    }
+    if (bulk) {
+      const boxes = [...result.querySelectorAll('[data-select]')];
+      const bar = result.querySelector('.bulkbar');
+      const all = $('#select-all');
+      const sync = () => {
+        const chosen = boxes.filter(box => box.checked).length;
+        bar.hidden = chosen === 0;
+        $('#bulk-count').textContent = String(chosen);
+        all.checked = chosen === boxes.length;
+        all.indeterminate = chosen > 0 && chosen < boxes.length;
+        boxes.forEach(box => box.closest('tr').classList.toggle('sel', box.checked));
+      };
+      boxes.forEach(box => { box.onchange = sync; });
+      all.onchange = () => { boxes.forEach(box => { box.checked = all.checked; }); sync(); };
+      $('#bulk-clear').onclick = () => { boxes.forEach(box => { box.checked = false; }); sync(); };
+      $('#bulk-approve').onclick = async () => {
+        const rowsToApprove = boxes.filter(box => box.checked).map(box => page[Number(box.dataset.select)]);
+        if (!rowsToApprove.length || !window.confirm(`Підтвердити доступ для ${rowsToApprove.length} співробітників?`)) return;
+        bar.querySelectorAll('button').forEach(control => { control.disabled = true; });
+        const failed = [];
+        for (const row of rowsToApprove) {
+          try {
+            const changed = must(await timed(sb.from('users').update({ approved: true, approved_by: me.uid, changed_at: new Date().toISOString() })
+              .eq('uid', row.uid).eq('approved', false).select('uid').maybeSingle(), WRITE_TIMEOUT, 'підтвердження доступу'));
+            if (!changed) failed.push(row.name || row.uid);
+          } catch {
+            failed.push(row.name || row.uid);
+          }
+        }
+        await loadCounts();
+        if (!result.isConnected) return;
+        await adminView(key, search, offset, status);
+        if (failed.length) window.alert(`Не вдалося підтвердити: ${failed.join(', ')}`);
+      };
     }
     const previous = $('#previous-page');
     const next = $('#next-page');

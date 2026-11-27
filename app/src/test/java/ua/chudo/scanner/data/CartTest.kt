@@ -26,8 +26,10 @@ class CartTest {
         assertEquals(19990L * 2 + 4550, Cart.total(lines))
         assertEquals(4, Cart.units(lines))
         assertEquals(1, Cart.unpriced(lines))
-        assertEquals("445,30 ₴", Cart.money(Cart.total(lines)))
-        assertEquals("1 234,50 ₴", Cart.money(123450))
+        assertEquals("445,30 ₴", Cart.money(Cart.total(lines)))
+        assertEquals("1 234,50 ₴", Cart.money(123450))
+        assertEquals("649 ₴", Cart.money(64900))
+        assertEquals("15 885 ₴", Cart.money(1588500))
     }
 
     @Test fun sameBarcodeAddsQuantityNewGoesOnTop() {

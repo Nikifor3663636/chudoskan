@@ -1,5 +1,6 @@
 package ua.chudo.scanner.ui.scan
 
+import androidx.compose.ui.text.withStyle
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -169,9 +170,21 @@ fun ProductScanScreen(
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 val own = found?.own
-                                Text(
-                                    own?.let { "У магазині ${formatQuantity(it)} шт" } ?: "Залишок невідомий",
-                                    fontSize = 13.sp, color = if (own != null && own > 0.0) m.success else m.textSecondary,
+                                if (own == null) Text("Залишок невідомий", fontSize = 13.sp, color = m.textSecondary)
+                                else Text(
+                                    androidx.compose.ui.text.buildAnnotatedString {
+                                        append("У магазині ")
+                                        val qtyColor = when {
+                                            own <= 0.0 -> m.textTertiary
+                                            own <= 2.0 -> m.warningText
+                                            else -> m.success
+                                        }
+                                        withStyle(androidx.compose.ui.text.SpanStyle(color = qtyColor, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)) {
+                                            append(formatQuantity(own))
+                                        }
+                                        append(" шт")
+                                    },
+                                    fontSize = 13.sp, color = m.textSecondary,
                                 )
                                 if (own == 0.0) found.otherStore?.let { Text(it, fontSize = 13.sp, color = m.textSecondary) }
                             }
