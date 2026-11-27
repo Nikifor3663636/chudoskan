@@ -1,6 +1,23 @@
 package ua.chudo.scanner.ui.orders
 
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import ua.chudo.scanner.R
+import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,8 +36,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.SnackbarHost
@@ -50,9 +65,7 @@ import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.data.PickupOrder
 import ua.chudo.scanner.data.ScanResult
 import ua.chudo.scanner.print.PriceFormat
-import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.common.TabletPanes
-import ua.chudo.scanner.ui.common.MinePrimaryButton
 import ua.chudo.scanner.ui.theme.Mine
 
 /** «Замовлення»: интернет-заказы на самовывоз, сборка сканером. */
@@ -69,23 +82,27 @@ fun OrdersScreen(
     var issue by remember { mutableStateOf<PickupOrder?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
+    var openNumber by rememberSaveable { mutableStateOf<String?>(null) }
+    var manual by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun scanMessage(code: String): String = when (val r = repo.scan(code)) {
+        is ScanResult.Added -> "+1 · ${r.name} (${r.order.picked} з ${r.order.items})"
+        is ScanResult.Completed -> "Замовлення № ${r.order.number} зібрано".also { message ->
+            if (!repo.demo) app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.ORDER, message, goods(r.order.items))
+        }
+        ScanResult.NotInOrder -> "Цього товару немає в замовленні"
+        ScanResult.AlreadyEnough -> "Цей товар уже зібрано повністю"
+        ScanResult.NothingPicking -> "Спочатку обери замовлення в «Нові»"
+    }
+
     // Код со сканера: +1 к строке собираемого заказа.
     LaunchedEffect(scanned) {
         val code = scanned ?: return@LaunchedEffect
         onScannedConsumed()
-        val msg = when (val r = repo.scan(code)) {
-            is ScanResult.Added -> "+1 · ${r.name} (${r.order.picked} з ${r.order.items})"
-            is ScanResult.Completed -> "Замовлення № ${r.order.number} зібрано".also { message ->
-                if (!repo.demo) app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.ORDER, message, goods(r.order.items))
-            }
-            ScanResult.NotInOrder -> "Цього товару немає в замовленні"
-            ScanResult.AlreadyEnough -> "Цей товар уже зібрано повністю"
-            ScanResult.NothingPicking -> "Спочатку обери замовлення в «Нові»"
-        }
-        snackbar.showSnackbar(msg)
+        snackbar.showSnackbar(scanMessage(code))
     }
-
     val ui = OrdersUi(shop = employee.shop, orders = orders, tab = tab, demo = repo.demo, activeNumber = activeNumber)
+    val opened = orders.firstOrNull { it.number == openNumber }
     val openOrder: (PickupOrder) -> Unit = { order ->
         when (order.stage) {
             OrderStage.NEW, OrderStage.PICKING -> { repo.start(order.number); tab = OrderStage.PICKING }
@@ -94,8 +111,28 @@ fun OrdersScreen(
     }
     Box(Modifier.fillMaxSize()) {
         if (tablet) TabletOrders(ui, { tab = it }, openOrder, onScan)
-        else OrdersContent(ui, onBack, { tab = it }, openOrder, onScan)
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+        else if (opened != null) {
+            androidx.activity.compose.BackHandler { openNumber = null }
+            OrderPickContent(
+                opened,
+                onBack = { openNumber = null },
+                onStart = { repo.start(opened.number); tab = OrderStage.PICKING },
+                onScan = { repo.start(opened.number); onScan() },
+                onManual = { repo.start(opened.number); manual = true },
+                onToggle = { index ->
+                    repo.togglePicked(opened.number, index)?.takeIf { it.stage == OrderStage.READY }?.let { done ->
+                        tab = OrderStage.READY
+                        scope.launch { snackbar.showSnackbar("Замовлення № ${done.number} зібрано") }
+                    }
+                },
+                onIssue = { issue = opened },
+            )
+        } else OrdersContent(ui, onBack, { tab = it }, { openNumber = it.number }, onScan)
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp, start = 16.dp, end = 16.dp))
+    }
+    if (manual) ua.chudo.scanner.ui.scan.ManualScanInput(onClose = { manual = false }) { code ->
+        manual = false
+        scope.launch { snackbar.showSnackbar(scanMessage(code)) }
     }
 
     issue?.let { o ->
@@ -117,7 +154,7 @@ data class OrdersUi(
     val activeNumber: String? = orders.singleOrNull { it.stage == OrderStage.PICKING }?.number,
 )
 
-private fun money(v: Double) = "${PriceFormat.tag(v).first} ₴"
+private fun money(v: Double) = "${PriceFormat.tag(v).first} ₴"
 
 /** «5 товарів», «1 товар», «2 товари». */
 fun goods(n: Int): String {
@@ -133,35 +170,54 @@ fun goods(n: Int): String {
 @Composable
 fun OrdersContent(ui: OrdersUi, onBack: () -> Unit = {}, onTab: (OrderStage) -> Unit = {}, onOrder: (PickupOrder) -> Unit = {}, onScan: () -> Unit = {}) {
     val m = Mine.colors
-    val current = ui.orders.firstOrNull { it.stage == OrderStage.PICKING && it.number == ui.activeNumber }
-    val list = ui.orders.filter { it.stage == ui.tab && it != current }
-    LazyColumn(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
+    val list = ui.orders.filter { it.stage == ui.tab }
+    LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
-            MineHeader("Замовлення", onBack)
-            Text(ui.shop.ifEmpty { "Мій магазин" }, Modifier.padding(top = 4.dp), fontSize = 15.sp, color = m.textSecondary)
-            if (ui.demo) {
-                Surface(Modifier.padding(top = 12.dp), shape = RoundedCornerShape(12.dp), color = m.accentTone, contentColor = m.accent) {
-                    Text(
-                        "Демо-дані: замовлення з 1С ще не підключені. Можна спробувати збирання сканером.",
-                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontSize = 13.sp, lineHeight = 18.sp,
-                    )
-                }
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
+                Text("Замовлення", fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.39).sp, color = m.text)
+                Text(
+                    "Самовивіз · ${ui.shop.substringBefore(" · ").ifBlank { "Мій магазин" }}, сьогодні",
+                    Modifier.padding(top = 2.dp), fontSize = 14.sp, color = m.textSecondary,
+                )
             }
-            Segments(ui, onTab)
+            Box(Modifier.padding(horizontal = 16.dp)) { Segments(ui, onTab) }
         }
-        current?.let { o -> item { PickingCard(o, onScan) } }
-        items(list, key = { it.number }) { o ->
-            OrderRow(o, onClick = { onOrder(o) })
-            HorizontalDivider(color = m.line)
+        if (list.isNotEmpty()) {
+            item { Spacer(Modifier.height(12.dp)); HorizontalDivider(color = m.line) }
+            items(list, key = { it.number }) { o ->
+                OrderRow(o, onClick = { onOrder(o) })
+                HorizontalDivider(color = m.line)
+            }
+        } else item {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).background(m.surface).border(1.dp, m.line, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(painterResource(R.drawable.ic_redesign_inbox), null, Modifier.size(20.dp), tint = m.textSecondary)
+                }
+                Text(
+                    when (ui.tab) {
+                        OrderStage.NEW -> "Нових замовлень немає"
+                        OrderStage.PICKING -> "Нічого не збираєте"
+                        OrderStage.READY -> "Готових до видачі немає"
+                    },
+                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text,
+                )
+                Text(
+                    "Нові замовлення з сайту з’являються тут автоматично, зі звуком.",
+                    Modifier.widthIn(max = 260.dp), fontSize = 14.sp, color = m.textSecondary, textAlign = TextAlign.Center,
+                )
+            }
         }
-        if (list.isEmpty() && current == null) item {
+        if (ui.demo) item {
             Text(
-                when (ui.tab) {
-                    OrderStage.NEW -> "Нових замовлень немає."
-                    OrderStage.PICKING -> "Обери замовлення у вкладці «Нові»."
-                    OrderStage.READY -> "Готових до видачі замовлень немає."
-                },
-                Modifier.padding(vertical = 16.dp), fontSize = 15.sp, color = m.textSecondary,
+                "Демо-дані: обмін замовленнями з 1С ще налаштовується.",
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), fontSize = 13.sp, color = m.textTertiary,
             )
         }
         item { Spacer(Modifier.height(24.dp)) }
@@ -268,87 +324,78 @@ private fun TabletOrderTableRow(name: String, qty: String, stock: String, picked
 private fun Segments(ui: OrdersUi, onTab: (OrderStage) -> Unit) {
     val m = Mine.colors
     Row(
-        Modifier.padding(top = 20.dp, bottom = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(track(m)).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp))
+            .border(1.dp, m.line, RoundedCornerShape(8.dp)).selectableGroup().padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         OrderStage.entries.forEach { s ->
             val selected = s == ui.tab
             val count = ui.orders.count { it.stage == s }
-            Box(
-                Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) m.card else Color.Transparent).clickable { onTab(s) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("${s.title} $count", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (selected) m.text else m.textSecondary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun OrderRow(o: PickupOrder, onClick: () -> Unit) {
-    val m = Mine.colors
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("№ ${o.number}", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-            Text(money(o.total), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-        }
-        Text("${o.customer}, оформлено о ${o.createdAt}", Modifier.padding(top = 6.dp), fontSize = 15.sp, color = m.textSecondary)
-        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = if (o.paid) m.success.copy(alpha = 0.16f) else m.field,
-                contentColor = if (o.paid) m.success else m.text,
+                Modifier.weight(1f).height(34.dp).selectable(selected, role = Role.Tab, onClick = { onTab(s) }),
+                shape = RoundedCornerShape(6.dp), border = if (selected) BorderStroke(1.dp, m.line) else null,
+                color = if (selected) m.card else Color.Transparent,
             ) {
-                Text(if (o.paid) "Оплачено" else "Оплата при отриманні", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(8.dp))
-            when {
-                o.stage == OrderStage.READY -> Text("Готове до видачі", fontSize = 14.sp, color = m.textSecondary)
-                o.missing > 0 -> Text(
-                    "${goods(o.missing)} немає в магазині", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.warningText,
-                )
-                o.lines.all { it.inStock != null } -> Text("${goods(o.items)}, усі є в магазині", fontSize = 14.sp, color = m.textSecondary)
-            }
-        }
-    }
-}
-
-/** «Збираю зараз»: прогресс и сканер. */
-@Composable
-private fun PickingCard(o: PickupOrder, onScan: () -> Unit) {
-    val m = Mine.colors
-    Surface(
-        Modifier.padding(top = 16.dp).fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = m.card, contentColor = m.text,
-        border = androidx.compose.foundation.BorderStroke(1.dp, m.line),
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Row {
-                Text("Збираю зараз", Modifier.weight(1f), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
-                Text("№ ${o.number}", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            }
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Bottom) {
-                Text("${o.picked}", fontSize = 40.sp, lineHeight = 44.sp, fontWeight = FontWeight.Black)
-                Text(" з ${goods(o.items)}", Modifier.padding(bottom = 6.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-            Box(Modifier.padding(top = 10.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(track(m))) {
-                Box(
-                    Modifier.fillMaxWidth(if (o.items == 0) 0f else o.picked.toFloat() / o.items).height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)).background(m.accent),
-                )
-            }
-            MinePrimaryButton("Сканувати наступний товар", onScan, Modifier.padding(top = 16.dp), icon = Icons.Rounded.QrCodeScanner)
-            Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                o.lines.forEach { l ->
-                    Row {
-                        Text(l.name, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1, color = if (l.done) m.textSecondary else m.text)
-                        Text("${minOf(l.picked, l.qty)}/${l.qty}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (l.done) m.success else m.text)
-                    }
+                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (selected) m.text else m.textSecondary)
+                    Spacer(Modifier.width(6.dp))
+                    Text("$count", fontSize = 12.sp, color = m.textTertiary)
                 }
             }
         }
     }
 }
 
-/** Доріжка перемикача й прогресу: у світлій темі сіра (білий вибраний сегмент на ній видно), у темній — поверхня. */
-private fun track(m: ua.chudo.scanner.ui.theme.MineColors) = if (m.dark) m.surface else Color(0xFFECEEF1)
+private enum class PillTone { NEUTRAL, OK, WARN }
+
+@Composable
+private fun OrderPill(text: String, tone: PillTone = PillTone.NEUTRAL) {
+    val m = Mine.colors
+    val (bg, fg) = when (tone) {
+        PillTone.NEUTRAL -> m.surface to m.textSecondary
+        PillTone.OK -> m.successTint to m.success
+        PillTone.WARN -> m.warningTint to m.warningText
+    }
+    Box(
+        Modifier.height(22.dp).background(bg, RoundedCornerShape(4.dp))
+            .then(if (tone == PillTone.NEUTRAL) Modifier.border(1.dp, m.line, RoundedCornerShape(4.dp)) else Modifier)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 12.sp, lineHeight = 12.sp, fontWeight = FontWeight.Medium, color = fg, maxLines = 1)
+    }
+}
+
+/** «1 позиції», «5 позицій». */
+private fun positions(n: Int) = "$n " + if (n % 10 == 1 && n % 100 != 11) "позиції" else "позицій"
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OrderRow(o: PickupOrder, onClick: () -> Unit) {
+    val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("№${o.number}", Modifier.weight(1f), fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text)
+                Text(money(o.total), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.15).sp, color = m.text)
+            }
+            Text(
+                "${o.customer} · оформлено о ${o.createdAt} · ${goods(o.items)}",
+                fontSize = 13.sp, color = m.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            FlowRow(
+                Modifier.padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (o.paid) OrderPill("Оплачено", PillTone.OK) else OrderPill("Оплата при отриманні")
+                if (o.missing > 0) OrderPill("${positions(o.missing)} не вистачає", PillTone.WARN)
+                if (o.stage == OrderStage.PICKING) OrderPill("${o.picked} з ${o.items} зібрано")
+            }
+        }
+        Icon(painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(18.dp), tint = m.textTertiary)
+    }
+}
+

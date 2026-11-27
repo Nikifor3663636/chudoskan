@@ -1,5 +1,6 @@
 package ua.chudo.scanner.ui.scan
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,9 +71,10 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
                 Text("Ввести код", Modifier.padding(start = 4.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             }
             HorizontalDivider(color = m.line)
+            val bad = text.length == 13 && text.all(Char::isDigit) && !ean13Valid(text)
             Column(Modifier.fillMaxWidth().background(m.card).padding(16.dp)) {
                 Row(
-                    Modifier.fillMaxWidth().height(60.dp).border(1.dp, m.outline, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp),
+                    Modifier.fillMaxWidth().height(60.dp).border(1.dp, if (bad) m.danger else m.outline, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val style = CodeStyle.copy(fontSize = 26.sp, letterSpacing = 1.56.sp)
@@ -88,9 +90,12 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
                     )
                     if (text.all(Char::isDigit)) Text("${text.length}/13", fontSize = 13.sp, color = m.textTertiary)
                 }
-                Text(
+                if (bad) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(painterResource(R.drawable.ic_redesign_circle_alert), null, Modifier.size(16.dp), tint = m.danger)
+                    Text("Контрольна цифра не збігається — перевірте останню цифру", fontSize = 13.sp, color = m.danger)
+                } else Text(
                     "Штрихкод з 13 цифр, артикул або код 1С.",
-                    Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary,
+                    Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textTertiary,
                 )
             }
             HorizontalDivider(color = m.line)
@@ -118,7 +123,7 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (deleteKey) Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Стерти")
+                            if (deleteKey) Icon(painterResource(R.drawable.ic_redesign_arrow_left), "Стерти", tint = m.text)
                             else Text(
                                 key, fontSize = if (submitKey) 16.sp else 24.sp,
                                 fontWeight = if (submitKey) FontWeight.SemiBold else FontWeight.Medium,
@@ -133,4 +138,11 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
             Spacer(Modifier.fillMaxWidth().height(22.dp).background(m.card))
         }
     }
+}
+
+/** EAN-13: 13 цифр і правильна контрольна цифра. */
+internal fun ean13Valid(code: String): Boolean {
+    if (code.length != 13 || !code.all(Char::isDigit)) return false
+    val sum = code.take(12).mapIndexed { i, c -> (c - '0') * if (i % 2 == 0) 1 else 3 }.sum()
+    return (10 - sum % 10) % 10 == code.last() - '0'
 }

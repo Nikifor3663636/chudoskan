@@ -286,8 +286,7 @@ private fun ids(line: CartLine) = listOfNotNull(
     line.article.ifBlank { null }?.let { "арт. $it" }, line.code1C.ifBlank { null }, line.barcode,
 ).joinToString(" · ")
 
-private fun cartPrice(kop: Long): String =
-    if (kop % 100L == 0L) Cart.money(kop).removeSuffix(",00 ₴") + " ₴" else Cart.money(kop)
+private fun cartPrice(kop: Long): String = Cart.money(kop)
 
 @Composable
 private fun CartTotals(lines: List<CartLine>) {
@@ -431,7 +430,7 @@ internal fun CashierContent(
             )
             Column(Modifier.widthIn(max = 352.dp).fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 BigBarcode(line.barcode, Modifier.fillMaxWidth().height(130.dp))
-                Text(line.barcode, Modifier.padding(top = 4.dp), fontSize = 15.sp, color = ink, textAlign = TextAlign.Center, letterSpacing = 1.2.sp)
+                Text(line.barcode, Modifier.padding(top = 4.dp), fontSize = 30.sp, fontWeight = FontWeight.Medium, color = ink, textAlign = TextAlign.Center, letterSpacing = 3.sp, maxLines = 1)
             }
             Text("× ${line.qty} шт", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ink)
             Text("Яскравість екрана піднято до максимуму", fontSize = 13.sp, color = Color(0xFF555555), textAlign = TextAlign.Center)

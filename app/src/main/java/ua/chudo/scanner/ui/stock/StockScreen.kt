@@ -1,5 +1,8 @@
 package ua.chudo.scanner.ui.stock
 
+import ua.chudo.scanner.R
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -528,130 +531,201 @@ fun StockScreen(
         scanned?.let { query = it; vm.scanned(it); onScannedConsumed() }
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item { ShopHeader(employee, onBack) }
-        // Адмін: один файл 1С на всю мережу — застосунок сам розкладає залишки по магазинах.
-        // Решта (консультанти, адмін магазину) лише бачать, коли оновлено, — завантажує тільки stockAdmin (див. firestore.rules).
-        if (onNetworkUpload != null) item { NetworkUploadCard(onNetworkUpload) }
-        else item { UploadCard(info, onUpload = if (employee.stockAdmin) ({ picker.launch(FILE_TYPES) }) else null) }
-        item {
-            MineSearchField(
-                query, { query = it; if (it.isEmpty()) vm.clear() }, "Артикул, штрихкод або назва",
-                { keyboard?.hide(); vm.search(query) },
-            )
+    val m = Mine.colors
+    val app = ctx.chudoApp
+    val supabase = ua.chudo.scanner.data.Backend.isSupabase
+    var tab by rememberSaveable { mutableStateOf(StockTab.PROMO) }
+    val allStores by androidx.compose.runtime.produceState<Map<String, ua.chudo.scanner.data.StoreDoc>>(emptyMap()) {
+        value = try { app.networkLookup.stores() } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyMap() }
+    }
+    val myCode by androidx.compose.runtime.produceState<String?>(null, employee.shopId) {
+        value = try { app.networkLookup.storesWithOwn(employee.shopId).second } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+    }
+    val counts by androidx.compose.runtime.produceState<Map<StockTab, Long?>>(emptyMap(), supabase) {
+        if (supabase) value = mapOf(
+            StockTab.PROMO to try { ua.chudo.scanner.data.ProductHighlights.count(ua.chudo.scanner.data.HighlightKind.PROMO) } catch (e: CancellationException) { throw e } catch (_: Exception) { null },
+            StockTab.NEW to try { ua.chudo.scanner.data.ProductHighlights.count(ua.chudo.scanner.data.HighlightKind.NEW) } catch (e: CancellationException) { throw e } catch (_: Exception) { null },
+        )
+    }
+    var highlights by remember(tab) { mutableStateOf<List<ua.chudo.scanner.data.ProductHighlight>?>(null) }
+    var low by remember(tab, myCode) { mutableStateOf<List<LowItem>?>(null) }
+    LaunchedEffect(tab, myCode, allStores, supabase) {
+        try {
+            when (tab) {
+                StockTab.PROMO, StockTab.NEW -> {
+                    val kind = if (tab == StockTab.PROMO) ua.chudo.scanner.data.HighlightKind.PROMO else ua.chudo.scanner.data.HighlightKind.NEW
+                    highlights = if (supabase) ua.chudo.scanner.data.ProductHighlights.page(kind, "", 0) else emptyList()
+                }
+                StockTab.LOW -> {
+                    val code = myCode
+                    low = if (supabase && code != null) lowStock(ua.chudo.scanner.data.SupabaseStock.storeItems(code, 2000), code, allStores) else emptyList()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (tab == StockTab.LOW) low = emptyList() else highlights = emptyList()
         }
-        when (val st = s) {
-            StockState.Idle -> if (ua.chudo.scanner.data.Backend.isSupabase) {
-                item {
-                    Text("Каталог товарів", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-                items(catalog, key = { "catalog-" + it.barcode }) { row ->
-                    CatalogRow(
-                        row.name.ifBlank { row.barcode },
-                        listOf(row.article, row.barcode).filter(String::isNotBlank).joinToString(" · "),
-                        onClick = { query = row.barcode; vm.scanned(row.barcode) },
-                    )
-                }
-                item {
-                    when {
-                        catalogError -> MinePrimaryButton("Повторити завантаження", { catalogRevision++ })
-                        catalogLoading -> CircularProgressIndicator()
-                        catalogMore -> MinePrimaryButton("Показати ще товари", { catalogRevision++ })
-                        catalog.isEmpty() -> Text("У каталозі поки немає товарів.")
-                    }
-                }
-            }
-            is StockState.Loading -> item {
-                Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Mine.colors.accent)
-                    Spacer(Modifier.height(16.dp))
-                    Text(st.step, fontSize = 15.sp, color = Mine.colors.textSecondary, textAlign = TextAlign.Center)
-                }
-            }
-            is StockState.Failed -> item { ErrorState(st.error, null, { vm.search(query) }) }
-            is StockState.NotFound -> item {
-                MessageState(
-                    Icons.Rounded.SearchOff,
-                    "Не знайшли «${st.query}»",
-                    "Ні на сайті, ні у вивантаженні твого магазину.",
+    }
+    val openBarcode: (String) -> Unit = { barcode ->
+        onOpenCatalogProduct?.invoke(barcode, listOf(barcode)) ?: run { query = barcode; vm.scanned(barcode) }
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(m.bg).statusBarsPadding(),
+        contentPadding = PaddingValues(bottom = 32.dp),
+    ) {
+        item { StockTitle(employee.shop) }
+        item { StockBanner(info, allStores.size, Modifier.padding(horizontal = 16.dp)) }
+        item {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
+                MineSearchField(
+                    query, { query = it; if (it.isEmpty()) vm.clear() }, "Артикул, штрихкод або назва",
+                    { keyboard?.hide(); vm.search(query) },
                 )
             }
-            is StockState.NotInExport -> item {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    MessageState(
-                        Icons.Rounded.SearchOff,
-                        "Немає у вивантаженні 1С",
-                        "Штрихкод ${st.code}",
+        }
+        when (val st = s) {
+            StockState.Idle -> {
+                item { StockSegments(tab, counts, { tab = it }, Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) }
+                if (tab == StockTab.LOW) item {
+                    Text(
+                        "Товари, яких у магазині 1 шт або немає, але є в місті.",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp), fontSize = 13.sp, color = m.textTertiary,
                     )
-                    MineButton("Шукати на сайті", { vm.search(st.code) })
                 }
-            }
-            is StockState.Pick -> {
-                item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
-                items(st.items, key = { it.id }) { ProductCard(it, onClick = { vm.open(it.urlKey) }) }
-            }
-            is StockState.NetPick -> {
-                item { Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary) }
-                items(st.items, key = { it.barcode }) { av ->
-                    MineCard(Modifier.clickable { vm.openNet(av) }, padding = 16.dp) {
-                        Text(av.item.name.ifBlank { av.barcode }, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold)
-                        Text(netIds(av.item.code, av.item.article, av.barcode), fontSize = 14.sp, color = Mine.colors.textSecondary)
-                    }
-                }
-            }
-            is StockState.Ready -> {
-                val net = st.net
-                item {
-                    val index = catalog.indexOfFirst { it.barcode == net?.barcode }
-                    val swipe = if (index >= 0) Modifier.pointerInput(index, catalog) {
-                        var distance = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { distance = 0f },
-                            onDragEnd = {
-                                val neighbor = when {
-                                    distance < -64.dp.toPx() -> catalog.getOrNull(index + 1)
-                                    distance > 64.dp.toPx() -> catalog.getOrNull(index - 1)
-                                    else -> null
-                                }
-                                neighbor?.let { query = it.barcode; vm.scanned(it.barcode) }
-                            },
-                        ) { change, amount -> change.consume(); distance += amount }
-                    } else Modifier
-                    Column(Modifier.fillMaxWidth().then(swipe)) {
-                        ProductHeader(st.product, st.item, net)
-                    }
-                }
-                if (net != null) {
-                    item { NetworkStockCard(net) }
-                    // Адмін бачить товар одразу в усіх магазинах мережі.
-                    if (vm.networkView) item { NetworkDistributionCard(NetworkAvailability.byCity(net.item, stores, ownCode ?: net.ownCode), ownCode ?: net.ownCode) }
-                    st.siteAvailable?.let { have -> item { SiteLine(have) } }
-                    item {
-                        val chosen = selected.any { it.barcode == net.barcode }
-                        MineButton(if (chosen) "Прибрати з цінників" else "Додати до цінників", { vm.toggleSelected(net) }, Modifier.fillMaxWidth())
-                        onOpenCatalogProduct?.let { open ->
-                            MineButton("Картка товару", { open(net.barcode, catalog.map { it.barcode }) }, Modifier.fillMaxWidth())
-                        }
+                item { Spacer(Modifier.height(12.dp)); HorizontalDivider(color = m.line) }
+                if (tab == StockTab.LOW) {
+                    val list = low
+                    when {
+                        list == null -> item { StockListMessage("", loading = true) }
+                        list.isEmpty() -> item { StockListMessage(if (myCode == null && supabase) "Магазин ще не прив’язано до складу 1С." else "Усе є в достатній кількості.") }
+                        else -> items(list, key = { "low-" + it.row.barcode }) { LowStockRow(it) { openBarcode(it.row.barcode) } }
                     }
                 } else {
-                    item { MyShopCard(employee, st, info != null) }
+                    val list = highlights
+                    val kind = if (tab == StockTab.PROMO) ua.chudo.scanner.data.HighlightKind.PROMO else ua.chudo.scanner.data.HighlightKind.NEW
+                    when {
+                        list == null -> item { StockListMessage("", loading = true) }
+                        list.isEmpty() -> item { StockListMessage(if (tab == StockTab.PROMO) "Акцій зараз немає." else "Новинок поки немає.") }
+                        else -> items(list, key = { "hl-" + it.barcode + it.article + it.name }) { product ->
+                            HighlightProductRow(product, kind) {
+                                if (product.barcode.isNotBlank()) openBarcode(product.barcode)
+                                else { query = product.article.ifBlank { product.name }; vm.search(query) }
+                            }
+                        }
+                    }
+                }
+            }
+            else -> item {
+                Column(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    StockResult(
+                        st, employee, vm, info != null, catalog, selected, stores, ownCode,
+                        onQuery = { query = it }, onOpenCatalogProduct = onOpenCatalogProduct, retry = { vm.search(query) },
+                    )
                 }
             }
         }
-        // Адмін: що лежить у будь-якому магазині мережі.
-        if (vm.networkView) item(key = "store-stock") {
-            StoreStockCard(
-                NetworkAvailability.storeChoices(stores), storeCode, storeItems, storeLoading,
-                onPick = vm::pickStore, onOpen = vm::openStoreItem,
-            )
+        if (employee.stockAdmin || onNetworkUpload != null || vm.networkView) {
+            item { StockSection("Для адміна залишків") }
+            if (onNetworkUpload != null) item {
+                StockLinkRow(R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "«Ведомость по партиям», .xlsx", onNetworkUpload)
+            } else if (employee.stockAdmin) item {
+                StockLinkRow(R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "Залишки свого магазину, .xlsx або .csv") { picker.launch(FILE_TYPES) }
+            }
+            // Адмін: що лежить у будь-якому магазині мережі.
+            if (vm.networkView) item(key = "store-stock") {
+                Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
+                    StoreStockCard(
+                        NetworkAvailability.storeChoices(stores), storeCode, storeItems, storeLoading,
+                        onPick = vm::pickStore, onOpen = vm::openStoreItem,
+                    )
+                }
+            }
         }
     }
 
     ImportDialog(vm, employee)
+}
+
+/** Результат пошуку на вкладці «Залишки»: завантаження, помилка, вибір, товар зі залишками. */
+@Composable
+private fun StockResult(
+    st: StockState,
+    employee: Employee,
+    vm: StockViewModel,
+    uploaded: Boolean,
+    catalog: List<ua.chudo.scanner.data.SbStockRow>,
+    selected: List<NetAvailability>,
+    stores: Map<String, ua.chudo.scanner.data.StoreDoc>,
+    ownCode: String?,
+    onQuery: (String) -> Unit,
+    onOpenCatalogProduct: ((String, List<String>) -> Unit)?,
+    retry: () -> Unit,
+) {
+    when (st) {
+        StockState.Idle -> Unit
+        is StockState.Loading -> Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(color = Mine.colors.accent)
+            Spacer(Modifier.height(16.dp))
+            Text(st.step, fontSize = 15.sp, color = Mine.colors.textSecondary, textAlign = TextAlign.Center)
+        }
+        is StockState.Failed -> ErrorState(st.error, null, retry)
+        is StockState.NotFound -> MessageState(
+            Icons.Rounded.SearchOff, "Не знайшли «${st.query}»", "Ні на сайті, ні у вивантаженні твого магазину.",
+        )
+        is StockState.NotInExport -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            MessageState(Icons.Rounded.SearchOff, "Немає у вивантаженні 1С", "Штрихкод ${st.code}")
+            MineButton("Шукати на сайті", { vm.search(st.code) })
+        }
+        is StockState.Pick -> {
+            Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary)
+            st.items.forEach { ProductCard(it, onClick = { vm.open(it.urlKey) }) }
+        }
+        is StockState.NetPick -> {
+            Text("Обери товар", Modifier.padding(horizontal = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary)
+            st.items.forEach { av ->
+                MineCard(Modifier.clickable { vm.openNet(av) }, padding = 16.dp) {
+                    Text(av.item.name.ifBlank { av.barcode }, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold)
+                    Text(netIds(av.item.code, av.item.article, av.barcode), fontSize = 14.sp, color = Mine.colors.textSecondary)
+                }
+            }
+        }
+        is StockState.Ready -> {
+            val net = st.net
+            val index = catalog.indexOfFirst { it.barcode == net?.barcode }
+            val swipe = if (index >= 0) Modifier.pointerInput(index, catalog) {
+                var distance = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { distance = 0f },
+                    onDragEnd = {
+                        val neighbor = when {
+                            distance < -64.dp.toPx() -> catalog.getOrNull(index + 1)
+                            distance > 64.dp.toPx() -> catalog.getOrNull(index - 1)
+                            else -> null
+                        }
+                        neighbor?.let { onQuery(it.barcode); vm.scanned(it.barcode) }
+                    },
+                ) { change, amount -> change.consume(); distance += amount }
+            } else Modifier
+            Column(Modifier.fillMaxWidth().then(swipe)) { ProductHeader(st.product, st.item, net) }
+            if (net != null) {
+                NetworkStockCard(net)
+                if (vm.networkView) NetworkDistributionCard(NetworkAvailability.byCity(net.item, stores, ownCode ?: net.ownCode), ownCode ?: net.ownCode)
+                st.siteAvailable?.let { have -> SiteLine(have) }
+                val chosen = selected.any { it.barcode == net.barcode }
+                MineButton(if (chosen) "Прибрати з цінників" else "Додати до цінників", { vm.toggleSelected(net) }, Modifier.fillMaxWidth())
+                onOpenCatalogProduct?.let { open ->
+                    MineButton("Картка товару", { open(net.barcode, catalog.map { it.barcode }) }, Modifier.fillMaxWidth())
+                }
+            } else {
+                MyShopCard(employee, st, uploaded)
+            }
+        }
+    }
 }
 
 private val FILE_TYPES = arrayOf(
@@ -662,52 +736,6 @@ private val FILE_TYPES = arrayOf(
     "text/plain",
     "application/octet-stream",
 )
-
-@Composable
-private fun ShopHeader(e: Employee, onBack: () -> Unit) {
-    val m = Mine.colors
-    Column {
-        MineHeader("Залишки магазину", onBack)
-        Text(e.shop, Modifier.padding(start = 4.dp), fontSize = 15.sp, color = m.textSecondary)
-    }
-}
-
-/** Вивантаження з 1С: коли оновлено, скільки позицій; кнопка завантаження — лише якщо [onUpload] не null. */
-@Composable
-private fun UploadCard(info: ShopStockInfo?, onUpload: (() -> Unit)?) {
-    val m = Mine.colors
-    Surface(shape = Mine.cardShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
-        Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(if (info == null) m.warning else m.success)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (info == null) "Залишки ще не завантажено"
-                    else "Оновлено " + (info.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(it) } ?: "—"),
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                )
-            }
-            info?.let {
-                Text(
-                    "${it.rows} позицій" + (it.updatedBy?.let { by -> ", завантажив(ла) $by" } ?: ""),
-                    Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.textSecondary,
-                )
-            }
-            if (onUpload != null) {
-                MineButton("Завантажити файл з 1С", onUpload, Modifier.padding(top = 14.dp).fillMaxWidth(), tone = if (info == null) MineTone.ACCENT else MineTone.OUTLINE)
-                Text(
-                    "Excel (.xlsx) або CSV з колонками «Артикул» чи «Штрихкод» і «Кількість» чи «Залишок».",
-                    Modifier.padding(top = 8.dp), fontSize = 13.sp, lineHeight = 18.sp, color = m.textSecondary,
-                )
-            } else if (info == null) {
-                Text(
-                    "Залишки завантажує адміністратор мережі.",
-                    Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.textSecondary,
-                )
-            }
-        }
-    }
-}
 
 /** «Код BOC022446 · Арт. 39217 · 4823077601234». */
 private fun netIds(code: String, article: String, barcode: String) =

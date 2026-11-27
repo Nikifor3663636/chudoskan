@@ -26,6 +26,23 @@ class OrdersTest {
         assertEquals(ScanResult.NothingPicking, repo.scan("6903317562084"))
     }
 
+    @Test fun manualMarkCompletesAndUnmarks() {
+        val repo = OrdersRepository(DemoOrders).apply { load("shop") }
+        val order = repo.current()!!
+        val open = order.lines.indexOfFirst { !it.done }
+        val marked = repo.togglePicked(order.number, open)!!
+        assertEquals(OrderStage.READY, marked.stage)
+        assertEquals(null, repo.current())
+        // Готове замовлення вже не змінюється вручну.
+        assertEquals(null, repo.togglePicked(order.number, open))
+
+        val other = OrdersRepository(DemoOrders).apply { load("shop") }
+        val done = order.lines.indexOfFirst { it.done }
+        val unmarked = other.togglePicked(order.number, done)!!
+        assertEquals(0, unmarked.lines[done].picked)
+        assertEquals(OrderStage.PICKING, unmarked.stage)
+    }
+
     @Test fun startAndIssue() {
         val repo = OrdersRepository(DemoOrders).apply { load("shop") }
         repo.scan("6903317562084"); repo.scan("6903317562084") // дособрали текущий

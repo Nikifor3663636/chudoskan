@@ -131,9 +131,9 @@ internal fun LabelBatchContent(
                     ) {
                         TextButton(onClick = onToggleAll, enabled = progress == null) {
                             BatchCheck(all, mixed = checked.isNotEmpty() && !all)
-                            Text(if (all) "Зняти всі" else "Вибрати всі", Modifier.padding(start = 8.dp), fontSize = 14.sp, color = m.link)
+                            Text(if (all) "Зняти всі" else "Вибрати всі", Modifier.padding(start = 8.dp), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.text)
                         }
-                        Text(formatTitle(template), Modifier.weight(1f), fontSize = 13.sp, color = m.textTertiary, textAlign = TextAlign.End)
+                        Text("Формат ${formatTitle(template).substringAfterLast(' ')}", Modifier.weight(1f), fontSize = 13.sp, color = m.textTertiary, textAlign = TextAlign.End)
                     }
                     HorizontalDivider(color = m.line)
                 }
@@ -207,16 +207,16 @@ private fun BatchButton(
         color = when {
             !enabled -> m.surface
             primary -> m.accent
-            tonal -> m.accentTone
+            tonal -> m.surface
             else -> m.card
         },
         contentColor = when {
             !enabled -> m.textTertiary
             primary -> m.onAccent
-            tonal -> m.link
+            tonal -> m.text
             else -> m.text
         },
-        border = if (primary) null else BorderStroke(1.dp, if (tonal) m.brandLine else m.outline),
+        border = if (primary) null else BorderStroke(1.dp, if (tonal) m.line else m.outline),
     ) {
         Row(
             Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),

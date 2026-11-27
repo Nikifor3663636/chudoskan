@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { adminQuery, adminSections, canViewSection, PAGE_SIZE } from '../src/admin.js';
+import { adminQuery, adminSections, canViewSection, commandMatches, navCount, PAGE_SIZE, shopLines, toCsv } from '../src/admin.js';
 
 test('admin navigation follows the employee roles', () => {
   const stock = { canImport: true, shopAdmin: false, superAdmin: false };
@@ -52,4 +52,30 @@ test('staff search covers name, phone and shop while device filters match a spec
   calls.length = 0;
   adminQuery(client, 'deviceAccess', '', 0, 'blocked');
   assert.deepEqual(calls[2], ['eq', 'status', 'blocked']);
+});
+
+test('sidebar counts highlight pending staff only', () => {
+  const counts = { products: 21870, shops: 46, printers: 15, pending: 2 };
+  assert.deepEqual(navCount('products', counts), { text: '21 870', attention: false });
+  assert.deepEqual(navCount('staff', counts), { text: '2', attention: true });
+  assert.equal(navCount('staff', { pending: 0 }), null);
+  assert.equal(navCount('audit', counts), null);
+});
+
+test('shop splits into number and mall', () => {
+  assert.deepEqual(shopLines('ЧО 22 Одеса · ТРЦ Gagarin Plaza'), ['ЧО 22 Одеса', 'ТРЦ Gagarin Plaza']);
+  assert.deepEqual(shopLines('ЧО 1 Київ'), ['ЧО 1 Київ', '']);
+  assert.deepEqual(shopLines(null), ['', '']);
+});
+
+test('csv export quotes separators and keeps cyrillic', () => {
+  const columns = [{ label: 'Товар', get: row => row.name }, { label: 'Кількість', get: row => row.q }];
+  const csv = toCsv(columns, [{ name: 'Потяг; LEGO "DUPLO"', q: 3 }, { name: 'М’яч', q: null }]);
+  assert.equal(csv, '﻿Товар;Кількість\r\n"Потяг; LEGO ""DUPLO""";3\r\nМ’яч;');
+});
+
+test('command palette filters sections by name', () => {
+  const items = [{ key: 'staff', label: 'Співробітники' }, { key: 'shops', label: 'Магазини' }];
+  assert.deepEqual(commandMatches(items, 'маг').map(item => item.key), ['shops']);
+  assert.equal(commandMatches(items, '').length, 2);
 });

@@ -31,3 +31,32 @@ fun Context.shareText(text: String) {
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
     startActivity(Intent.createChooser(send, null))
 }
+
+private val cityGenitive = mapOf(
+    "Київ" to "Києва", "Миколаїв" to "Миколаєва", "Кривий Ріг" to "Кривого Рогу",
+    "Рівне" to "Рівного", "Тернопіль" to "Тернополя", "Суми" to "Сум", "Черкаси" to "Черкас",
+    "Чернівці" to "Чернівців", "Хмельницький" to "Хмельницького", "Кропивницький" to "Кропивницького",
+    "Біла Церква" to "Білої Церкви", "Запоріжжя" to "Запоріжжя",
+)
+
+/** «Одеса» → «Магазини Одеси»; для невідомих складених назв — «Магазини · Назва». */
+fun shopsOfCity(city: String): String {
+    val c = city.trim()
+    cityGenitive[c]?.let { return "Магазини $it" }
+    if (c.isEmpty() || c.contains(' ')) return if (c.isEmpty()) "Магазини" else "Магазини · $c"
+    val g = when {
+        c.endsWith("ів") -> c.dropLast(2) + "ова"
+        c.endsWith("а") -> c.dropLast(1) + "и"
+        c.endsWith("я") -> c.dropLast(1) + "і"
+        c.endsWith("о") -> c.dropLast(1) + "а"
+        c.last() in "бвгґджзклмнпрстфхцчшщ" -> c + "а"
+        else -> return "Магазини · $c"
+    }
+    return "Магазини $g"
+}
+
+/** «+380 67 123 45 67» → «+380 67 ••• •• 67»: у профілі номер видно лише частково. */
+fun maskPhone(formatted: String): String {
+    val parts = formatted.split(' ')
+    return if (parts.size == 5 && parts[0] == "+380") "${parts[0]} ${parts[1]} ••• •• ${parts[4]}" else formatted
+}

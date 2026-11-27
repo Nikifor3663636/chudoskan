@@ -434,7 +434,7 @@ private fun PrintPreview(items: List<LabelItem>, format: Template, quantity: Int
         }
         if (capacity != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("$capacity на аркуші A4 · $pages арк.", Modifier.weight(1f), fontSize = 13.sp, color = Mine.colors.textSecondary)
+                Text(sheetNote(capacity, landscape, pages ?: 1), Modifier.weight(1f), fontSize = 13.sp, color = Mine.colors.textSecondary)
                 TextButton(onClick = { showSheet = true }) { Icon(painterResource(R.drawable.ic_redesign_eye), null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Переглянути аркуш") }
@@ -481,8 +481,8 @@ private fun PrinterStatusLine(p: PrinterLine, enabled: Boolean, onClick: () -> U
                         p.online == null -> "Шукаю принтер…"
                         p.model == null -> "Виберіть принтер"
                         p.missing -> "Принтер недоступний"
-                        p.online -> "Онлайн"
-                        else -> "Не відповідає"
+                        p.online -> "онлайн"
+                        else -> "не відповідає"
                     },
                     fontSize = 13.sp, color = m.textTertiary,
                 )
@@ -619,4 +619,15 @@ fun OrientationPicker(t: Template, landscape: Boolean, onChange: (Boolean) -> Un
         }
         Text(orientationNote(t, landscape), Modifier.padding(top = 6.dp), fontSize = 13.sp, color = m.textSecondary)
     }
+}
+
+/** «20 на аркуші A4, альбомна · 1 аркуш». */
+internal fun sheetNote(capacity: Int, landscape: Boolean, pages: Int): String {
+    val word = when {
+        pages % 100 in 11..14 -> "аркушів"
+        pages % 10 == 1 -> "аркуш"
+        pages % 10 in 2..4 -> "аркуші"
+        else -> "аркушів"
+    }
+    return "$capacity на аркуші A4, ${if (landscape) "альбомна" else "книжна"} · $pages $word"
 }
