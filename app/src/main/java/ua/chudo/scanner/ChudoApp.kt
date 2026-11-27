@@ -24,6 +24,8 @@ class ChudoApp : Application() {
             .build()
     }
 
+    val promoSheet by lazy { ua.chudo.scanner.data.PromoSheet(okHttp) }
+
     val repository by lazy {
         ChudoRepository(SiteClient(okHttp, WebViewFetcher(this)), prefs)
     }

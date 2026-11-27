@@ -96,7 +96,16 @@ fun HomeScreen(
                 newCount = highlightCount(HighlightKind.NEW)
             }
             launch {
-                promoCount = highlightCount(HighlightKind.PROMO)
+                while (true) {
+                    try {
+                        promoCount = app.promoSheet.read().count { it.isActive() }.toLong()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        if (promoCount == null) promoCount = highlightCount(HighlightKind.PROMO)
+                    }
+                    kotlinx.coroutines.delay(ua.chudo.scanner.data.PromoSheet.REFRESH_MS)
+                }
             }
         }
     }

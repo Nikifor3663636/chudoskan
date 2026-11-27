@@ -59,6 +59,28 @@ fun HighlightsScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val kind = initialKind
+    val promo = kind == HighlightKind.PROMO
+    val sheet = (ctx.applicationContext as ua.chudo.scanner.ChudoApp).promoSheet
+    var campaigns by remember { mutableStateOf<List<ua.chudo.scanner.data.PromoCampaign>?>(null) }
+    var campaignError by remember { mutableStateOf(false) }
+    var currentCampaign by remember { mutableStateOf<ua.chudo.scanner.data.PromoCampaign?>(null) }
+    var campaignRefresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(promo, campaignRefresh) {
+        if (!promo) return@LaunchedEffect
+        var force = campaignRefresh > 0
+        while (true) {
+            try {
+                campaigns = sheet.read(force)
+                campaignError = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                campaignError = true
+            }
+            force = false
+            delay(ua.chudo.scanner.data.PromoSheet.REFRESH_MS)
+        }
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var rows by remember { mutableStateOf(emptyList<ProductHighlight>()) }
     var selected by remember { mutableStateOf<ProductHighlight?>(null) }
@@ -121,8 +143,30 @@ fun HighlightsScreen(
         item {
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth(), enabled = !working,
-                label = { Text("Назва, штрихкод або артикул") }, singleLine = true, shape = Mine.fieldShape,
+                label = { Text(if (promo) "Акція, товар, штрихкод або артикул" else "Назва, штрихкод або артикул") }, singleLine = true, shape = Mine.fieldShape,
             )
+        }
+        if (promo) {
+            item { Text("Акції з Google Таблиці", style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
+            if (campaignError) item {
+                Text(if (campaigns == null) "Не вдалося завантажити таблицю акцій." else "Не вдалося оновити таблицю акцій.")
+                TextButton({ campaignRefresh++ }) { Text("Оновити") }
+            } else if (campaigns == null) item { CircularProgressIndicator() }
+            val visible = campaigns.orEmpty().filter { campaign ->
+                val term = query.trim()
+                listOf(campaign.title, campaign.brand, campaign.supplier).any { it.contains(term, ignoreCase = true) }
+            }
+            if (campaigns != null && visible.isEmpty()) item { Text("Кампаній не знайдено.") }
+            items(visible) { campaign ->
+                CatalogRow(
+                    title = campaign.title,
+                    detail = listOf(campaign.brand, campaign.startsOn, campaign.endsOn)
+                        .filter(String::isNotBlank).joinToString(" · "),
+                    trailing = campaign.status.takeIf(String::isNotBlank),
+                    onClick = { currentCampaign = campaign },
+                )
+            }
+            item { Text("Акційні товари", style = androidx.compose.material3.MaterialTheme.typography.titleMedium) }
         }
         if (canUpload) item {
             MinePrimaryButton("Завантажити звіт «${kind.title}»", {
@@ -170,6 +214,23 @@ fun HighlightsScreen(
                 }
             }) { Text("Показати ще") }
         }
+    }
+
+    currentCampaign?.let { campaign ->
+        AlertDialog(
+            onDismissRequest = { currentCampaign = null },
+            title = { Text(campaign.title) },
+            text = {
+                val labels = listOf("ТМ" to campaign.brand, "Постачальник" to campaign.supplier,
+                    "Початок" to campaign.startsOn, "Кінець" to campaign.endsOn, "Статус" to campaign.status)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items((labels + campaign.details).filter { it.second.isNotBlank() }) { (label, value) ->
+                        Text("$label · $value")
+                    }
+                }
+            },
+            confirmButton = { TextButton({ currentCampaign = null }) { Text("Закрити") } },
+        )
     }
 
     selected?.let { row ->
