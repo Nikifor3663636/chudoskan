@@ -1,19 +1,23 @@
 package ua.chudo.scanner.ui.scan
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.theme.Mine
-import ua.chudo.scanner.ui.theme.MineDark
+import ua.chudo.scanner.R
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -35,7 +39,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,13 +48,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.FlashOff
-import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import android.media.AudioManager
@@ -67,6 +64,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -81,11 +85,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -107,6 +113,11 @@ fun ScannerScreen(
     result: (@Composable () -> Unit)? = null,
     onManual: (() -> Unit)? = null,
     onCartMode: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
+    priceMode: Boolean = false,
+    onPriceMode: ((Boolean) -> Unit)? = null,
+    cartUnits: Int? = null,
+    acceptingScans: Boolean = true,
 ) {
     val ctx = LocalContext.current
     var granted by remember {
@@ -121,7 +132,8 @@ fun ScannerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (granted) {
-            CameraScreen(onBarcode, onClose, continuous, status, result, onManual, onCartMode)
+            CameraSystemBars()
+            CameraScreen(onBarcode, onClose, continuous, status, result, onManual, onCartMode, onSearch, priceMode, onPriceMode, cartUnits, acceptingScans)
         } else if (askedOnce) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 MessageState(
@@ -140,6 +152,22 @@ fun ScannerScreen(
     }
 }
 
+@Composable
+private fun CameraSystemBars() {
+    val window = LocalActivity.current?.window
+    val view = LocalView.current
+    val lightBars by rememberUpdatedState(!Mine.colors.dark)
+    DisposableEffect(window, view) {
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = false
+        controller?.isAppearanceLightNavigationBars = false
+        onDispose {
+            controller?.isAppearanceLightStatusBars = lightBars
+            controller?.isAppearanceLightNavigationBars = lightBars
+        }
+    }
+}
+
 @androidx.annotation.OptIn(ExperimentalGetImage::class)
 @Composable
 private fun CameraScreen(
@@ -150,6 +178,11 @@ private fun CameraScreen(
     result: (@Composable () -> Unit)?,
     onManual: (() -> Unit)?,
     onCartMode: (() -> Unit)?,
+    onSearch: (() -> Unit)?,
+    priceMode: Boolean,
+    onPriceMode: ((Boolean) -> Unit)?,
+    cartUnits: Int?,
+    acceptingScans: Boolean,
 ) {
     val ctx = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -159,6 +192,7 @@ private fun CameraScreen(
         if (feedback.sound) runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 45) }.getOrNull() else null
     }
     DisposableEffect(tone) { onDispose { tone?.release() } }
+    val canScan by rememberUpdatedState(acceptingScans)
     val onSuccessfulScan by rememberUpdatedState<(String) -> Unit> {
         if (feedback.vibrate) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 100)
@@ -172,6 +206,10 @@ private fun CameraScreen(
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torch by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
+    val hasResult = result != null
+    LaunchedEffect(hasResult) {
+        if (!hasResult) done = false
+    }
 
     val scanner = remember {
         BarcodeScanning.getClient(
@@ -199,12 +237,13 @@ private fun CameraScreen(
             .also { a ->
                 a.setAnalyzer(executor) { proxy ->
                     val media = proxy.image
-                    if (media == null || done) {
+                    if (media == null || done || !canScan) {
                         proxy.close(); return@setAnalyzer
                     }
                     val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                     scanner.process(image)
                         .addOnSuccessListener { codes ->
+                            if (!canScan) return@addOnSuccessListener
                             val value = codes.firstNotNullOfOrNull { it.rawValue?.trim()?.takeIf(String::isNotEmpty) }
                             if (continuous) {
                                 val now = System.currentTimeMillis()
@@ -236,60 +275,165 @@ private fun CameraScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF0D0F12))) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        ScanOverlay(Modifier.fillMaxSize())
+        ScannerChrome(
+            hit = hasResult,
+            onClose = onClose,
+            torch = torch,
+            onTorch = if (camera?.cameraInfo?.hasFlashUnit() == true) ({
+                torch = !torch
+                camera?.cameraControl?.enableTorch(torch)
+            }) else null,
+            status = status,
+            result = result,
+            onManual = onManual,
+            onCartMode = onCartMode,
+            onSearch = onSearch,
+            priceMode = priceMode,
+            onPriceMode = onPriceMode,
+            cartUnits = cartUnits,
+        )
+    }
+}
 
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RoundIcon(onClick = onClose) { Icon(Icons.Rounded.Close, "Закрити") }
-            Spacer(Modifier.weight(1f))
-            onCartMode?.let { open ->
-                androidx.compose.material3.TextButton(onClick = open) { Text("У кошик", color = Color.White) }
+@Composable
+internal fun ScannerChrome(
+    hit: Boolean,
+    onClose: () -> Unit,
+    torch: Boolean = false,
+    onTorch: (() -> Unit)? = null,
+    status: String? = null,
+    result: (@Composable () -> Unit)? = null,
+    onManual: (() -> Unit)? = null,
+    onCartMode: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
+    priceMode: Boolean = false,
+    onPriceMode: ((Boolean) -> Unit)? = null,
+    cartUnits: Int? = null,
+) {
+    Box(Modifier.fillMaxSize()) {
+        ScanOverlay(Modifier.fillMaxSize(), hit)
+        if (!hit) {
+            Layout(content = {
+                Text(
+                    "Наведіть на штрихкод — скан спрацює сам",
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    color = Color.White.copy(alpha = 0.86f), fontSize = 14.sp, textAlign = TextAlign.Center,
+                )
+            }, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
+                val hint = measurables.single().measure(constraints.copy(minHeight = 0))
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    hint.placeRelative(0, (constraints.maxHeight * 0.42f).toInt() + 96.dp.roundToPx())
+                }
             }
-            if (camera?.cameraInfo?.hasFlashUnit() == true) {
-                RoundIcon(onClick = {
-                    torch = !torch
-                    camera?.cameraControl?.enableTorch(torch)
-                }) {
-                    Icon(if (torch) Icons.Rounded.FlashOn else Icons.Rounded.FlashOff, "Ліхтарик")
+        }
+
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CameraButton(R.drawable.ic_redesign_x, "Закрити", onClose)
+                if (onPriceMode != null && onCartMode != null) {
+                    Row(
+                        Modifier.clip(Mine.fieldShape).background(CameraInk.copy(alpha = 0.6f))
+                            .border(1.dp, Color.White.copy(alpha = 0.12f), Mine.fieldShape)
+                            .selectableGroup().padding(3.dp),
+                    ) {
+                        ScanMode("Товар", !priceMode && cartUnits == null) { onPriceMode(false) }
+                        ScanMode("У кошик", cartUnits != null, onCartMode)
+                        ScanMode("Цінник", priceMode) { onPriceMode(true) }
+                    }
+                }
+                if (onTorch != null) CameraButton(R.drawable.ic_redesign_flashlight, "Ліхтарик", onTorch, torch)
+                else Box(Modifier.size(44.dp))
+            }
+            if (cartUnits != null) {
+                val shape = RoundedCornerShape(16.dp)
+                Row(
+                    Modifier.align(Alignment.CenterHorizontally).background(CameraInk.copy(alpha = 0.72f), shape)
+                        .border(1.dp, Color.White.copy(alpha = 0.14f), shape).padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(R.drawable.ic_redesign_shopping_cart), null, Modifier.size(16.dp), tint = Color.White)
+                    Text("У кошику $cartUnits шт", color = Color.White, fontSize = 13.sp)
                 }
             }
         }
 
         if (result != null) {
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(12.dp)) { result() }
-        } else Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                if (continuous && onManual == null) "Скануй товари покупця" else "Наведи рамку на штрихкод",
-                color = MineDark.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-            )
-            Text(
-                if (continuous && onManual == null) status?.let { "Додано: $it" } ?: "Кожен код додається в кошик; ще один такий самий — прибери й наведи знову"
-                else if (onManual != null) "Після сканування тут будуть ціна й залишок" else "Телефон сам прочитає код",
-                Modifier.padding(top = 6.dp),
-                color = if (continuous && status != null) MineDark.accent else MineDark.textSecondary,
-                fontSize = 15.sp, fontWeight = if (continuous && status != null) FontWeight.Bold else FontWeight.Normal,
-                textAlign = TextAlign.Center, maxLines = 2,
-            )
-            if (onManual != null || continuous) {
-                Surface(
-                    onClick = onManual ?: onClose, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(52.dp),
-                    shape = Mine.pillShape,
-                    color = if (continuous) MineDark.accent else MineDark.card.copy(alpha = 0.92f),
-                    contentColor = if (continuous) MineDark.onAccent else MineDark.text,
-                    border = if (continuous) null else BorderStroke(1.dp, MineDark.outline),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(if (continuous && onManual == null) "Готово — до кошика" else "Ввести код вручну", fontSize = 16.sp, fontWeight = if (continuous) FontWeight.Bold else FontWeight.Medium)
-                    }
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) { result() }
+        } else if (onManual != null || onSearch != null || cartUnits != null) {
+            Column(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (status != null) Text(
+                    "Додано: $status", Modifier.padding(bottom = 10.dp),
+                    color = Color.White, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (onManual != null) CameraAction("Ввести код", R.drawable.ic_redesign_keyboard, Modifier.weight(1f), onClick = onManual)
+                    if (cartUnits != null) CameraAction("Кошик · $cartUnits", null, Modifier.weight(1f), onClose, light = true)
+                    else if (onSearch != null) CameraAction("Пошук", R.drawable.ic_redesign_search, Modifier.weight(1f), onClick = onSearch)
                 }
             }
+        }
+    }
+}
+
+private val CameraInk = Color(0xFF14161A)
+
+@Composable
+private fun ScanMode(label: String, active: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Text(
+        label,
+        Modifier.clip(shape).background(if (active) Color.White else Color.Transparent)
+            .selectable(active, role = Role.Tab, onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+        color = if (active) Color(0xFF111111) else Color.White.copy(alpha = 0.75f),
+        fontSize = 13.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium,
+    )
+}
+
+@Composable
+private fun CameraButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit, active: Boolean? = null) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(44.dp).then(if (active == null) Modifier else Modifier.semantics { selected = active }),
+        shape = CircleShape,
+        color = if (active == true) Color.White else CameraInk.copy(alpha = 0.6f),
+        contentColor = if (active == true) Color(0xFF111111) else Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) { Icon(painterResource(icon), label, Modifier.size(20.dp)) }
+    }
+}
+
+@Composable
+private fun CameraAction(
+    title: String,
+    @DrawableRes icon: Int?,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    light: Boolean = false,
+) {
+    Surface(
+        onClick = onClick, modifier = modifier.height(44.dp), shape = RoundedCornerShape(6.dp),
+        color = if (light) Color.White else CameraInk.copy(alpha = 0.72f),
+        contentColor = if (light) Color(0xFF111111) else Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp))
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -297,55 +441,48 @@ private fun CameraScreen(
 /** Подряд: столько код должен пропасть из кадра, чтобы засчитать его снова (второй такой же товар). */
 private const val REPEAT_GAP_MS = 800L
 
-/** Круглая кнопка 48 dp поверх камеры. */
-@Composable
-private fun RoundIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
-    Surface(
-        onClick = onClick, modifier = Modifier.size(48.dp), shape = CircleShape,
-        color = MineDark.card.copy(alpha = 0.85f), contentColor = MineDark.text,
-    ) { Box(contentAlignment = Alignment.Center) { content() } }
-}
-
 /** Затемнение, уголки и бегущая линия. */
 @Composable
-private fun ScanOverlay(modifier: Modifier) {
-    // Рамка — фирменным оранжевым (как кнопка сканера).
-    val accent = MineDark.accent
+private fun ScanOverlay(modifier: Modifier, hit: Boolean) {
+    val accent = Color(0xFFFF7500)
     val t = rememberInfiniteTransition(label = "laser")
-    val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "p")
+    val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
 
     Canvas(modifier) {
-        val w = size.width * 0.82f
-        val h = w * 0.55f
+        val w = minOf(280.dp.toPx(), size.width - 32.dp.toPx()).coerceAtLeast(0f)
+        val h = w * (150f / 280f)
         val left = (size.width - w) / 2
-        val top = (size.height - h) / 2.3f
+        val top = size.height * 0.42f - h / 2
         val rect = Rect(Offset(left, top), Size(w, h))
-        val r = 24.dp.toPx()
+        val r = 10.dp.toPx()
         val hole = Path().apply { addRoundRect(RoundRect(rect, CornerRadius(r))) }
 
-        clipPath(hole, ClipOp.Difference) { drawRect(Color.Black.copy(alpha = 0.55f)) }
+        clipPath(hole, ClipOp.Difference) { drawRect(Color.Black.copy(alpha = 0.42f)) }
 
-        val len = 34.dp.toPx()
-        val stroke = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round)
+        val len = 26.dp.toPx()
+        val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
         val corners = Path().apply {
-            moveTo(rect.left, rect.top + len); lineTo(rect.left, rect.top + r / 2)
-            quadraticTo(rect.left, rect.top, rect.left + r / 2, rect.top); lineTo(rect.left + len, rect.top)
-            moveTo(rect.right - len, rect.top); lineTo(rect.right - r / 2, rect.top)
-            quadraticTo(rect.right, rect.top, rect.right, rect.top + r / 2); lineTo(rect.right, rect.top + len)
-            moveTo(rect.right, rect.bottom - len); lineTo(rect.right, rect.bottom - r / 2)
-            quadraticTo(rect.right, rect.bottom, rect.right - r / 2, rect.bottom); lineTo(rect.right - len, rect.bottom)
-            moveTo(rect.left + len, rect.bottom); lineTo(rect.left + r / 2, rect.bottom)
-            quadraticTo(rect.left, rect.bottom, rect.left, rect.bottom - r / 2); lineTo(rect.left, rect.bottom - len)
+            moveTo(rect.left, rect.top + len); lineTo(rect.left, rect.top + r)
+            quadraticTo(rect.left, rect.top, rect.left + r, rect.top); lineTo(rect.left + len, rect.top)
+            moveTo(rect.right - len, rect.top); lineTo(rect.right - r, rect.top)
+            quadraticTo(rect.right, rect.top, rect.right, rect.top + r); lineTo(rect.right, rect.top + len)
+            moveTo(rect.right, rect.bottom - len); lineTo(rect.right, rect.bottom - r)
+            quadraticTo(rect.right, rect.bottom, rect.right - r, rect.bottom); lineTo(rect.right - len, rect.bottom)
+            moveTo(rect.left + len, rect.bottom); lineTo(rect.left + r, rect.bottom)
+            quadraticTo(rect.left, rect.bottom, rect.left, rect.bottom - r); lineTo(rect.left, rect.bottom - len)
         }
-        drawPath(corners, accent, style = stroke)
+        drawPath(corners, if (hit) Color(0xFF5AD08D) else Color.White, style = stroke)
 
-        val y = rect.top + 14.dp.toPx() + (rect.height - 28.dp.toPx()) * p
-        drawLine(
-            accent.copy(alpha = 0.9f),
-            Offset(rect.left + 18.dp.toPx(), y),
-            Offset(rect.right - 18.dp.toPx(), y),
-            strokeWidth = 2.5.dp.toPx(),
-            cap = StrokeCap.Round,
-        )
+        if (!hit) {
+            val y = rect.center.y + (2f * p - 1f) * minOf(52.dp.toPx(), h / 3)
+            val x = rect.left + 14.dp.toPx()
+            val lineWidth = (rect.width - 28.dp.toPx()).coerceAtLeast(0f)
+            val glow = 6.dp.toPx()
+            drawRect(
+                Brush.verticalGradient(listOf(Color.Transparent, accent.copy(alpha = 0.25f), Color.Transparent), y - glow, y + glow),
+                topLeft = Offset(x, y - glow), size = Size(lineWidth, 2 * glow),
+            )
+            drawLine(accent.copy(alpha = 0.9f), Offset(x, y), Offset(x + lineWidth, y), 2.dp.toPx())
+        }
     }
 }

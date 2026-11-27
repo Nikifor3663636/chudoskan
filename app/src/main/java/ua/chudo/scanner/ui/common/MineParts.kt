@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -60,29 +62,58 @@ fun MineSearchField(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
     onScan: (() -> Unit)? = null,
+    homeStyle: Boolean = false,
+    onOpenSearch: (() -> Unit)? = null,
 ) {
     val m = Mine.colors
+    val fieldStyle = if (homeStyle) MaterialTheme.typography.bodyLarge else TextStyle(fontSize = 17.sp)
+    val hintColor = if (homeStyle) m.textTertiary else m.textSecondary
     Row(
-        modifier.fillMaxWidth().height(56.dp).clip(Mine.fieldShape).background(m.card)
-            .border(1.dp, m.outline, Mine.fieldShape).padding(start = 12.dp, end = 4.dp),
+        modifier.fillMaxWidth().height(if (homeStyle) 48.dp else 56.dp).clip(Mine.fieldShape).background(m.card)
+            .border(1.dp, m.outline, Mine.fieldShape)
+            .padding(start = if (homeStyle) 14.dp else 12.dp, end = if (homeStyle) 6.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Search, null, tint = m.textSecondary)
-        Spacer(Modifier.width(12.dp))
-        BasicTextField(
-            value = value, onValueChange = onChange, singleLine = true,
-            textStyle = TextStyle(fontSize = 17.sp, color = m.text),
-            cursorBrush = SolidColor(m.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-            modifier = Modifier.weight(1f),
-            decorationBox = { inner ->
-                if (value.isEmpty()) Text(placeholder, fontSize = 17.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                inner()
-            },
-        )
-        if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Close, "Очистити", tint = m.textSecondary) }
-        onScan?.let { open -> IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.link) } }
+        Row(
+            Modifier.weight(1f).then(
+                if (onOpenSearch != null) Modifier.height(48.dp).clickable(onClick = onOpenSearch) else Modifier
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (homeStyle) {
+                Icon(painterResource(R.drawable.ic_redesign_search), null, Modifier.size(20.dp), tint = hintColor)
+            } else {
+                Icon(Icons.Rounded.Search, null, tint = hintColor)
+            }
+            Spacer(Modifier.width(if (homeStyle) 10.dp else 12.dp))
+            if (onOpenSearch != null) {
+                Text(placeholder, style = fieldStyle, color = hintColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else BasicTextField(
+                value = value, onValueChange = onChange, singleLine = true,
+                textStyle = fieldStyle.copy(color = m.text),
+                cursorBrush = SolidColor(m.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    if (value.isEmpty()) Text(placeholder, style = fieldStyle, color = hintColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    inner()
+                },
+            )
+        }
+        if (onOpenSearch == null && value.isNotEmpty()) IconButton(onClick = { onChange("") }) {
+            Icon(Icons.Rounded.Close, "Очистити", tint = m.textSecondary)
+        }
+        onScan?.let { open ->
+            if (homeStyle) {
+                Box(Modifier.size(1.dp, 36.dp).background(m.line))
+                IconButton(onClick = open, modifier = Modifier.width(44.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_scan_barcode), "Сканувати штрихкод", Modifier.size(20.dp), tint = m.text)
+                }
+            } else {
+                IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.link) }
+            }
+        }
     }
 }
 

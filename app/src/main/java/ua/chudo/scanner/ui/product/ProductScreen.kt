@@ -1,7 +1,15 @@
 package ua.chudo.scanner.ui.product
 
 import android.content.ClipData
-import androidx.compose.animation.animateContentSize
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.border
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.res.painterResource
+import ua.chudo.scanner.R
+import ua.chudo.scanner.ui.home.updatedText
+import ua.chudo.scanner.ui.stock.qtyText
+import ua.chudo.scanner.ui.theme.CodeStyle
+import ua.chudo.scanner.ui.theme.PriceStyle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,11 +18,9 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.outlined.ShoppingCart
-import androidx.compose.material.icons.outlined.Print
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,8 +32,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -35,13 +41,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Cancel
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.OpenInBrowser
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -51,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,19 +61,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -84,13 +84,14 @@ import ua.chudo.scanner.data.Backend
 import ua.chudo.scanner.data.HighlightKind
 import ua.chudo.scanner.data.ProductHighlight
 import ua.chudo.scanner.data.ProductHighlights
-import ua.chudo.scanner.ui.stock.highlightPrice
+import java.text.NumberFormat
+import java.util.Locale
+import kotlin.math.roundToLong
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.StockItem
-import ua.chudo.scanner.print.PriceFormat
+import ua.chudo.scanner.data.StoreQty
 import ua.chudo.scanner.print.TagData
-import ua.chudo.scanner.ui.common.BarcodeScanIcon
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MineButton
 import ua.chudo.scanner.ui.common.MineTone
@@ -108,17 +109,6 @@ import uniffi.chudo_core.ShopAvailability
 import uniffi.chudo_core.StockStatus
 import uniffi.chudo_core.productUrl
 
-/** Червоний ціни зі знижкою — як на сайті «Чудо Острів». */
-private val SalePrice = Color(0xFFF0443A)
-
-/** Зелена галочка наявності — як на сайті. */
-private val SiteGreen = Color(0xFF3CC85A)
-
-/**
- * Картка товару в точності як сторінка товару на сайті «Чудо Острів» (мобільна версія):
- * хлібні крихти, назва, артикул, фото зі знижкою, «В наявності», плашка ціни з кнопкою,
- * «Наявність в магазинах» з містом, «Опис», «Характеристики». Замість «Купити» — «Друкувати цінник».
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductScreen(
@@ -128,16 +118,18 @@ fun ProductScreen(
     openPrint: Boolean = false,
     onPreviousProduct: (() -> Unit)? = null,
     onNextProduct: (() -> Unit)? = null,
+    tabletModel: ProductViewModel? = null,
 ) {
     val ctx = LocalContext.current
     val app = ctx.chudoApp
-    val vm: ProductViewModel = viewModel(factory = viewModelFactory {
+    val vm: ProductViewModel = tabletModel ?: viewModel(factory = viewModelFactory {
         initializer { ProductViewModel(app.repository, app.prefs, createSavedStateHandle()) }
     })
     val s by vm.state.collectAsStateWithLifecycle()
     val region by app.prefs.region.collectAsStateWithLifecycle()
     var showRegions by rememberSaveable { mutableStateOf(false) }
     var printSheet by rememberSaveable { mutableStateOf(openPrint) }
+    var inlinePrinting by remember { mutableStateOf(false) }
     var own by remember { mutableStateOf<StockItem?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -170,7 +162,17 @@ fun ProductScreen(
         if (net == null) own = runCatching { app.shopStock.find(employee.shopId, p.article, listOfNotNull(vm.barcode)) }.getOrNull()
     }
 
-    Box(Modifier.fillMaxSize().background(pageBg())) {
+    fun printTag(product: ProductDetails) = TagData.merge(
+        TagData.Site(product.name, product.article, product.price?.finalPrice, product.price?.regularPrice),
+        net?.let { TagData.OneC(it.barcode, it.item.name, it.item.code, it.item.article) },
+        vm.highlightBarcode ?: own?.barcode,
+    )
+    fun printed(product: ProductDetails, message: String) {
+        app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.PRINT, message, product.name)
+        scope.launch { snackbar.showSnackbar(message) }
+    }
+
+    Box(Modifier.fillMaxSize().background(Mine.colors.bg)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(onBack, onShare = { ctx.shareText(listOfNotNull(p?.name, url).joinToString("\n")) }, onSite = { ctx.openUrl(url) }, onScan = onScan)
             PullToRefreshBox(isRefreshing = s.refreshing, onRefresh = { vm.load(refresh = true) }, modifier = Modifier.weight(1f)) {
@@ -182,7 +184,14 @@ fun ProductScreen(
                         onCity = { showRegions = true },
                         onRetryShops = vm::loadShops, onMap = ctx::openMap,
                         onRemember = vm::rememberBarcode, onForget = vm::dismissRemember, net = net, highlights = highlights,
-                        onPreviousProduct = onPreviousProduct, onNextProduct = onNextProduct,
+                        onPreviousProduct = onPreviousProduct, onNextProduct = onNextProduct, tablet = tabletModel != null,
+                        printBusy = inlinePrinting,
+                        printPanel = if (tabletModel != null) ({
+                            PrintSheet(
+                                listOf(printTag(p)), onDismiss = {}, inline = true,
+                                onBusy = { inlinePrinting = it }, onDone = { printed(p, it) },
+                            )
+                        }) else null,
                     )
                 }
             }
@@ -201,19 +210,8 @@ fun ProductScreen(
 
     val product = p
     if (printSheet && product != null) {
-        val price = product.price
         PrintSheet(
-            // Штрихкод, код і артикул — з 1С (stock/{штрихкод}), назва й ціни — з сайту.
-            tag = TagData.merge(
-                TagData.Site(product.name, product.article, price?.finalPrice, price?.regularPrice),
-                net?.let { TagData.OneC(it.barcode, it.item.name, it.item.code, it.item.article) },
-                vm.highlightBarcode ?: own?.barcode,
-            ),
-            onDismiss = { printSheet = false },
-            onDone = { msg ->
-                app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.PRINT, msg, product.name)
-                scope.launch { snackbar.showSnackbar(msg) }
-            },
+            tag = printTag(product), onDismiss = { printSheet = false }, onDone = { printed(product, it) },
         )
     }
 
@@ -225,6 +223,24 @@ fun ProductScreen(
             onDismiss = { showRegions = false },
         )
     }
+}
+
+@Composable
+internal fun TabletProduct(
+    employee: Employee, key: String, barcode: String?, scanned: String?,
+    onClose: () -> Unit, onScan: () -> Unit,
+) {
+    val app = LocalContext.current.chudoApp
+    val owner = remember(employee.shopId, key, barcode, scanned) {
+        object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
+    }
+    DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
+    val model: ProductViewModel = viewModel(viewModelStoreOwner = owner, factory = viewModelFactory {
+        initializer {
+            ProductViewModel(app.repository, app.prefs, SavedStateHandle(mapOf("urlKey" to key, "bc" to barcode, "scanned" to scanned)))
+        }
+    })
+    ProductScreen(employee, onBack = onClose, onScan = onScan, tabletModel = model)
 }
 
 /** Сторінка товару без ViewModel — для екрана й для знімків. */
@@ -247,6 +263,9 @@ fun ProductPage(
     highlights: List<ProductHighlight> = emptyList(),
     onPreviousProduct: (() -> Unit)? = null,
     onNextProduct: (() -> Unit)? = null,
+    tablet: Boolean = false,
+    printPanel: (@Composable () -> Unit)? = null,
+    printBusy: Boolean = false,
 ) {
     val swipe = if (onPreviousProduct != null || onNextProduct != null) {
         Modifier.pointerInput(onPreviousProduct, onNextProduct) {
@@ -260,179 +279,211 @@ fun ProductPage(
             ) { change, amount -> change.consume(); distance += amount }
         }
     } else Modifier
-    LazyColumn(Modifier.background(pageBg()), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Gallery(p.images, p.price?.discountPercent ?: 0.0) }
-        item {
-            Column(Modifier.fillMaxWidth().then(swipe)) {
-                Breadcrumbs(p.categories)
-                Title(p)
-                ProductCodes(p.article, barcode ?: net?.barcode ?: own?.barcode, net?.item?.code)
-                PriceBox(p)
-                highlights.firstOrNull { it.kind == HighlightKind.PROMO.key }?.endsOn?.let { end ->
-                    Text("Акція діє до $end включно", Modifier.padding(horizontal = H, vertical = 3.dp), fontSize = 12.sp, color = Mine.colors.textSecondary)
+    val m = Mine.colors
+    val new = highlights.any { it.kind == HighlightKind.NEW.key }
+    val details: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier.background(m.card).padding(start = H, top = 14.dp, end = H, bottom = 16.dp)) {
+            p.categories.lastOrNull()?.let {
+                Text(it, Modifier.padding(bottom = 6.dp), fontSize = 12.sp, color = m.textTertiary)
+            }
+            Text(p.name, fontSize = 18.sp, lineHeight = 23.4.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            ProductCodes(p.article, barcode ?: net?.barcode ?: own?.barcode, net?.item?.code)
+            PriceBox(p)
+            highlights.firstOrNull { it.kind == HighlightKind.PROMO.key }?.let { promo ->
+                promo.endsOn?.let { end ->
+                    Text("Акція діє до $end включно", Modifier.padding(top = 4.dp), fontSize = 13.sp, color = m.textSecondary)
+                }
+                val promoPrice = promo.promoPrice
+                if (promoPrice != null && promoPrice != p.price?.finalPrice) {
+                    Text("Акція · ${productPrice(promoPrice)}", Modifier.padding(top = 4.dp), fontSize = 13.sp, color = m.onDanger)
                 }
             }
         }
-        if (highlights.isNotEmpty()) item {
-            Row(Modifier.padding(horizontal = H), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                highlights.forEach { highlight ->
-                    val kind = HighlightKind.entries.firstOrNull { it.key == highlight.kind }
-                    if (kind != null) {
-                        val price = highlight.promoPrice?.let { " · ${highlightPrice(it)}" }.orEmpty()
-                        Text(kind.badge + price, color = Mine.colors.accent, fontWeight = FontWeight.Bold)
+    }
+    LazyColumn(
+        Modifier.fillMaxSize().background(m.bg),
+        userScrollEnabled = !printBusy,
+        contentPadding = if (tablet) PaddingValues(horizontal = 24.dp, vertical = 12.dp) else PaddingValues(bottom = 4.dp),
+    ) {
+        if (tablet) item {
+            val shape = RoundedCornerShape(8.dp)
+            BoxWithConstraints(Modifier.fillMaxWidth().clip(shape).border(1.dp, m.line, shape).background(m.card)) {
+                if (maxWidth >= 490.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.width(150.dp).background(m.surface)) {
+                            Gallery(p.images, p.price?.discountPercent ?: 0.0, new, compact = true)
+                        }
+                        details(Modifier.weight(1f))
+                    }
+                } else {
+                    Column {
+                        Gallery(p.images, p.price?.discountPercent ?: 0.0, new, compact = true)
+                        details(Modifier.fillMaxWidth())
                     }
                 }
             }
+        } else {
+            item { Gallery(p.images, p.price?.discountPercent ?: 0.0, new) }
+            item {
+                details(Modifier.fillMaxWidth().then(swipe))
+                HorizontalDivider(color = m.line)
+            }
         }
-        net?.own?.let { qty -> item { OwnStock(qty) } }
-            ?: own?.let { stock -> item { OwnStock(stock.qty) } }
-            ?: item { Availability(p.stock) }
+        if (printPanel != null) {
+            item {
+                val availability: @Composable () -> Unit = {
+                    when {
+                        net?.own != null -> OwnStock(net.own)
+                        own != null -> OwnStock(own.qty)
+                        else -> Availability(p.stock)
+                    }
+                    net?.let { NetworkStores(it, myShop) }
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+                    if (maxWidth >= 608.dp) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.weight(1f)) { availability() }
+                            Box(Modifier.width(300.dp)) { printPanel() }
+                        }
+                    } else Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column { availability() }
+                        printPanel()
+                    }
+                }
+            }
+        } else {
+            net?.own?.let { qty -> item { OwnStock(qty) } }
+                ?: own?.let { stock -> item { OwnStock(stock.qty) } }
+                ?: item { Availability(p.stock) }
+            net?.let { av -> item { NetworkStores(av, myShop) } }
+        }
         toRemember?.let { bc -> item { RememberCard(bc, onRemember, onForget) } }
-        net?.let { av -> item { NetworkStores(av) } }
-        item { SectionDivider() }
-        item { SectionTitle("Наявність за даними сайту") }
-        item { CityField(city, onCity) }
-        shopsSection(shops, myShop, own.takeUnless { net?.own != null }, onRetry = onRetryShops, onMap = onMap)
-        if (p.description.isNotBlank()) {
-            item { SectionDivider() }
-            item { Description(p.description) }
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(start = H, end = H, top = 20.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Наявність за даними сайту", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+                CityField(city, onCity)
+            }
         }
-
+        shopsSection(shops, myShop, own.takeUnless { net?.own != null }, onRetry = onRetryShops, onMap = onMap)
+        if (p.description.isNotBlank()) item { Description(p.description) }
+        item {
+            val update = updatedText(net?.updatedAt)
+            Text(
+                listOfNotNull("Ціна й опис — із сайту мережі.", update?.let { "$it." }).joinToString(" "),
+                Modifier.padding(start = H, end = H, top = 12.dp, bottom = 16.dp),
+                fontSize = 12.sp, color = m.textTertiary,
+            )
+        }
     }
 }
 
-private val H = 20.dp
-
-/** Как на сайте: страница белая, плашка цены светло-серая; в тёмной теме — токены Mine. */
-@Composable
-private fun pageBg(): Color = if (Mine.colors.dark) Mine.colors.bg else Color.White
-
-@Composable
-private fun boxBg(): Color = if (Mine.colors.dark) Mine.colors.surface else Color(0xFFF2F3F5)
+private val H = 16.dp
 
 @Composable
 private fun TopBar(onBack: () -> Unit, onShare: () -> Unit, onSite: () -> Unit, onScan: () -> Unit) {
-    val m = Mine.colors
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        RoundButton(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", onBack)
+    Row(
+        Modifier.fillMaxWidth().background(Mine.colors.bg).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ProductIconButton(R.drawable.ic_redesign_chevron_left, "Назад", onBack, 24)
         Spacer(Modifier.weight(1f))
-        RoundButton(Icons.Rounded.Share, "Поділитися", onShare)
-        RoundButton(Icons.Rounded.OpenInBrowser, "Відкрити на сайті", onSite)
-        RoundButton(BarcodeScanIcon, "Сканувати", onScan)
+        ProductIconButton(R.drawable.ic_redesign_external_link, "Поділитися посиланням", onShare)
+        ProductIconButton(R.drawable.ic_redesign_store, "Відкрити на сайті", onSite)
+        ProductIconButton(R.drawable.ic_redesign_scan_barcode, "Сканувати", onScan)
     }
 }
 
 @Composable
-private fun RoundButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val m = Mine.colors
-    Surface(onClick = onClick, modifier = Modifier.size(52.dp), shape = CircleShape, color = Color.Transparent, contentColor = m.text) {
-        Box(contentAlignment = Alignment.Center) { Icon(icon, label, Modifier.size(22.dp)) }
+private fun ProductIconButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit, iconSize: Int = 20) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(painterResource(icon), label, Modifier.size(iconSize.dp), tint = Mine.colors.textSecondary)
     }
 }
 
-/** «Головна • Для малюків • Дитячі іграшки» — серым, одной строкой с прокруткой. */
 @Composable
-private fun Breadcrumbs(categories: List<String>) {
+private fun Gallery(images: List<String>, discount: Double, new: Boolean, compact: Boolean = false) {
     val m = Mine.colors
-    if (categories.isNotEmpty()) Text(
-        categories.takeLast(2).joinToString(" · "), Modifier.fillMaxWidth().padding(horizontal = H, vertical = 7.dp),
-        fontSize = 12.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
-private fun Title(p: ProductDetails) {
-    Text(
-        p.name,
-        Modifier.padding(horizontal = H).padding(top = 2.dp),
-        fontSize = 19.sp,
-        lineHeight = 23.sp,
-        fontWeight = FontWeight.Bold,
-        color = Mine.colors.text,
-    )
-}
-
-/** Фото на белом, слева сверху красная плашка скидки; точки страниц — оранжевая активная. */
-@Composable
-private fun Gallery(images: List<String>, discount: Double) {
-    val m = Mine.colors
-    Column {
-        Box(Modifier.fillMaxWidth().background(Color.White)) {
-            if (images.isEmpty()) {
-                ProductImage(null, Modifier.fillMaxWidth().aspectRatio(1.3f))
-            } else {
-                val pager = rememberPagerState { images.size }
-                var fullScreenPage by rememberSaveable { mutableStateOf<Int?>(null) }
-                fullScreenPage?.let { index ->
-                    PhotoViewer(images, index) { fullScreenPage = null }
-                }
-                Column {
-                    HorizontalPager(pager, pageSpacing = 12.dp) { page ->
-                        ProductImage(images[page], Modifier.fillMaxWidth().aspectRatio(1.5f).clickable(
-                            onClickLabel = "Відкрити фото",
-                            onClick = { fullScreenPage = page },
-                        ))
-                    }
-                    if (images.size > 1) {
-                        Row(Modifier.fillMaxWidth().background(Color.White).padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
-                            repeat(images.size) { i ->
-                                Box(
-                                    Modifier.padding(horizontal = 4.dp).size(9.dp).clip(CircleShape)
-                                        .background(if (i == pager.currentPage) m.accent else Color(0xFFD6D8DD)),
-                                )
-                            }
-                        }
-                    }
+    Box(Modifier.fillMaxWidth().height(if (compact) 150.dp else 250.dp).background(if (compact) m.surface else m.card)) {
+        if (images.isEmpty()) {
+            Icon(painterResource(R.drawable.ic_redesign_image), null, Modifier.align(Alignment.Center).size(28.dp), tint = m.textTertiary)
+        } else {
+            val pager = rememberPagerState { images.size }
+            var fullScreenPage by rememberSaveable { mutableStateOf<Int?>(null) }
+            fullScreenPage?.takeIf { it in images.indices }?.let { index ->
+                PhotoViewer(images, index) { fullScreenPage = null }
+            }
+            HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
+                Box(Modifier.fillMaxSize().clickable(onClickLabel = "Відкрити фото") { fullScreenPage = page }, contentAlignment = Alignment.Center) {
+                    ProductImage(images[page], Modifier.size(if (compact) 120.dp else 230.dp))
                 }
             }
-            if (discount >= 1) {
-                Text(
-                    "-${discount.toInt()}%",
-                    Modifier.padding(12.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFFFBE9E8)).padding(horizontal = 8.dp, vertical = 3.dp),
-                    color = Color(0xFFB5221B), fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                )
+            if (images.size > 1) {
+                Row(
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    repeat(images.size) { i ->
+                        Box(Modifier.size(6.dp).background(if (i == pager.currentPage) m.text else m.outline, CircleShape))
+                    }
+                }
             }
         }
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (discount >= 1) ProductBadge("−${discount.toInt()}%", m.danger, m.onDanger)
+            if (new) ProductBadge("Новинка", m.infoTint, m.info)
+        }
     }
+    if (!compact) HorizontalDivider(color = m.line)
 }
 
-/** «✓ В наявності» — зелёная галочка, как на сайте. */
+@Composable
+private fun ProductBadge(text: String, background: Color, color: Color) {
+    Box(
+        Modifier.height(22.dp).background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = color) }
+}
+
 @Composable
 private fun Availability(stock: StockStatus) {
     val m = Mine.colors
-    val (text, ok) = when (stock) {
-        StockStatus.IN_STOCK -> "В наявності" to true
-        StockStatus.OUT_OF_STOCK -> "Немає в наявності" to false
-        StockStatus.UNKNOWN -> "Наявність уточнюйте" to false
+    val label = when (stock) {
+        StockStatus.IN_STOCK -> "В наявності"
+        StockStatus.OUT_OF_STOCK -> "Немає в наявності"
+        StockStatus.UNKNOWN -> "Наявність уточнюйте"
     }
-    Row(Modifier.padding(horizontal = H).padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel, null, Modifier.size(24.dp), tint = if (ok) SiteGreen else m.outline)
-        Spacer(Modifier.width(8.dp))
-        Text(text, fontSize = 16.sp, color = m.text)
+    Column(Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp)) {
+        Text("За даними сайту", fontSize = 13.sp, color = m.textTertiary)
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text)
     }
+    HorizontalDivider(color = m.line)
 }
 
-/**
- * Серая плашка цены: старая цена зачёркнута, новая — красным крупно (без скидки — обычным цветом),
- * под ней большая оранжевая кнопка (на сайте «Купити») и справа квадратная кнопка (на сайте «в обране»).
- */
+private fun productPrice(price: Double): String =
+    NumberFormat.getCurrencyInstance(Locale.forLanguageTag("uk-UA")).apply {
+        minimumFractionDigits = if ((price * 100).roundToLong() % 100 == 0L) 0 else 2
+    }.format(price)
+
 @Composable
 private fun PriceBox(p: ProductDetails) {
     val m = Mine.colors
     val price = p.price
+    if (price == null) {
+        Text("Ціна недоступна", Modifier.padding(top = 14.dp), fontSize = 16.sp, color = m.textSecondary)
+        return
+    }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = H, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        Modifier.fillMaxWidth().padding(top = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (price == null) {
-            Text("Ціна недоступна", fontSize = 16.sp, color = m.textSecondary)
-        } else {
-            Text("${PriceFormat.tag(price.finalPrice).first} ₴", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = m.text)
-            if (price.regularPrice > price.finalPrice) {
-                Text("${PriceFormat.tag(price.regularPrice).first} ₴", fontSize = 15.sp, color = m.textSecondary, textDecoration = TextDecoration.LineThrough)
-                Text("−${PriceFormat.tag(price.regularPrice - price.finalPrice).first} ₴", fontSize = 13.sp, color = SalePrice)
-            }
+        Text(productPrice(price.finalPrice), Modifier.alignByBaseline(), style = PriceStyle, color = m.text)
+        if (price.regularPrice > price.finalPrice) {
+            Text(productPrice(price.regularPrice), Modifier.alignByBaseline(), fontSize = 16.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
+            Text("−${productPrice(price.regularPrice - price.finalPrice)}", Modifier.alignByBaseline(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.onDanger)
         }
     }
 }
@@ -443,18 +494,18 @@ internal fun ProductActions(onPrint: () -> Unit, onCart: (() -> Unit)?) {
     Surface(color = m.card, contentColor = m.text) {
         Column(Modifier.navigationBarsPadding()) {
             HorizontalDivider(color = m.line)
-            Row(Modifier.fillMaxWidth().padding(horizontal = H, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = H, end = H, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
                     onClick = { onCart?.invoke() }, enabled = onCart != null,
-                    modifier = Modifier.size(56.dp), shape = RoundedCornerShape(9.dp),
+                    modifier = Modifier.size(width = 48.dp, height = 44.dp), shape = RoundedCornerShape(6.dp),
                     border = BorderStroke(1.dp, m.line), color = m.card, contentColor = m.text,
                 ) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.ShoppingCart, "Додати до кошика") }
+                    Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_redesign_shopping_cart), "Додати до кошика", Modifier.size(20.dp), tint = if (onCart != null) m.text else m.textTertiary) }
                 }
-                Surface(onClick = onPrint, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(9.dp), color = m.accent, contentColor = m.onAccent) {
+                Surface(onClick = onPrint, modifier = Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Print, null)
-                        Text("Друкувати цінник", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Icon(painterResource(R.drawable.ic_redesign_printer), null, Modifier.size(20.dp))
+                        Text("Друкувати цінник", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -465,77 +516,134 @@ internal fun ProductActions(onPrint: () -> Unit, onCart: (() -> Unit)?) {
 @Composable
 private fun OwnStock(quantity: Double) {
     val m = Mine.colors
-    HorizontalDivider(color = m.line)
-    Row(Modifier.fillMaxWidth().padding(horizontal = H, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("${ua.chudo.scanner.ui.stock.qtyText(quantity)} шт", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = m.text)
-        Column {
-            Text("У вашому магазині", fontSize = 13.sp, color = m.textSecondary)
-            Text(if (quantity > 0) "Є на складі магазину" else "Немає на складі магазину", fontSize = 15.sp, color = m.text)
+    Row(
+        Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(qtyText(quantity), Modifier.alignByBaseline(), style = PriceStyle.copy(fontSize = 34.sp, lineHeight = 34.sp), color = if (quantity > 0) m.text else m.textTertiary)
+            Text("шт", Modifier.alignByBaseline(), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("У вашому магазині", fontSize = 13.sp, color = m.textTertiary)
+            Text(
+                when {
+                    quantity <= 0 -> "Немає — запропонуйте інший магазин"
+                    quantity <= 2 -> "Мало — перевірте на полиці"
+                    else -> "Є на складі магазину"
+                },
+                fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text,
+            )
         }
     }
+    HorizontalDivider(color = m.line)
 }
 
 @Composable
-private fun NetworkStores(net: NetAvailability) {
+private fun NetworkStores(net: NetAvailability, myShop: String) {
     val m = Mine.colors
-    val total = ua.chudo.scanner.ui.stock.qtyText(net.item.q.values.sum())
-    HorizontalDivider(color = m.line)
+    val total = qtyText(net.item.q.values.sum())
+    var expanded by rememberSaveable(net.barcode) { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().background(boxBg()).padding(horizontal = H, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        Modifier.fillMaxWidth().padding(start = H, end = H, top = 20.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(net.cityName?.let { "Магазини · $it" } ?: "Залишки мережі", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
-        Text("$total шт у мережі", fontSize = 13.sp, color = m.accent, fontWeight = FontWeight.SemiBold)
+        Text(net.cityName?.let { "Магазини · $it" } ?: "Залишки мережі", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+        Text(
+            if (expanded) "Згорнути" else "Усі $total шт у мережі",
+            Modifier.then(if (net.item.q.isNotEmpty()) Modifier.clickable { expanded = !expanded } else Modifier),
+            fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link,
+        )
     }
-    net.city.forEach { shop ->
-        Row(Modifier.fillMaxWidth().padding(horizontal = H, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(shop.name, Modifier.weight(1f), fontSize = 14.sp, color = m.text)
-            Text("${ua.chudo.scanner.ui.stock.qtyText(shop.qty)} шт", fontSize = 14.sp, color = m.textSecondary)
+    val visible = if (expanded) {
+        val cityNames = net.city.associate { it.code to it.name }
+        net.item.q.entries.sortedWith(compareByDescending<Map.Entry<String, Double>> { it.key == net.ownCode }.thenByDescending { it.value })
+            .map { (code, qty) ->
+                val name = if (code == net.ownCode) myShop.ifBlank { "Ваш магазин" } else cityNames[code] ?: "Склад $code"
+                StoreQty(code, name, qty)
+            }
+    } else net.city.take(3)
+    if (visible.isNotEmpty()) HorizontalDivider(color = m.line)
+    visible.forEach { shop ->
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).background(m.card).padding(horizontal = H),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(shop.name, Modifier.weight(1f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = m.text)
+            Text(
+                if (shop.qty > 0) "${qtyText(shop.qty)} шт" else "немає",
+                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                color = when {
+                    shop.qty <= 0 -> m.textTertiary
+                    shop.qty <= 2 -> m.warningText
+                    else -> m.success
+                },
+            )
         }
+        HorizontalDivider(color = m.line)
     }
 }
 
 @Composable
 private fun PhotoViewer(images: List<String>, index: Int, onClose: () -> Unit) {
     val pager = rememberPagerState(initialPage = index) { images.size }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
-                ProductImage(images[page], Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 56.dp))
+    val scope = rememberCoroutineScope()
+    var zoom by rememberSaveable(pager.currentPage) { mutableStateOf(false) }
+    val background = Color(0xFF0C0D0F)
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Column(Modifier.fillMaxSize().background(background).statusBarsPadding().navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GalleryButton(R.drawable.ic_redesign_x, "Закрити фото", onClose)
+                Text("${pager.currentPage + 1} з ${images.size}", color = Color.White, fontSize = 14.sp)
+                GalleryButton(R.drawable.ic_redesign_zoom_in, if (zoom) "Зменшити" else "Збільшити", { zoom = !zoom }, zoom)
             }
-            androidx.compose.material3.IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().size(56.dp)) {
-                Icon(Icons.Rounded.Close, "Закрити фото", tint = Color.White)
+            HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f)) { page ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    ProductImage(images[page], Modifier.size(if (zoom) 380.dp else 300.dp))
+                }
             }
-            Text("${pager.currentPage + 1} / ${images.size}", Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp), color = Color.White)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 34.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                images.forEachIndexed { page, url ->
+                    val shape = RoundedCornerShape(6.dp)
+                    Box(
+                        Modifier.size(56.dp).clip(shape).clickable(onClickLabel = "Фото ${page + 1}") {
+                            scope.launch { pager.animateScrollToPage(page) }
+                        }.border(2.dp, if (page == pager.currentPage) Color.White else Color.Transparent, shape),
+                    ) { ProductImage(url, Modifier.fillMaxSize()) }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SectionDivider() {
-    HorizontalDivider(Modifier.padding(top = 24.dp), thickness = 1.dp, color = Mine.colors.line)
+private fun GalleryButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit, active: Boolean = false) {
+    Surface(
+        onClick = onClick, modifier = Modifier.size(44.dp), shape = CircleShape,
+        color = if (active) Color.White else Color(0x9914161A),
+        contentColor = if (active) Color(0xFF111111) else Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+    ) { Box(contentAlignment = Alignment.Center) { Icon(painterResource(icon), label, Modifier.size(20.dp)) } }
 }
 
-@Composable
-private fun SectionTitle(text: String) {
-    Text(text, Modifier.padding(horizontal = H).padding(top = 20.dp, bottom = 14.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Mine.colors.text)
-}
-
-/** Поле «Місто» как на сайте: подпись оранжевым сверху, название, стрелка. */
 @Composable
 private fun CityField(city: String, onClick: () -> Unit) {
     val m = Mine.colors
-    Surface(
-        onClick = onClick, modifier = Modifier.padding(horizontal = H).fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-        color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.outline),
+    Row(
+        Modifier.clickable(onClickLabel = "Змінити місто", onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Місто", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = m.accent)
-                Text(city, fontSize = 18.sp)
-            }
-            Icon(Icons.Rounded.ExpandMore, "Змінити місто")
-        }
+        Text(city, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link)
+        Icon(painterResource(R.drawable.ic_redesign_chevron_down), null, Modifier.size(16.dp), tint = m.link)
     }
 }
 
@@ -574,42 +682,35 @@ private fun androidx.compose.foundation.lazy.LazyListScope.shopsSection(
 @Composable
 private fun ShopRow(shop: ShopAvailability, mineQty: Int?, isMine: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = H, vertical = 7.dp), verticalAlignment = Alignment.Top) {
-        Icon(
-            if (shop.available) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel, null,
-            Modifier.padding(top = 1.dp).size(22.dp), tint = if (shop.available) SiteGreen else m.outline,
-        )
-        Spacer(Modifier.width(10.dp))
+    HorizontalDivider(color = m.line)
+    Row(
+        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick).padding(horizontal = H, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
-            Text(shop.address, fontSize = 16.sp, lineHeight = 22.sp, color = if (shop.available) m.text else m.textSecondary)
-            if (isMine) {
-                Text(
-                    if (mineQty != null) "Твій магазин, за даними 1С: $mineQty шт" else "Твій магазин",
-                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = m.accent,
-                )
-            }
+            Text(shop.address, fontSize = 15.sp, color = m.text)
+            if (isMine) Text("Ваш магазин", fontSize = 13.sp, color = m.textTertiary)
         }
+        val available = mineQty?.let { it > 0 } ?: shop.available
+        Text(
+            mineQty?.let { "$it шт" } ?: if (shop.available) "Є" else "Немає",
+            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (available) m.success else m.textTertiary,
+        )
     }
 }
 
-/** Опис із можливістю розгорнути текст. */
 @Composable
 private fun Description(text: String) {
     val m = Mine.colors
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.animateContentSize()) {
-        SectionTitle("Опис")
-        Text(
-            text, Modifier.padding(horizontal = H), fontSize = 15.sp, lineHeight = 23.sp, color = m.text,
-            maxLines = if (expanded) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis,
-        )
-        Row(Modifier.padding(horizontal = H).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Text(
-                if (expanded) "Згорнути" else "Читати повністю", Modifier.clickable { expanded = !expanded },
-                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = m.accent,
-            )
-        }
-    }
+    Text(
+        "Опис", Modifier.padding(start = H, top = 20.dp, bottom = 8.dp),
+        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary,
+    )
+    Text(
+        text, Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp),
+        fontSize = 15.sp, lineHeight = 23.25.sp, color = m.textSecondary,
+    )
 }
 
 /** Коди для звірки товару. */
@@ -625,16 +726,18 @@ private fun ProductCodes(article: String?, barcode: String?, code1C: String?) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     androidx.compose.foundation.layout.FlowRow(
-        Modifier.padding(horizontal = H, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         values.forEach { (label, value) ->
             Text(
                 if (label == "Штрихкод") value else "$label $value",
                 Modifier.clickable(onClickLabel = "Скопіювати $label") {
                     scope.launch { clipboard.setClipEntry(ClipData.newPlainText(label, value).toClipEntry()) }
-                }.padding(vertical = 4.dp),
-                fontSize = 12.sp, color = Mine.colors.textSecondary,
+                },
+                style = if (label == "Штрихкод") CodeStyle.copy(fontSize = 12.sp) else androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = Mine.colors.textTertiary,
             )
         }
     }

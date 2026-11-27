@@ -2,7 +2,18 @@ package ua.chudo.scanner.ui.results
 
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,23 +48,36 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -84,7 +107,14 @@ import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.data.Via
 import ua.chudo.scanner.ui.common.ErrorState
 import ua.chudo.scanner.ui.common.MessageState
-import ua.chudo.scanner.ui.common.ProductCard
+import ua.chudo.scanner.R
+import ua.chudo.scanner.data.Cart
+import ua.chudo.scanner.ui.common.ProductImage
+import ua.chudo.scanner.ui.common.StatusDot
+import ua.chudo.scanner.ui.theme.PriceStyle
+import uniffi.chudo_core.ProductSummary
+import uniffi.chudo_core.StockStatus
+import kotlin.math.roundToLong
 import ua.chudo.scanner.ui.common.UiError
 import ua.chudo.scanner.ui.common.openUrl
 import ua.chudo.scanner.ui.common.toUiError
@@ -92,6 +122,7 @@ import uniffi.chudo_core.siteSearchUrl
 import uniffi.chudo_core.Lang
 
 internal sealed interface ResultsState {
+    data object Empty : ResultsState
     data class Loading(val step: String) : ResultsState
     data class Done(val result: LookupResult) : ResultsState
     data class Stock(val availability: NetAvailability) : ResultsState
@@ -105,11 +136,11 @@ internal class ResultsViewModel(
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
-    private val _state = MutableStateFlow<ResultsState>(ResultsState.Loading("Шукаємо…"))
+    private val _state = MutableStateFlow<ResultsState>(if (query.isBlank()) ResultsState.Empty else ResultsState.Loading("Шукаємо…"))
     val state = _state.asStateFlow()
     private var job: Job? = null
 
-    init { load() }
+    init { if (query.isNotBlank()) load() }
 
     fun load() {
         job?.cancel()
@@ -158,12 +189,18 @@ internal class ResultsViewModel(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
     employee: Employee,
     onBack: () -> Unit,
     onBrowseProducts: (List<String>) -> Unit = {},
+    searchHistory: List<String>,
+    onQueryUsed: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onSearch: (String) -> Unit,
+    onCatalog: () -> Unit,
+    selectedProduct: String? = null,
+    tablet: Boolean = false,
     onOpenProduct: (urlKey: String, barcode: String?, scanned: String?, replace: Boolean) -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
@@ -172,6 +209,19 @@ fun ResultsScreen(
     })
     val state by vm.state.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focus = remember { FocusRequester() }
+    var draft by rememberSaveable(vm.query) { mutableStateOf(vm.query) }
+    var shopOnly by rememberSaveable(vm.query) { mutableStateOf(false) }
+    var promoOnly by rememberSaveable(vm.query) { mutableStateOf(false) }
+    LaunchedEffect(vm.query) { if (vm.query.isNotBlank()) onQueryUsed(vm.query) }
+    fun submit() {
+        val clean = draft.trim()
+        if (clean.isNotEmpty()) {
+            keyboard?.hide()
+            if (clean != vm.query) onSearch(clean)
+        }
+    }
 
     // Один товар — сразу открываем карточку, экран результатов убираем из стека.
     LaunchedEffect(state) {
@@ -182,40 +232,78 @@ fun ResultsScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Mine.colors.bg)) {
-        ResultsHeader(vm.query, onBack)
+    Column(Modifier.fillMaxSize().background(if (tablet) Mine.colors.card else Mine.colors.bg).statusBarsPadding().imePadding()) {
+        ResultsHeader(draft, { draft = it }, onBack, ::submit, focus) {
+            if (vm.query.isNotEmpty()) onSearch("") else draft = ""
+        }
+        val hasOffline = (state as? ResultsState.Offline)?.matches.orEmpty().isNotEmpty()
+        val hasPrices = ((state as? ResultsState.Done)?.result as? LookupResult.Many)
+            ?.items.orEmpty().any { it.price != null }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (hasOffline) SearchChip("Є в магазині", selected = shopOnly, onClick = { shopOnly = !shopOnly })
+            if (hasPrices) SearchChip("Акції", selected = promoOnly, onClick = { promoOnly = !promoOnly })
+            SearchChip("Каталог", icon = R.drawable.ic_redesign_layout_grid, onClick = onCatalog)
+        }
         Box(Modifier.fillMaxSize()) {
             AnimatedContent(targetState = state, label = "results", contentKey = { it::class }) { s ->
                 when (s) {
+                    ResultsState.Empty -> SearchHistory(searchHistory, onSearch, onClearHistory)
                     is ResultsState.Loading -> Loading(s.step)
                     is ResultsState.Failed -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         ErrorState(s.error, siteSearchUrl(Lang.UA, vm.query), vm::load)
                     }
                     is ResultsState.Stock -> StockResult(s.availability)
-                    is ResultsState.Offline -> OfflineResults(s, vm::load)
+                    is ResultsState.Offline -> OfflineResults(s, shopOnly, vm::load)
                     is ResultsState.Done -> when (val r = s.result) {
-                        is LookupResult.Single -> Loading("Відкриваємо товар…")
-                        is LookupResult.Many -> ManyList(r) { urlKey ->
-                            val bc = r.barcode.takeIf { r.via !is Via.Direct }
-                            onBrowseProducts(r.items.map { it.urlKey }.distinct())
-                            onOpenProduct(urlKey, bc, null, false)
+                        is LookupResult.Single -> if (tablet) {
+                            Column {
+                                SearchSection("Знайдено 1 товар")
+                                Text(
+                                    vm.query, Modifier.fillMaxWidth().clickable {
+                                        val barcode = r.barcode.takeIf { r.via is Via.UpcArticle || r.via is Via.UpcTitle }
+                                        onOpenProduct(r.urlKey, barcode, r.barcode, true)
+                                    }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.text,
+                                )
+                            }
+                        } else Loading("Відкриваємо товар…")
+                        is LookupResult.Many -> {
+                            val items = if (promoOnly) r.items.filter { it.price?.let { price -> price.regularPrice > price.finalPrice + 0.001 } == true } else r.items
+                            ManyList(r, items, selectedProduct) { urlKey ->
+                                val bc = r.barcode.takeIf { r.via !is Via.Direct }
+                                onBrowseProducts(items.map { it.urlKey }.distinct())
+                                onOpenProduct(urlKey, bc, null, false)
+                            }
                         }
                         is LookupResult.NotFound -> Column(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.Center,
                         ) {
                             HighlightMatches(r.query, r.barcode)
-                            MessageState(
-                                icon = Icons.Rounded.SearchOff,
-                                title = "Товарів не знайдено",
-                                text = buildString {
-                                    append("Спробуй ввести артикул з цінника — він зазвичай у дужках у назві.")
-                                    if (r.triedArticles.isNotEmpty()) {
-                                        append("\n\nПеревірили артикули: ${r.triedArticles.joinToString()}")
-                                    }
-                                },
-                                primary = "Шукати на сайті" to { ctx.openUrl(siteSearchUrl(Lang.UA, r.query)) },
-                            )
+                            SearchEmptyState(
+                                R.drawable.ic_redesign_package_search,
+                                title = "Нічого не знайшли",
+                                message = "Перевірте цифри або шукайте за артикулом. Товар може бути відсутній на сайті мережі.",
+                                top = 48,
+                            ) {
+                                SearchChip("Ввести штрихкод вручну", onClick = {
+                                    draft = ""
+                                    focus.requestFocus()
+                                    keyboard?.show()
+                                })
+                                Text(
+                                    "Шукати на сайті",
+                                    Modifier.clickable { ctx.openUrl(siteSearchUrl(Lang.UA, r.query)) }.padding(8.dp),
+                                    fontSize = 14.sp, color = Mine.colors.link,
+                                )
+                                if (r.triedArticles.isNotEmpty()) Text(
+                                    "Перевірили артикули: ${r.triedArticles.joinToString()}",
+                                    fontSize = 13.sp, color = Mine.colors.textTertiary,
+                                )
+                            }
                         }
                     }
                 }
@@ -225,7 +313,8 @@ fun ResultsScreen(
 }
 
 @Composable
-private fun OfflineResults(result: ResultsState.Offline, onRetry: () -> Unit) {
+private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRetry: () -> Unit) {
+    val matches = if (shopOnly) result.matches.filter { it.quantity > 0 } else result.matches
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
         item {
             val date = result.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
@@ -236,7 +325,7 @@ private fun OfflineResults(result: ResultsState.Offline, onRetry: () -> Unit) {
                 color = Mine.colors.textSecondary,
             )
         }
-        if (result.matches.isEmpty()) item {
+        if (matches.isEmpty()) item {
             MessageState(
                 icon = Icons.Rounded.SearchOff,
                 title = if (result.updatedAt == null) "Немає з’єднання" else "У збережених залишках нічого не знайдено",
@@ -244,7 +333,7 @@ private fun OfflineResults(result: ResultsState.Offline, onRetry: () -> Unit) {
                 primary = "Повторити пошук" to onRetry,
             )
         }
-        items(result.matches) { item ->
+        items(matches) { item ->
             Surface(color = Mine.colors.card) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -295,19 +384,142 @@ private fun HighlightMatches(query: String, barcode: String?) {
     }
 }
 
-/** «Пошук» и запрос — крупно, с круглой кнопкой «назад». */
 @Composable
-private fun ResultsHeader(query: String, onBack: () -> Unit) {
+private fun ResultsHeader(
+    query: String,
+    onQuery: (String) -> Unit,
+    onBack: () -> Unit,
+    onSubmit: () -> Unit,
+    focus: FocusRequester,
+    onClear: () -> Unit,
+) {
     val m = Mine.colors
-    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(onClick = onBack, modifier = Modifier.size(48.dp), shape = CircleShape, color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line)) {
-            Box(contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", Modifier.size(22.dp)) }
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).padding(start = 8.dp, end = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Результати пошуку", fontSize = 14.sp, color = m.textSecondary)
-            Text(query, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(
+            Modifier.weight(1f).height(42.dp).clip(shape).background(m.card).border(1.dp, m.outline, shape)
+                .padding(start = 12.dp, end = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SearchIcon(R.drawable.ic_redesign_search, 18)
+            BasicTextField(
+                query, onQuery, modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "Пошук" },
+                singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = m.text),
+                cursorBrush = SolidColor(m.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                decorationBox = { field ->
+                    if (query.isEmpty()) Text(
+                        "Штрихкод, артикул, назва", color = m.textTertiary,
+                        style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    field()
+                },
+            )
+            if (query.isNotEmpty()) IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+                Icon(painterResource(R.drawable.ic_redesign_x), "Очистити", Modifier.size(16.dp), tint = m.textTertiary)
+            }
         }
+    }
+}
+
+@Composable
+private fun SearchChip(label: String, selected: Boolean? = null, @DrawableRes icon: Int? = null, onClick: () -> Unit) {
+    val m = Mine.colors
+    val shape = RoundedCornerShape(6.dp)
+    val active = selected == true
+    val color = if (active) m.card else m.textSecondary
+    val action = if (selected != null) Modifier.toggleable(selected, role = Role.Checkbox, onValueChange = { onClick() })
+        else Modifier.clickable(role = Role.Button, onClick = onClick)
+    Row(
+        Modifier.height(32.dp).clip(shape).background(if (active) m.text else m.card)
+            .border(1.dp, if (active) m.text else m.outline, shape).then(action).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) Icon(painterResource(icon), null, Modifier.size(16.dp), tint = color)
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = color)
+    }
+}
+
+@Composable
+private fun SearchHistory(history: List<String>, onSearch: (String) -> Unit, onClear: () -> Unit) {
+    val m = Mine.colors
+    LazyColumn {
+        item { SearchSection("Ви шукали", if (history.isNotEmpty()) onClear else null) }
+        if (history.isEmpty()) item { SearchEmptyState(R.drawable.ic_redesign_history, message = "Тут з’являться останні запити") }
+        else {
+            item { HorizontalDivider(color = m.line) }
+            items(history) { query ->
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).background(m.card)
+                        .clickable { onSearch(query) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(R.drawable.ic_redesign_history), null, Modifier.size(18.dp), tint = m.text)
+                    Text(query, Modifier.weight(1f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    SearchIcon(R.drawable.ic_redesign_arrow_up_down, 16)
+                }
+                HorizontalDivider(color = m.line)
+            }
+        }
+        item {
+            SearchSection("Шукати можна за")
+            Text(
+                "штрихкодом (13 цифр), артикулом, кодом 1С (BOC…) або словами з назви.",
+                Modifier.padding(horizontal = 16.dp), fontSize = 14.sp, color = m.textTertiary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchSection(title: String, onClear: (() -> Unit)? = null) {
+    val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+        if (onClear != null) Text("Очистити", Modifier.clickable(onClick = onClear), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link)
+    }
+}
+
+@Composable
+private fun SearchIcon(@DrawableRes icon: Int, size: Int) {
+    Icon(painterResource(icon), null, Modifier.size(size.dp), tint = Mine.colors.textTertiary)
+}
+
+@Composable
+private fun SearchEmptyState(
+    @DrawableRes icon: Int,
+    message: String,
+    title: String? = null,
+    top: Int = 32,
+    actions: @Composable () -> Unit = {},
+) {
+    val m = Mine.colors
+    Column(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = top.dp, bottom = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier.size(48.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Icon(painterResource(icon), null, Modifier.size(20.dp), tint = m.textSecondary) }
+        if (title != null) Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(message, Modifier.padding(horizontal = 18.dp), fontSize = 14.sp, color = m.textSecondary, textAlign = TextAlign.Center)
+        actions()
     }
 }
 
@@ -327,18 +539,72 @@ private fun Loading(step: String) {
 }
 
 @Composable
-private fun ManyList(r: LookupResult.Many, onClick: (String) -> Unit) {
-    LazyColumn(
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+private fun ManyList(r: LookupResult.Many, products: List<ProductSummary>, selectedProduct: String?, onClick: (String) -> Unit) {
+    val m = Mine.colors
+    LazyColumn {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Знайдено ${r.items.size}", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Mine.colors.textSecondary)
-                viaNote(r.via)?.let { ViaNote(it) }
+            val count = products.size
+            val noun = when {
+                count % 100 in 11..14 -> "товарів"
+                count % 10 == 1 -> "товар"
+                count % 10 in 2..4 -> "товари"
+                else -> "товарів"
             }
+            SearchSection("$count $noun")
+            viaNote(r.via)?.let { ViaNote(it) }
+            if (products.isNotEmpty()) HorizontalDivider(color = m.line)
         }
-        items(r.items, key = { it.id }) { item -> ProductCard(item, onClick = { onClick(item.urlKey) }) }
+        if (products.isEmpty()) item { SearchEmptyState(R.drawable.ic_redesign_package_search, message = "Акційних товарів за цим запитом немає") }
+        items(products, key = { it.id }) { item ->
+            val selected = item.urlKey == selectedProduct
+            Row(
+                Modifier.fillMaxWidth().background(if (selected) m.surface else m.card).clickable { onClick(item.urlKey) }
+                    .then(if (selected) Modifier.drawBehind {
+                        drawRect(m.accent, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height))
+                    } else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val shape = RoundedCornerShape(6.dp)
+                Box(
+                    Modifier.size(48.dp).clip(shape).background(m.surface).border(1.dp, m.line, shape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (item.image.isNullOrBlank()) SearchIcon(R.drawable.ic_redesign_package, 22)
+                    else ProductImage(item.image, Modifier.fillMaxSize())
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(item.name, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    item.article?.takeIf { it.isNotBlank() }?.let {
+                        Text("арт. $it", fontSize = 13.sp, color = m.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    item.price?.let {
+                        Text(Cart.money((it.finalPrice * 100).roundToLong()), style = PriceStyle.copy(fontSize = 16.sp))
+                    }
+                    val price = item.price
+                    if (price != null && price.regularPrice > price.finalPrice + 0.001) {
+                        Text(Cart.money((price.regularPrice * 100).roundToLong()), fontSize = 13.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
+                    } else {
+                        val available = item.stock == StockStatus.IN_STOCK
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            StatusDot(if (available) m.success else m.outline, Modifier.size(8.dp))
+                            Text(
+                                when (item.stock) {
+                                    StockStatus.IN_STOCK -> "Є на сайті"
+                                    StockStatus.OUT_OF_STOCK -> "Немає на сайті"
+                                    StockStatus.UNKNOWN -> "Невідомо"
+                                },
+                                fontSize = 13.sp, color = if (available) m.success else m.textTertiary,
+                            )
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(color = m.line)
+        }
     }
 }
 

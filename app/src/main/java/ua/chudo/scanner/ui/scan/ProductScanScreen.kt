@@ -1,18 +1,24 @@
 package ua.chudo.scanner.ui.scan
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
@@ -21,10 +27,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import ua.chudo.scanner.R
+import ua.chudo.scanner.ui.common.ProductImage
+import ua.chudo.scanner.ui.theme.CodeStyle
+import ua.chudo.scanner.ui.theme.Mine
+import ua.chudo.scanner.ui.theme.PriceStyle
 import kotlinx.coroutines.CancellationException
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Backend
@@ -41,6 +57,9 @@ private data class ScanSummary(
     val title: String,
     val urlKey: String?,
     val price: Double?,
+    val oldPrice: Double?,
+    val article: String?,
+    val image: String?,
     val own: Double?,
     val otherStore: String?,
     val stockTime: String?,
@@ -55,6 +74,9 @@ fun ProductScanScreen(
     onProduct: (String, String) -> Unit,
     onPrint: (String, String) -> Unit,
     onCart: (String?) -> Unit,
+    onCartScan: () -> Unit,
+    onOpenSearch: () -> Unit,
+    initialPriceMode: Boolean = false,
 ) {
     val app = LocalContext.current.chudoApp
     val options by app.prefs.scanner.collectAsStateWithLifecycle()
@@ -62,7 +84,7 @@ fun ProductScanScreen(
     var summary by remember(code) { mutableStateOf<ScanSummary?>(null) }
     var loading by remember(code) { mutableStateOf(code != null) }
     var manual by rememberSaveable { mutableStateOf(false) }
-    var entered by rememberSaveable { mutableStateOf("") }
+    var priceMode by rememberSaveable { mutableStateOf(initialPriceMode) }
 
     LaunchedEffect(code, employee.shopId) {
         val barcode = code ?: return@LaunchedEffect
@@ -83,6 +105,9 @@ fun ProductScanScreen(
                 title = product?.name ?: net?.item?.name ?: flags.firstOrNull()?.name ?: "Товар за кодом $barcode",
                 urlKey = lookup?.urlKey,
                 price = flags.firstNotNullOfOrNull { it.promoPrice } ?: product?.price?.finalPrice,
+                oldPrice = product?.price?.regularPrice,
+                article = product?.article ?: net?.item?.article,
+                image = product?.images?.firstOrNull(),
                 own = net?.own,
                 otherStore = net?.city?.firstOrNull()?.let { store -> "${store.name} · ${formatQuantity(store.qty)} шт" },
                 stockTime = updatedText(net?.updatedAt)?.let { if (offline) "Офлайн · $it" else it },
@@ -95,30 +120,86 @@ fun ProductScanScreen(
     val barcode = code
     val result: (@Composable () -> Unit)? = if (barcode == null) null else {
         {
-            Surface(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth(), tonalElevation = 3.dp) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val m = Mine.colors
+            Surface(
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
+                modifier = Modifier.fillMaxWidth(), color = m.card, contentColor = m.text, shadowElevation = 10.dp,
+            ) {
+                Column(Modifier.navigationBarsPadding().padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 28.dp)) {
+                    Box(
+                        Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp)
+                            .size(width = 36.dp, height = 4.dp).background(m.outline, Mine.pillShape),
+                    )
                     if (loading) {
                         Text("Шукаємо товар…", style = MaterialTheme.typography.titleMedium)
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
                     } else {
                         val found = summary
-                        Text(found?.title ?: barcode, style = MaterialTheme.typography.titleMedium)
-                        found?.flags?.takeIf { it.isNotEmpty() }?.let { Text(it.joinToString(" · ")) }
-                        found?.price?.let { Text(highlightPrice(it), style = MaterialTheme.typography.headlineMedium) }
-                        Text(found?.own?.let {
-                            if (it > 0.0) "У вашому магазині ${formatQuantity(it)} шт"
-                            else "У вашому магазині немає"
-                        } ?: "Залишок вашого магазину невідомий")
-                        if (found?.own == 0.0) found.otherStore?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        found?.stockTime?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Surface(
+                                modifier = Modifier.size(64.dp), shape = RoundedCornerShape(6.dp),
+                                color = m.surface, border = BorderStroke(1.dp, m.line),
+                            ) {
+                                if (found?.image != null) ProductImage(found.image, Modifier.fillMaxWidth())
+                                else Box(contentAlignment = Alignment.Center) {
+                                    Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(22.dp), tint = m.textTertiary)
+                                }
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(found?.title ?: barcode, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium)
+                                val article = found?.article?.takeIf { it.isNotBlank() }?.let { " · арт. $it" }.orEmpty()
+                                Text(barcode + article, style = CodeStyle, color = m.textTertiary)
+                                found?.flags?.takeIf { it.isNotEmpty() }?.let {
+                                    Text(it.joinToString(" · "), fontSize = 13.sp, color = m.link)
+                                }
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                found?.price?.let { price ->
+                                    Text(highlightPrice(price), style = PriceStyle.copy(fontSize = 26.sp))
+                                    found.oldPrice?.takeIf { it > price + 0.001 }?.let {
+                                        Text(highlightPrice(it), fontSize = 13.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
+                                    }
+                                }
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                val own = found?.own
+                                Text(
+                                    own?.let { "У магазині ${formatQuantity(it)} шт" } ?: "Залишок невідомий",
+                                    fontSize = 13.sp, color = if (own != null && own > 0.0) m.success else m.textSecondary,
+                                )
+                                if (own == 0.0) found.otherStore?.let { Text(it, fontSize = 13.sp, color = m.textSecondary) }
+                            }
+                        }
                         val key = found?.urlKey
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (key != null) {
-                                Button(onClick = { onPrint(key, barcode) }) { Text("Цінник", fontWeight = FontWeight.SemiBold) }
-                                TextButton(onClick = { onProduct(key, barcode) }) { Text("Картка") }
-                            } else Button(onClick = { onSearch(barcode) }) { Text("Пошук") }
-                            TextButton(onClick = { code = null }) { Text("Закрити") }
+                            if (key == null || priceMode) {
+                                ScanSheetButton("Далі", R.drawable.ic_redesign_scan_line, Modifier.weight(1f), onClick = { code = null })
+                            }
+                            if (key == null) {
+                                ScanSheetButton("Пошук", R.drawable.ic_redesign_search, Modifier.weight(1f), primary = true) { onSearch(barcode) }
+                            } else {
+                                ScanSheetButton("Цінник", R.drawable.ic_redesign_printer, Modifier.weight(1f), primary = priceMode) { onPrint(key, barcode) }
+                                if (!priceMode) {
+                                    ScanSheetButton("Кошик", R.drawable.ic_redesign_shopping_cart, Modifier.weight(1f)) { onCart(barcode) }
+                                    ScanSheetButton("Картка", null, Modifier.weight(1f), primary = true) { onProduct(key, barcode) }
+                                }
+                            }
                         }
+                        if (!priceMode && key != null && !options.continuous) {
+                            Spacer(Modifier.height(8.dp))
+                            ScanSheetButton("Далі", R.drawable.ic_redesign_scan_line, Modifier.fillMaxWidth()) { code = null }
+                        }
+                        val note = found?.stockTime ?: if (options.continuous) "Наведіть на наступний код — картка оновиться" else null
+                        if (note != null) Text(
+                            note, Modifier.fillMaxWidth().padding(top = 10.dp),
+                            fontSize = 13.sp, color = m.textTertiary, textAlign = TextAlign.Center,
+                        )
                     }
                 }
             }
@@ -128,30 +209,51 @@ fun ProductScanScreen(
         onBarcode = {
             if (!manual) {
                 app.prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.SCAN, "Штрихкод відскановано", it)
-                if (options.continuous) code = it else onSearch(it)
+                if (options.continuous || priceMode) code = it else onSearch(it)
             }
         },
         onClose = onClose,
         continuous = options.continuous,
         result = result,
         onManual = { manual = true },
-        onCartMode = {
-            val scanned = code
-            code = null
-            onCart(scanned)
+        acceptingScans = !manual,
+        onCartMode = onCartScan,
+        onSearch = onOpenSearch,
+        priceMode = priceMode,
+        onPriceMode = { priceMode = it },
+    )
+    if (manual) ManualScanInput(
+        onClose = { manual = false },
+        onSubmit = {
+            manual = false
+            if (priceMode) code = it else onSearch(it)
         },
     )
-    if (manual) AlertDialog(
-        onDismissRequest = { manual = false },
-        title = { Text("Ввести код вручну") },
-        text = {
-            OutlinedTextField(entered, { entered = it }, singleLine = true, label = { Text("Штрихкод або артикул") })
-        },
-        confirmButton = {
-            TextButton(onClick = { onSearch(entered.trim()) }, enabled = entered.isNotBlank()) { Text("Знайти") }
-        },
-        dismissButton = { TextButton(onClick = { manual = false }) { Text("Скасувати") } },
-    )
+}
+
+@Composable
+private fun ScanSheetButton(
+    label: String,
+    @DrawableRes icon: Int?,
+    modifier: Modifier,
+    primary: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val m = Mine.colors
+    Surface(
+        onClick = onClick, modifier = modifier.height(44.dp), shape = RoundedCornerShape(6.dp),
+        color = if (primary) m.accent else m.card,
+        contentColor = if (primary) m.onAccent else m.text,
+        border = if (primary) null else BorderStroke(1.dp, m.outline),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp))
+            Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+    }
 }
 
 private fun formatQuantity(quantity: Double): String =

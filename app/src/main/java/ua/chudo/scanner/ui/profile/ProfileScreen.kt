@@ -1,5 +1,14 @@
 package ua.chudo.scanner.ui.profile
 
+import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,33 +21,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Print
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.Logout
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Inventory2
-import androidx.compose.material.icons.rounded.Phone
-import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.Store
-import androidx.compose.material.icons.rounded.Print
-import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -53,23 +41,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import ua.chudo.scanner.R
 import ua.chudo.scanner.chudoApp
+import ua.chudo.scanner.ui.common.initials
 import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.ui.auth.PasswordDialog
 import ua.chudo.scanner.ui.auth.authMessage
 import ua.chudo.scanner.ui.common.formatPhone
-import ua.chudo.scanner.ui.common.Avatar
-import ua.chudo.scanner.ui.common.MineHeader
 import ua.chudo.scanner.ui.theme.Mine
 import ua.chudo.scanner.ui.theme.ThemeMode
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 
@@ -90,6 +78,13 @@ fun ProfileScreen(
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     var changePassword by rememberSaveable { mutableStateOf(false) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
+    val role = when {
+        employee.superAdmin -> "Адмін мережі"
+        employee.admin -> "Адмін магазину"
+        employee.stockAdmin -> "Адмін залишків"
+        else -> "Співробітник"
+    }
+    BackHandler(onBack = onBack)
 
     var checking by remember { mutableStateOf(false) }
 
@@ -97,13 +92,13 @@ fun ProfileScreen(
     ProfileContent(
         ProfileUi(
             name = employee.name, phone = formatPhone(employee.phone), city = region?.name ?: employee.region,
-            shop = employee.shop,
+            shop = employee.actingCode?.let { "ЧО $it · ${employee.shop}" } ?: employee.shop, role = role,
             theme = theme, admin = onPrinters != null, message = message,
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,
         ),
         onScannerSettings = onScannerSettings, onOperations = onOperations,
-        onBack = onBack, onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
+        onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onPrinters = { onPrinters?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
         onCheckUpdate = {
@@ -188,13 +183,13 @@ data class ProfileUi(
     val myShop: Boolean = false,
     val version: String = "",
     val checking: Boolean = false,
+    val role: String = "",
 )
 
 /** Профиль (ThemeMine): кто я, тема, магазин и действия одним списком. */
 @Composable
 fun ProfileContent(
     ui: ProfileUi,
-    onBack: () -> Unit = {},
     onEditName: () -> Unit = {},
     onTheme: (ThemeMode) -> Unit = {},
     onPrinters: () -> Unit = {},
@@ -207,95 +202,119 @@ fun ProfileContent(
     onOperations: () -> Unit = {},
 ) {
     val m = Mine.colors
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())) {
-        MineHeader("Профіль", onBack)
-        Row(Modifier.fillMaxWidth().background(m.card).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(ui.name, size = 48.dp)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(ui.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text)
-                Text(listOf(ui.shop, ui.phone).filter(String::isNotBlank).joinToString(" · "), Modifier.padding(top = 2.dp), fontSize = 13.sp, color = m.textSecondary)
+    Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().verticalScroll(rememberScrollState())) {
+        Text(
+            "Профіль", Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 12.dp),
+            fontSize = 26.sp, lineHeight = 29.9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.39).sp, color = m.text,
+        )
+        HorizontalDivider(color = m.line)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 72.dp).background(m.card)
+                .clickable(onClickLabel = "Змінити ім’я", onClick = onEditName)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(initials(ui.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
             }
-            IconButton(onClick = onEditName) { Icon(Icons.Rounded.Edit, "Змінити ім'я", tint = m.textSecondary) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(ui.name, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text)
+                val suffix = listOf(ui.role, ui.shop.ifBlank { ui.city }, ui.phone).filter(String::isNotBlank).joinToString(" · ")
+                Text(suffix, fontSize = 13.sp, color = m.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
-        Spacer(Modifier.height(16.dp))
-        Text("Робота", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
+        HorizontalDivider(color = m.line)
 
-        Surface(Modifier.fillMaxWidth(), color = m.card, contentColor = m.text) {
-            Column {
-                if (ui.networkAdmin) {
-                    ProfileRow(Icons.Outlined.Groups, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
-                    RowDivider()
-                }
-                if (ui.myShop) {
-                    ProfileRow(Icons.Outlined.Group, "Мій магазин", "Співробітники", onClick = onMyShop)
-                    RowDivider()
-                }
-                if (ui.admin) {
-                    ProfileRow(Icons.Outlined.Print, "Принтери", "Налаштування", onClick = onPrinters)
-                    RowDivider()
-                }
-                ProfileRow(Icons.Outlined.History, "Історія операцій", null, onClick = onOperations)
-            }
+        ProfileSection("Робота")
+        HorizontalDivider(color = m.line)
+        if (ui.networkAdmin) {
+            ProfileRow(R.drawable.ic_redesign_users, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
         }
-        Spacer(Modifier.height(16.dp))
-        Text("Тема", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (ui.myShop) {
+            ProfileRow(R.drawable.ic_redesign_users, "Мій магазин", "Співробітники", onClick = onMyShop)
+        }
+        if (ui.admin) {
+            ProfileRow(R.drawable.ic_redesign_printer, "Принтери", "Налаштування", onClick = onPrinters)
+        }
+        ProfileRow(R.drawable.ic_redesign_history, "Історія операцій", onClick = onOperations)
+
+        ProfileSection("Тема")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(m.surface, Mine.fieldShape)
+                .border(1.dp, m.line, Mine.fieldShape).selectableGroup().padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK).forEach { mode ->
+                val active = mode == ui.theme
                 Surface(
-                    onClick = { onTheme(mode) },
-                    modifier = Modifier.weight(1f),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                    color = if (mode == ui.theme) m.card else m.surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, m.line),
+                    Modifier.weight(1f).height(34.dp).selectable(active, role = Role.Tab, onClick = { onTheme(mode) }),
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (active) m.card else Color.Transparent,
+                    border = if (active) BorderStroke(1.dp, m.line) else null,
                 ) {
-                    androidx.compose.foundation.layout.Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
-                        Text(mode.title, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = if (mode == ui.theme) FontWeight.Bold else FontWeight.Normal)
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(mode.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (active) m.text else m.textSecondary)
                     }
                 }
             }
         }
+
+        ProfileSection("Застосунок")
+        HorizontalDivider(color = m.line)
+        ProfileRow(R.drawable.ic_redesign_settings, "Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
+        ProfileRow(R.drawable.ic_redesign_lock, "Змінити пароль", onClick = onPassword)
+        ProfileRow(
+            R.drawable.ic_redesign_download, "Перевірити оновлення",
+            if (ui.checking) "Перевіряємо…" else ui.version.takeIf(String::isNotEmpty)?.let { "Версія $it" },
+            chevron = false, onClick = onCheckUpdate,
+        )
+        ProfileRow(R.drawable.ic_redesign_log_out, "Вийти", danger = true, chevron = false, onClick = onLogout)
+        Text(
+            "Магазин і місто змінює адміністратор.", Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
+            fontSize = 13.sp, color = m.textTertiary,
+        )
+        ui.message?.let { Text(it, Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp), fontSize = 14.sp, color = m.textSecondary) }
         Spacer(Modifier.height(16.dp))
-        Text("Застосунок", Modifier.padding(start = 16.dp, bottom = 8.dp), fontSize = 13.sp, color = m.textSecondary)
-        Surface(Modifier.fillMaxWidth(), color = m.card, contentColor = m.text) {
-            Column {
-                ProfileRow(Icons.Outlined.Settings, "Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
-                RowDivider()
-                ProfileRow(Icons.Outlined.Lock, "Змінити пароль", null, onClick = onPassword)
-                RowDivider()
-                ProfileRow(
-                    Icons.Outlined.Download,
-                    "Перевірити оновлення",
-                    if (ui.checking) "Перевіряю…" else ui.version.takeIf { it.isNotEmpty() }?.let { "Версія $it" },
-                    onClick = onCheckUpdate,
-                )
-                RowDivider()
-                ProfileRow(Icons.Outlined.Logout, "Вийти", null, danger = true, onClick = onLogout)
-            }
-        }
-        Text("Магазин і місто змінює адміністратор.", Modifier.padding(start = 4.dp, top = 8.dp), fontSize = 13.sp, color = m.textSecondary)
-        ui.message?.let { Text(it, Modifier.padding(start = 4.dp, top = 10.dp), fontSize = 15.sp, color = m.success) }
-        Spacer(Modifier.height(32.dp))
     }
 }
 
 @Composable
-private fun ProfileRow(icon: ImageVector, label: String, value: String?, danger: Boolean = false, onClick: (() -> Unit)? = null) {
+internal fun ProfileSection(label: String) {
+    Text(
+        label, Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
+        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Mine.colors.textSecondary,
+    )
+}
+
+@Composable
+private fun ProfileRow(
+    @DrawableRes icon: Int,
+    label: String,
+    value: String? = null,
+    danger: Boolean = false,
+    chevron: Boolean = true,
+    onClick: () -> Unit,
+) {
     val m = Mine.colors
+    val color = if (danger) m.logout else m.text
     Row(
-        Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick)
             .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(20.dp), tint = if (danger) m.logout else m.text)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).padding(end = 8.dp)) {
-            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (danger) m.logout else m.text)
-            value?.let { Text(it, Modifier.padding(top = 3.dp), fontSize = 13.sp, color = m.textSecondary) }
+        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = color)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = color)
+            value?.let { Text(it, fontSize = 13.sp, color = m.textTertiary) }
         }
-        if (onClick != null && !danger) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.padding(start = 6.dp).size(20.dp), tint = m.textSecondary)
+        if (chevron) Icon(
+            painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(18.dp), tint = m.textTertiary,
+        )
     }
+    HorizontalDivider(color = m.line)
 }
-
-@Composable
-private fun RowDivider() = HorizontalDivider(color = Mine.colors.line)

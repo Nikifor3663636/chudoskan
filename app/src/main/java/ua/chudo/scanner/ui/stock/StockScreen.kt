@@ -95,7 +95,6 @@ import ua.chudo.scanner.data.ImportResult
 import ua.chudo.scanner.data.LookupResult
 import ua.chudo.scanner.print.PriceTag
 import ua.chudo.scanner.print.TagData
-import ua.chudo.scanner.ui.print.PrintSheet
 import ua.chudo.scanner.data.NetAvailability
 import ua.chudo.scanner.data.NetworkAvailability
 import ua.chudo.scanner.data.NetworkStockLookup
@@ -227,8 +226,6 @@ class StockViewModel(
         else _selected.value + av
     }
 
-    fun unselect(barcode: String) { _selected.value = _selected.value.filter { it.barcode != barcode } }
-
     /** «Змінені з минулого завантаження» — додати до вибраних ті, що є у своєму магазині. */
     fun addChanged() {
         val n = net ?: return
@@ -261,8 +258,8 @@ class StockViewModel(
      * «Цінники»: ціни й назви з сайту (по 4 одночасно), штрихкод, код і артикул — з 1С → вікно друку.
      * Без ціни на сайті цінник не друкується — такі товари пропускаємо й кажемо скільки.
      */
-    fun prepareLabels() {
-        val list = _selected.value
+    fun prepareLabels(barcodes: Set<String>) {
+        val list = _selected.value.filter { it.barcode in barcodes }
         if (list.isEmpty() || _labelsProgress.value != null) return
         viewModelScope.launch {
             var done = 0
@@ -298,8 +295,9 @@ class StockViewModel(
     fun closePrint() { _printTags.value = null }
 
     fun printed(message: String) {
+        val printedCodes = _printTags.value.orEmpty().map { it.barcode }.toSet()
         _printTags.value = null
-        _selected.value = emptyList()
+        _selected.value = _selected.value.filterNot { it.barcode in printedCodes }
         _batchNote.value = message
     }
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
@@ -849,52 +847,3 @@ private fun ImportDialog(vm: StockViewModel, e: Employee) {
  * Пакетний друк: «Змінені з минулого завантаження» і вибрані товари → «Цінники»
  * (один документ на кілька аркушів у «Друк цінників»).
  */
-@Composable
-fun LabelBatchScreen(employee: Employee, vm: StockViewModel, onBack: () -> Unit, onFindProduct: () -> Unit) {
-    val m = Mine.colors
-    val selected by vm.selected.collectAsStateWithLifecycle()
-    val loading by vm.changedLoading.collectAsStateWithLifecycle()
-    val note by vm.batchNote.collectAsStateWithLifecycle()
-    val progress by vm.labelsProgress.collectAsStateWithLifecycle()
-    val printTags by vm.printTags.collectAsStateWithLifecycle()
-
-    Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
-        MineHeader("Друк цінників", onBack)
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            item {
-                Text(
-                    if (selected.isEmpty()) "Додай товари із залишків або завантаж зміни з 1С." else "Вибрано: ${selected.size}",
-                    fontSize = 16.sp, color = m.textSecondary,
-                )
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MineButton("Знайти товар", onFindProduct, Modifier.weight(1f))
-                    MineButton("Додати зміни з 1С", vm::addChanged, Modifier.weight(1f), busy = loading, enabled = !loading)
-                }
-            }
-            items(selected, key = { it.barcode }) { product ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(product.item.name.ifBlank { product.barcode }, Modifier.weight(1f), fontSize = 15.sp, color = m.text)
-                    IconButton(onClick = { vm.unselect(product.barcode) }) {
-                        Icon(Icons.Rounded.Close, "Прибрати товар", tint = m.textSecondary)
-                    }
-                }
-            }
-        }
-        (progress ?: note)?.let { Text(it, Modifier.padding(bottom = 8.dp), fontSize = 14.sp, color = m.textSecondary) }
-        MineButton(
-            "Підготувати до друку", vm::prepareLabels, Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            tone = MineTone.ACCENT, enabled = selected.isNotEmpty() && progress == null,
-        )
-    }
-    val prefs = LocalContext.current.chudoApp.prefs
-    printTags?.let { tags -> PrintSheet(tags, onDismiss = vm::closePrint, onDone = { message ->
-        prefs.addActivity(employee, ua.chudo.scanner.data.ActivityKind.PRINT, "Друк пакета цінників", "${tags.size} товарів")
-        vm.printed(message)
-    }) }
-}

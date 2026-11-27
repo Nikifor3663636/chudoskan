@@ -1,11 +1,15 @@
 package ua.chudo.scanner.ui.home
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,20 +22,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.LocalOffer
-import androidx.compose.material.icons.outlined.ShoppingBag
-import androidx.compose.material.icons.outlined.ShoppingCart
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,11 +41,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,8 +58,6 @@ import ua.chudo.scanner.data.Employee
 import ua.chudo.scanner.data.HighlightKind
 import ua.chudo.scanner.data.HistoryItem
 import ua.chudo.scanner.data.OrderStage
-import ua.chudo.scanner.ui.common.MineHeader
-import ua.chudo.scanner.ui.common.MineListRow
 import ua.chudo.scanner.ui.common.MineSearchField
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.common.RegionPickerSheet
@@ -74,7 +71,9 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     employee: Employee,
-    onSearch: (String) -> Unit,
+    onSearch: () -> Unit,
+    onScan: () -> Unit,
+    onLabels: () -> Unit,
     onOpenProduct: (String) -> Unit,
     onHistory: () -> Unit,
     onNotifications: () -> Unit,
@@ -109,10 +108,8 @@ fun HomeScreen(
             }
         }
     }
-    var query by rememberSaveable { mutableStateOf("") }
     var showRegions by rememberSaveable { mutableStateOf(false) }
     var stockAt by remember(employee.shopId) { mutableStateOf<Date?>(null) }
-    val keyboard = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(employee.shopId) {
         stockAt = runCatching { app.networkLookup.lastUpdated() }.getOrNull()
@@ -121,15 +118,23 @@ fun HomeScreen(
     }
 
     HomeContent(
-        HomeUi(region.name, employee.shop, stockAt, query, history, orders.count { it.stage == OrderStage.NEW }, Cart.units(cart), newCount, promoCount, app.orders.demo),
-        onQuery = { query = it },
-        onSubmit = {
-            if (query.isNotBlank()) {
-                keyboard?.hide()
-                onSearch(query.trim())
-            }
-        },
+        HomeUi(
+            region = region.name,
+            shop = employee.shop,
+            stockAt = stockAt,
+            query = "",
+            history = history,
+            newOrders = orders.count { it.stage == OrderStage.NEW },
+            cartUnits = Cart.units(cart),
+            newCount = newCount,
+            promoCount = promoCount,
+            ordersDemo = app.orders.demo,
+            cartTotal = Cart.total(cart).takeIf { cart.all { line -> line.priceKop != null } },
+        ),
         onRegion = { showRegions = true },
+        onScan = onScan,
+        onOpenSearch = onSearch,
+        onLabels = onLabels,
         onHistory = onHistory,
         onNotifications = onNotifications,
         onOrders = onOrders,
@@ -164,6 +169,7 @@ data class HomeUi(
     val newCount: Long? = null,
     val promoCount: Long? = null,
     val ordersDemo: Boolean = false,
+    val cartTotal: Long? = null,
 )
 /** «Доступна нова версія 3.2.0 · Оновити» → завантаження з прогресом → системне встановлення. */
 @Composable
@@ -224,6 +230,9 @@ fun HomeContent(
     onQuery: (String) -> Unit = {},
     onSubmit: () -> Unit = {},
     onRegion: () -> Unit = {},
+    onScan: () -> Unit = {},
+    onOpenSearch: (() -> Unit)? = null,
+    onLabels: () -> Unit = {},
     onHistory: () -> Unit = {},
     onNotifications: () -> Unit = {},
     onOrders: () -> Unit = {},
@@ -233,81 +242,127 @@ fun HomeContent(
     banner: @Composable () -> Unit = {},
 ) {
     val m = Mine.colors
-    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        ) {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Image(painterResource(R.drawable.logo_wordmark), "Чудо Острів", Modifier.padding(top = 8.dp, bottom = 10.dp).height(30.dp))
-                    Spacer(Modifier.weight(1f))
-                    androidx.compose.material3.IconButton(onClick = onNotifications) {
-                        Icon(Icons.Outlined.Notifications, "Сповіщення", tint = m.text)
-                    }
+    LazyColumn(
+        Modifier.fillMaxSize().background(m.bg).statusBarsPadding().imePadding(),
+        contentPadding = PaddingValues(bottom = Mine.spacing16),
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing4),
+                horizontalArrangement = Arrangement.spacedBy(Mine.spacing8),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier.weight(1f).clickable(onClickLabel = "Змінити місто пошуку", onClick = onRegion)
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HomeIcon(R.drawable.ic_redesign_store, 18)
+                    Text(
+                        ui.shop.ifBlank { ui.region }, Modifier.weight(1f, fill = false),
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    HomeIcon(R.drawable.ic_redesign_chevron_down, 16)
+                }
+                IconButton(onClick = onNotifications, modifier = Modifier.size(40.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_bell), "Сповіщення", Modifier.size(20.dp), tint = m.textSecondary)
                 }
             }
-            item {
-                Surface(onClick = onRegion, color = m.bg, contentColor = m.text, shape = Mine.fieldShape) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            if (ui.shop.isNotBlank()) Text(ui.shop, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Місто пошуку · ${ui.region}", fontSize = 13.sp, color = m.textSecondary)
-                        }
-                        Icon(Icons.Rounded.KeyboardArrowDown, "Змінити місто пошуку", tint = m.textSecondary)
-                    }
-                }
-                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StatusDot(if (ui.stockAt == null) m.textSecondary else m.success)
-                    Spacer(Modifier.width(8.dp))
-                    Text(updatedText(ui.stockAt) ?: "Час оновлення залишків невідомий", fontSize = 13.sp, color = m.textSecondary)
+            Column(Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = 6.dp, bottom = Mine.spacing4)) {
+                MineSearchField(
+                    ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit,
+                    onScan = onScan, homeStyle = true, onOpenSearch = onOpenSearch,
+                )
+                Row(
+                    Modifier.padding(top = Mine.spacing8),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    StatusDot(if (ui.stockAt == null) m.outline else m.success, Modifier.size(8.dp))
+                    Text(
+                        updatedText(ui.stockAt) ?: "Час оновлення залишків невідомий",
+                        fontSize = 13.sp, color = m.textTertiary,
+                    )
                 }
                 banner()
             }
-            if (ui.history.isNotEmpty()) {
-                item {
-                    Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Нещодавні", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-                        TextButton(onClick = onHistory) { Text("Історія", color = m.link) }
-                    }
-                    Surface(shape = Mine.cardShape, color = m.card, border = BorderStroke(1.dp, m.line)) {
-                        Column(Modifier.padding(horizontal = 10.dp)) {
-                            val recent = ui.history.take(4)
-                            recent.forEachIndexed { index, product ->
-                                HistoryRow(product, index < recent.lastIndex, onOpenProduct)
-                            }
-                        }
-                    }
+        }
+        item {
+            Text(
+                "Швидкі дії", Modifier.padding(start = Mine.spacing16, top = 14.dp, bottom = Mine.spacing8),
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary,
+            )
+            HorizontalDivider(color = m.line)
+            Row(Modifier.height(IntrinsicSize.Min).background(m.line), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                val cartDetail = if (ui.cartUnits == 0) "Порожній" else buildString {
+                    append("${ui.cartUnits} шт")
+                    ui.cartTotal?.let { append(" · ${Cart.money(it)}") }
                 }
+                QuickAction(R.drawable.ic_redesign_shopping_cart, "Кошик покупця", cartDetail, onCart, Modifier.weight(1f))
+                QuickAction(
+                    R.drawable.ic_redesign_clipboard_list, "Замовлення", orderDetail(ui), onOrders,
+                    Modifier.weight(1f), accent = ui.newOrders > 0,
+                )
             }
-            item {
-                Text("Швидкі дії", Modifier.padding(top = 20.dp, bottom = 10.dp), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = m.text)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickAction(Icons.Outlined.ShoppingCart, "Кошик", "${ui.cartUnits} шт", onCart, Modifier.weight(1f))
+            HorizontalDivider(color = m.line)
+            Row(Modifier.height(IntrinsicSize.Min).background(m.line), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                QuickAction(R.drawable.ic_redesign_printer, "Цінники пакетом", null, onLabels, Modifier.weight(1f))
+                onHighlights?.let { open ->
+                    val counts = listOfNotNull(ui.promoCount?.let { "$it акцій" }, ui.newCount?.let { "$it новинок" })
                     QuickAction(
-                        Icons.Outlined.ShoppingBag, "Замовлення",
-                        if (ui.ordersDemo) "Демо · ${ui.newOrders}" else "Нові: ${ui.newOrders}",
-                        onOrders, Modifier.weight(1f), accent = ui.newOrders > 0,
+                        R.drawable.ic_redesign_badge_percent, "Новинки й акції",
+                        counts.joinToString(" · ").ifEmpty { null },
+                        { open(HighlightKind.NEW) }, Modifier.weight(1f),
+                    )
+                } ?: Spacer(Modifier.weight(1f).background(m.card).fillMaxHeight())
+            }
+            HorizontalDivider(color = m.line)
+        }
+        if (ui.history.isNotEmpty()) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing20, bottom = Mine.spacing8),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Нещодавні", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
+                    Text(
+                        "Історія", Modifier.clickable(onClick = onHistory),
+                        fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link,
                     )
                 }
-                onHighlights?.let { open ->
-                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QuickAction(Icons.Rounded.AutoAwesome, "Новинки", ui.newCount?.let { "$it шт" }, { open(HighlightKind.NEW) }, Modifier.weight(1f))
-                        QuickAction(Icons.Outlined.LocalOffer, "Акції", ui.promoCount?.let { "$it шт" }, { open(HighlightKind.PROMO) }, Modifier.weight(1f))
-                    }
-                }
+                HorizontalDivider(color = m.line)
+            }
+            itemsIndexed(ui.history.take(4), key = { _, product -> product.urlKey }) { _, product ->
+                RecentProductRow(product, onOpenProduct)
+                HorizontalDivider(color = m.line)
             }
         }
-        MineSearchField(
-            ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit,
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
     }
+}
+
+private fun orderDetail(ui: HomeUi): String {
+    if (ui.ordersDemo) return "Демо · ${ui.newOrders}"
+    val count = ui.newOrders
+    if (count == 0) return "Немає нових"
+    val word = when {
+        count % 100 in 11..14 -> "нових"
+        count % 10 == 1 -> "нове"
+        count % 10 in 2..4 -> "нові"
+        else -> "нових"
+    }
+    return "$count $word на збір"
+}
+
+@Composable
+private fun HomeIcon(@DrawableRes icon: Int, size: Int, tint: Color = Mine.colors.text) {
+    Icon(painterResource(icon), null, Modifier.size(size.dp), tint = tint)
 }
 
 @Composable
 private fun QuickAction(
-    icon: ImageVector,
+    @DrawableRes icon: Int,
     title: String,
     detail: String?,
     onClick: () -> Unit,
@@ -315,17 +370,47 @@ private fun QuickAction(
     accent: Boolean = false,
 ) {
     val m = Mine.colors
-    Surface(
-        onClick = onClick, modifier = modifier, shape = Mine.fieldShape,
-        color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.line),
+    Row(
+        modifier.fillMaxHeight().heightIn(min = 72.dp).background(m.card).clickable(onClick = onClick)
+            .padding(horizontal = Mine.spacing16, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(Mine.spacing12),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.heightIn(min = 60.dp).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(22.dp), tint = m.textSecondary)
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                if (detail != null) Text(detail, fontSize = 12.sp, color = if (accent) m.link else m.textSecondary)
+        HomeIcon(icon, 24, m.textSecondary)
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            if (detail != null) {
+                Text(detail, fontSize = 13.sp, color = if (accent) m.link else m.textTertiary)
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentProductRow(product: HistoryItem, onOpenProduct: (String) -> Unit) {
+    val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().background(m.card).clickable { onOpenProduct(product.urlKey) }
+            .padding(horizontal = Mine.spacing16, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(Mine.spacing12),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            Modifier.size(48.dp), shape = RoundedCornerShape(6.dp), color = m.surface,
+            border = BorderStroke(1.dp, m.line),
+        ) {
+            if (product.image.isNullOrBlank()) {
+                Box(contentAlignment = Alignment.Center) { HomeIcon(R.drawable.ic_redesign_package, 22, m.textTertiary) }
+            } else {
+                ProductImage(product.image, Modifier.fillMaxSize())
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(product.name, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            product.article?.let { Text("арт. $it", fontSize = 13.sp, color = m.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+        product.priceKop?.let {
+            Text(Cart.money(it), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.16).sp)
         }
     }
 }
@@ -334,42 +419,67 @@ private fun QuickAction(
 fun HistoryScreen(onBack: () -> Unit, onOpenProduct: (String) -> Unit) {
     val prefs = LocalContext.current.chudoApp.prefs
     val history by prefs.history.collectAsStateWithLifecycle()
-    val m = Mine.colors
-    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
-        MineHeader("Історія", onBack) {
-            if (history.isNotEmpty()) {
-                TextButton(onClick = prefs::clearHistory) { Text("Очистити", color = m.link) }
-            }
-        }
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-            if (history.isEmpty()) item { Text("Тут з’являться переглянуті товари", color = m.textSecondary) }
-            itemsIndexed(history, key = { _, item -> item.urlKey }) { index, item ->
-                HistoryRow(item, index < history.lastIndex, onOpenProduct)
-            }
-        }
-    }
+    HistoryContent(history, onBack, prefs::clearHistory, onOpenProduct)
 }
 
 @Composable
-private fun HistoryRow(product: HistoryItem, divider: Boolean, onOpenProduct: (String) -> Unit) {
+internal fun HistoryContent(
+    history: List<HistoryItem>,
+    onBack: () -> Unit,
+    onClear: () -> Unit,
+    onOpenProduct: (String) -> Unit,
+) {
     val m = Mine.colors
-    MineListRow(onClick = { onOpenProduct(product.urlKey) }, divider = divider) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (product.image.isNullOrBlank()) {
-                Surface(Modifier.size(40.dp), shape = Mine.fieldShape, color = m.surface) {
+    Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = Mine.spacing8),
+            horizontalArrangement = Arrangement.spacedBy(Mine.spacing4),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    painterResource(R.drawable.ic_redesign_chevron_left), "Назад",
+                    Modifier.size(24.dp), tint = m.textSecondary,
+                )
+            }
+            Text(
+                "Нещодавні", Modifier.weight(1f).padding(start = Mine.spacing4),
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text,
+            )
+            if (history.isNotEmpty()) {
+                Box(
+                    Modifier.height(44.dp).clickable(onClick = onClear).padding(horizontal = Mine.spacing8),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Очистити", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link)
+                }
+            }
+        }
+        if (history.isEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = Mine.spacing20, vertical = Mine.spacing32),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(48.dp), shape = CircleShape, color = m.surface,
+                    border = BorderStroke(1.dp, m.line),
+                ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Inventory2, null, Modifier.size(20.dp), tint = m.textSecondary)
+                        HomeIcon(R.drawable.ic_redesign_history, 20, m.textSecondary)
                     }
                 }
-            } else {
-                ProductImage(product.image, Modifier.size(40.dp))
+                Text(
+                    "Тут з’являться переглянуті товари",
+                    fontSize = 14.sp, color = m.textSecondary, textAlign = TextAlign.Center,
+                )
             }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(product.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(product.article?.let { "Арт. $it" }.orEmpty(), Modifier.weight(1f), fontSize = 12.sp, color = m.textSecondary)
-                    product.priceKop?.let { Text(Cart.money(it), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.text) }
+        } else {
+            LazyColumn(contentPadding = PaddingValues(bottom = Mine.spacing16)) {
+                item { HorizontalDivider(color = m.line) }
+                items(history, key = { it.urlKey }) { product ->
+                    RecentProductRow(product, onOpenProduct)
+                    HorizontalDivider(color = m.line)
                 }
             }
         }

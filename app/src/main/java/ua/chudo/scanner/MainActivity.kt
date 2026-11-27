@@ -6,6 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,7 +39,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.key
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -46,6 +52,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
+import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
@@ -72,8 +79,13 @@ import ua.chudo.scanner.ui.results.ResultsScreen
 import ua.chudo.scanner.ui.scan.ProductScanScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
 import ua.chudo.scanner.ui.common.MainTab
+import ua.chudo.scanner.ui.common.TabletRail
+import ua.chudo.scanner.ui.common.TabletPanes
+import ua.chudo.scanner.ui.common.TabletMinWidth
+import ua.chudo.scanner.ui.product.TabletProduct
 import ua.chudo.scanner.ui.common.MineBottomBar
 import ua.chudo.scanner.ui.theme.ChudoTheme
+import ua.chudo.scanner.ui.theme.Mine
 import ua.chudo.scanner.ui.theme.isDarkTheme
 
 class MainActivity : ComponentActivity() {
@@ -105,7 +117,7 @@ private const val CART_MODE = "cart"
 private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
-    const val RESULTS = "results/{q}"
+    const val RESULTS = "results?q={q}"
     const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
     const val ORDERS = "orders"
@@ -132,8 +144,8 @@ private object Routes {
 
     fun adminStaff(shop: String? = null) = "admin-staff" + (shop?.let { "?shop=" + Uri.encode(it) } ?: "")
 
-    fun scan() = "scan?mode=barcode"
-    fun results(q: String) = "results/${Uri.encode(q)}"
+    fun scan(price: Boolean = false) = if (price) "scan?mode=price" else "scan?mode=barcode"
+    fun results(q: String) = if (q.isEmpty()) "results" else "results?q=${Uri.encode(q)}"
     fun product(urlKey: String, bc: String?, scanned: String? = null, print: Boolean = false): String {
         val query = listOfNotNull(
             bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" }, "print=true".takeIf { print },
@@ -144,7 +156,7 @@ private object Routes {
 
 // Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
 // и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации.
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.ORDERS)
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.LABELS)
 
 
 @Composable
@@ -160,6 +172,7 @@ private fun AppNav(home: Employee) {
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
+    val orders by ordersRepo.orders.collectAsStateWithLifecycle()
     LaunchedEffect(employee.shopId) { ordersRepo.load(employee.shopId) }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
     LaunchedEffect(employee.shopId) {
@@ -173,8 +186,8 @@ private fun AppNav(home: Employee) {
     LaunchedEffect(Unit) { updater.check() }
     val tab = when (route) {
         Routes.HOME, Routes.RESULTS, Routes.HISTORY -> MainTab.HOME
-        Routes.LABELS -> MainTab.LABELS
-        Routes.STOCK -> MainTab.STOCK
+        Routes.ORDERS -> MainTab.ORDERS
+        Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
         Routes.PROFILE -> MainTab.PROFILE
         else -> null
     }
@@ -182,42 +195,64 @@ private fun AppNav(home: Employee) {
         if (route != r) nav.navigate(r) { popUpTo(Routes.HOME); launchSingleTop = true }
     }
 
-    Scaffold(
-        // Отступы системных панелей обрабатывают сами экраны; здесь — только высота нижней панели.
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            Column {
-            acting?.let { a -> ActingBanner(a, withInsets = route in FULLSCREEN) { switchShop(null) } }
-            // Сканер и настройки принтеров — без нижней навигации.
-            if (route != null && route !in FULLSCREEN) MineBottomBar(
-                tab = tab,
-                onTab = { t ->
-                    when (t) {
-                        MainTab.HOME -> if (route != Routes.HOME) nav.popBackStack(Routes.HOME, inclusive = false)
-                        MainTab.LABELS -> openTab(Routes.LABELS)
-                        MainTab.STOCK -> openTab(Routes.STOCK)
-                        MainTab.PROFILE -> openTab(Routes.PROFILE)
-                    }
-                },
-                scanLabel = if (route == Routes.STOCK) "Сканувати для пошуку залишків" else "Сканувати товар",
-                onScan = { nav.navigate(if (route == Routes.STOCK) Routes.SCAN_STOCK else Routes.scan()) },
-            )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val tablet = maxWidth >= TabletMinWidth
+        val railVisible = tablet && route != null && route != Routes.SCAN
+        val onTab: (MainTab) -> Unit = { selected ->
+            when (selected) {
+                MainTab.HOME -> if (tablet) {
+                    if (route != Routes.RESULTS) openTab(Routes.results(""))
+                } else if (route != Routes.HOME) {
+                    nav.popBackStack(Routes.HOME, inclusive = false)
+                }
+                MainTab.ORDERS -> openTab(Routes.ORDERS)
+                MainTab.STOCK -> openTab(Routes.STOCK)
+                MainTab.PROFILE -> openTab(Routes.PROFILE)
             }
-        },
-    ) { inner ->
-        AppNavHost(
-            nav, employee, home, Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner),
-            onActAs = { e -> e.shopId?.let { id -> switchShop(home.actingIn(id, e.address, e.region, e.code)) } },
-        )
+        }
+        val onScan = {
+            nav.navigate(if (route == Routes.STOCK) Routes.SCAN_STOCK else Routes.scan())
+        }
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                Column {
+                    acting?.let { a -> ActingBanner(a, withInsets = railVisible || route in FULLSCREEN) { switchShop(null) } }
+                    if (!tablet && route != null && route !in FULLSCREEN) MineBottomBar(
+                        tab = tab,
+                        newOrders = orders.count { it.stage == OrderStage.NEW },
+                        onTab = onTab,
+                        scanLabel = if (route == Routes.STOCK) "Сканувати для пошуку залишків" else "Сканувати товар",
+                        onScan = onScan,
+                    )
+                }
+            },
+        ) { inner ->
+            Row(Modifier.fillMaxSize().padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner)) {
+                if (railVisible) TabletRail(
+                    selected = tab, printing = route == Routes.LABELS,
+                    onTab = onTab, onScan = onScan, onPrint = { openTab(Routes.LABELS) },
+                )
+                AppNavHost(
+                    nav, employee, home, Modifier.weight(1f), tablet = tablet,
+                    onActAs = { e -> e.shopId?.let { id -> switchShop(home.actingIn(id, e.address, e.region, e.code)) } },
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employee, modifier: Modifier, onActAs: (ShopEntry) -> Unit) {
+private fun AppNavHost(
+    nav: NavHostController, employee: Employee, home: Employee, modifier: Modifier,
+    tablet: Boolean, onActAs: (ShopEntry) -> Unit,
+) {
     fun setCatalog(entry: androidx.navigation.NavBackStackEntry, items: List<String>, selected: String) {
         entry.savedStateHandle["catalogBrowse"] = ArrayList(items)
         entry.savedStateHandle["catalogIndex"] = items.indexOf(selected)
     }
+    val wide by androidx.compose.runtime.rememberUpdatedState(tablet)
+    var searchHistory by rememberSaveable(employee.uid) { mutableStateOf(arrayListOf<String>()) }
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
@@ -285,6 +320,13 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             if (Backend.isSupabase) HighlightsScreen(
                 canUpload = employee.stockAdmin || employee.superAdmin,
                 initialKind = kind,
+                onPromos = { nav.navigate(Routes.highlights(HighlightKind.PROMO)) },
+                onNew = {
+                    val route = Routes.highlights(HighlightKind.NEW)
+                    if (!nav.popBackStack(route, inclusive = false)) {
+                        nav.navigate(route) { popUpTo(Routes.HIGHLIGHTS) { inclusive = true } }
+                    }
+                },
                 onBack = { nav.popBackStack() },
                 onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
                 onBrowseCatalog = { items, selected -> setCatalog(entry, items, selected) },
@@ -310,12 +352,15 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onScan = { nav.navigate(Routes.SCAN_ORDERS) },
                 scanned = scanned,
                 onScannedConsumed = { entry.savedStateHandle[ORDERS_CODE] = null },
+                tablet = wide,
             )
         }
         composable(Routes.HOME) {
             HomeScreen(
                 employee,
-                onSearch = { nav.navigate(Routes.results(it)) },
+                onScan = { nav.navigate(Routes.scan()) },
+                onLabels = { nav.navigate(Routes.LABELS) },
+                onSearch = { nav.navigate(Routes.results("")) },
                 onOpenProduct = { nav.navigate(Routes.product(it, null)) },
                 onHistory = { nav.navigate(Routes.HISTORY) },
                 onNotifications = { nav.navigate(Routes.NOTIFICATIONS) },
@@ -341,7 +386,25 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
             val cart = LocalContext.current.chudoApp.cart
             if (arg == CART_MODE) {
                 val last by cart.last.collectAsStateWithLifecycle()
-                ScannerScreen(onBarcode = cart::add, onClose = { nav.popBackStack() }, continuous = true, status = last)
+                val lines by cart.lines.collectAsStateWithLifecycle()
+                var manual by rememberSaveable { mutableStateOf(false) }
+                ScannerScreen(
+                    onBarcode = { if (!manual) cart.add(it) },
+                    onClose = { nav.popBackStack() },
+                    continuous = true,
+                    status = last,
+                    cartUnits = ua.chudo.scanner.data.Cart.units(lines),
+                    onManual = { manual = true },
+                    acceptingScans = !manual,
+                    onCartMode = {},
+                    onPriceMode = { price ->
+                        nav.navigate(Routes.scan(price)) { popUpTo(Routes.SCAN) { inclusive = true } }
+                    },
+                )
+                if (manual) ua.chudo.scanner.ui.scan.ManualScanInput(
+                    onClose = { manual = false },
+                    onSubmit = { code -> cart.add(code); manual = false },
+                )
                 return@composable
             }
             // mode=stock / mode=orders — код повертаємо на попередній екран («Залишки» / «Замовлення»).
@@ -357,6 +420,15 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                     onSearch = { code -> nav.navigate(Routes.results(code)) },
                     onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
                     onPrint = { key, barcode -> nav.navigate(Routes.product(key, null, barcode, print = true)) },
+                    initialPriceMode = arg == "price",
+                    onOpenSearch = { nav.navigate(Routes.results("")) },
+                    onCartScan = {
+                        nav.navigate(Routes.CART) {
+                            popUpTo(Routes.SCAN) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                        nav.navigate(Routes.SCAN_CART)
+                    },
                     onCart = { barcode ->
                         barcode?.let(cart::add)
                         nav.navigate(Routes.CART)
@@ -372,17 +444,48 @@ private fun AppNavHost(nav: NavHostController, employee: Employee, home: Employe
                 onClose = { nav.popBackStack() },
             )
         }
-        composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType })) { resultsEntry ->
-            ResultsScreen(
-                onBrowseProducts = { resultsEntry.savedStateHandle["productBrowse"] = ArrayList(it) },
-                employee = employee,
-                onBack = { nav.popBackStack() },
-                onOpenProduct = { urlKey, bc, scanned, replace ->
-                    nav.navigate(Routes.product(urlKey, bc, scanned)) {
-                        if (replace) popUpTo(Routes.RESULTS) { inclusive = true }
+        composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType; defaultValue = "" })) { resultsEntry ->
+            var selection by rememberSaveable { mutableStateOf<ArrayList<String?>?>(null) }
+            val results: @Composable () -> Unit = {
+                ResultsScreen(
+                    onBrowseProducts = { resultsEntry.savedStateHandle["productBrowse"] = ArrayList(it) },
+                    searchHistory = searchHistory,
+                    onQueryUsed = { query ->
+                        searchHistory = ArrayList((listOf(query) + searchHistory.filterNot { it.equals(query, ignoreCase = true) }).take(12))
+                    },
+                    onClearHistory = { searchHistory = arrayListOf() },
+                    onSearch = { query ->
+                        nav.navigate(Routes.results(query)) { popUpTo(Routes.RESULTS) { inclusive = true } }
+                    },
+                    onCatalog = { nav.navigate(Routes.STOCK) },
+                    employee = employee,
+                    onBack = { nav.popBackStack() },
+                    selectedProduct = selection?.firstOrNull().takeIf { wide },
+                    tablet = wide,
+                    onOpenProduct = { urlKey, bc, scanned, replace ->
+                        if (wide) {
+                            selection = arrayListOf(urlKey, bc, scanned)
+                        } else {
+                            nav.navigate(Routes.product(urlKey, bc, scanned)) {
+                                if (replace) popUpTo(Routes.RESULTS) { inclusive = true }
+                            }
+                        }
+                    },
+                )
+            }
+            if (wide) TabletPanes(results) {
+                val choice = selection
+                if (choice == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Оберіть товар зі списку", color = Mine.colors.textSecondary)
                     }
-                },
-            )
+                } else key(choice) {
+                    TabletProduct(
+                        employee, choice[0].orEmpty(), choice[1], choice[2],
+                        onClose = { selection = null }, onScan = { nav.navigate(Routes.scan()) },
+                    )
+                }
+            } else results()
         }
         composable(
             Routes.PRODUCT,

@@ -1,7 +1,14 @@
 package ua.chudo.scanner.ui.cart
 
 import android.view.WindowManager
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +24,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,6 +48,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -57,19 +58,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ua.chudo.scanner.R
 import ua.chudo.scanner.chudoApp
 import ua.chudo.scanner.data.Cart
 import ua.chudo.scanner.data.TerminalPaymentDraft
 import ua.chudo.scanner.data.CartLine
 import ua.chudo.scanner.print.Ean13
-import ua.chudo.scanner.ui.common.MessageState
-import ua.chudo.scanner.ui.common.MineButton
-import ua.chudo.scanner.ui.common.MineCard
-import ua.chudo.scanner.ui.common.MineHeader
-import ua.chudo.scanner.ui.common.MinePrimaryButton
-import ua.chudo.scanner.ui.common.MineStepper
 import ua.chudo.scanner.ui.common.ProductImage
 import ua.chudo.scanner.ui.theme.Mine
+import ua.chudo.scanner.ui.theme.PriceStyle
 import java.text.DecimalFormat
 
 /**
@@ -120,30 +117,27 @@ fun CartContent(
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     var cashier by rememberSaveable { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Box(Modifier.padding(horizontal = 8.dp)) {
-            MineHeader("Кошик", onBack) {
-                if (lines.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Очистити", color = m.link, fontSize = 15.sp) }
-            }
-        }
+    Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
+        CartHeader(Cart.units(lines), onBack, if (lines.isNotEmpty()) ({ confirmClear = true }) else null)
         if (lines.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                MessageState(
-                    Icons.Rounded.ShoppingCart, "Кошик порожній",
-                    "Скануй товари покупця підряд — тут буде список і сума до оплати.",
-                    primary = "Сканувати товари" to onScan,
-                )
+            EmptyCart(onScan)
+        } else {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 16.dp),
+            ) {
+                item { HorizontalDivider(color = m.line) }
+                items(lines, key = { it.barcode }) { line ->
+                    CartProductRow(line, onQty, onRemove, onRetry)
+                    HorizontalDivider(color = m.line)
+                }
+                item { CartTotals(lines) }
             }
-            return@Column
+            CartActionBar(
+                onScan, onCashier = { onShowCashier(); cashier = true },
+                cashierReady = lines.any { !it.loading }, onTerminal = onTerminal, terminalReady = terminalReady,
+            )
         }
-        LazyColumn(
-            Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(lines, key = { it.barcode }) { l -> LineCard(l, onQty, onRemove, onRetry) }
-        }
-        Footer(lines, onScan, onCashier = { onShowCashier(); cashier = true }, onTerminal = onTerminal, terminalReady = terminalReady)
     }
 
     if (confirmClear) AlertDialog(
@@ -157,88 +151,223 @@ fun CartContent(
 }
 
 @Composable
-private fun LineCard(l: CartLine, onQty: (String, Int) -> Unit, onRemove: (String) -> Unit, onRetry: (String) -> Unit) {
+private fun CartHeader(units: Int, onBack: () -> Unit, onClear: (() -> Unit)?) {
     val m = Mine.colors
-    MineCard(padding = 14.dp) {
-        Row(verticalAlignment = Alignment.Top) {
-            ProductImage(l.image, Modifier.size(56.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                if (l.loading) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = m.accent)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Шукаю ${l.barcode}…", fontSize = 15.sp, color = m.textSecondary)
-                    }
-                } else {
-                    Text(l.name, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(ids(l), fontSize = 13.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            IconButton(onClick = { onRemove(l.barcode) }) { Icon(Icons.Rounded.DeleteOutline, "Прибрати", tint = m.textSecondary) }
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
         }
-        if (!l.loading) {
-            Row(Modifier.padding(top = 10.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                MineStepper(l.qty, { onQty(l.barcode, it) }, range = 1..Cart.MAX_QTY)
-                Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End) {
-                    val sum = Cart.lineSum(l)
-                    if (sum != null) {
-                        Text(Cart.money(sum), fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            l.regularKop?.let {
-                                Text(Cart.money(it), fontSize = 13.sp, color = m.textSecondary, textDecoration = TextDecoration.LineThrough)
-                                Spacer(Modifier.width(6.dp))
-                            }
-                            if (l.qty > 1) Text("${Cart.money(l.priceKop!!)} / шт", fontSize = 13.sp, color = m.textSecondary)
-                        }
-                    } else if (!l.failed) Text("Немає ціни на сайті", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = m.warningText)
-                }
-            }
-            when {
-                l.failed -> Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Не вдалося завантажити товар", Modifier.weight(1f), fontSize = 14.sp, color = m.warningText)
-                    TextButton(onClick = { onRetry(l.barcode) }) { Text("Повторити", color = m.link) }
-                }
-                Cart.overStock(l) -> Text(
-                    "За 1С у магазині лише ${QTY.format(l.inShop ?: 0.0)} шт",
-                    Modifier.padding(top = 6.dp), fontSize = 14.sp, color = m.warningText,
-                )
+        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Text("Кошик покупця", fontSize = 17.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            if (units > 0) Text("$units шт", fontSize = 12.sp, lineHeight = 14.4.sp, color = m.textTertiary)
+        }
+        if (onClear != null) {
+            Box(Modifier.height(36.dp).clickable(onClick = onClear).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                Text("Очистити", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link)
             }
         }
     }
 }
 
-private val QTY = DecimalFormat("#,##0.###")
-
-private fun ids(l: CartLine) = listOfNotNull(
-    l.article.ifBlank { null }?.let { "Арт. $it" }, l.code1C.ifBlank { null }, l.barcode,
-).joinToString(" · ")
+@Composable
+private fun EmptyCart(onScan: () -> Unit) {
+    val m = Mine.colors
+    Column(
+        Modifier.fillMaxWidth().padding(start = 20.dp, top = 80.dp, end = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(48.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_redesign_shopping_cart), null, Modifier.size(20.dp), tint = m.textSecondary)
+        }
+        Text("Кошик порожній", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+        Text(
+            "Скануйте товари підряд — сума порахується сама, ще до каси.",
+            Modifier.widthIn(max = 240.dp), textAlign = TextAlign.Center, fontSize = 14.sp, color = m.textSecondary,
+        )
+        CartButton("Сканувати товари", onScan, icon = R.drawable.ic_redesign_scan_barcode, primary = true)
+    }
+}
 
 @Composable
-private fun Footer(lines: List<CartLine>, onScan: () -> Unit, onCashier: () -> Unit, onTerminal: (() -> Unit)?, terminalReady: Boolean) {
+private fun CartProductRow(line: CartLine, onQty: (String, Int) -> Unit, onRemove: (String) -> Unit, onRetry: (String) -> Unit) {
     val m = Mine.colors
+    Row(
+        Modifier.fillMaxWidth().background(m.card).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        val shape = RoundedCornerShape(6.dp)
+        Surface(Modifier.size(48.dp), shape = shape, color = m.surface, border = BorderStroke(1.dp, m.line)) {
+            if (!line.image.isNullOrBlank()) ProductImage(line.image, Modifier.fillMaxSize())
+            else Box(contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(22.dp), tint = m.textTertiary)
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (line.loading) {
+                    Row(Modifier.padding(end = 28.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = m.accent)
+                        Text("Шукаю ${line.barcode}…", fontSize = 15.sp, color = m.textSecondary, maxLines = 2)
+                    }
+                } else {
+                    Text(
+                        line.name, Modifier.padding(end = 28.dp), fontSize = 15.sp, lineHeight = 19.5.sp,
+                        fontWeight = FontWeight.Medium, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        listOf(ids(line), line.priceKop?.let { "${cartPrice(it)} / шт" }.orEmpty())
+                            .filter(String::isNotBlank).joinToString(" · "),
+                        fontSize = 13.sp, lineHeight = 19.5.sp, color = m.textTertiary,
+                    )
+                    if (Cart.overStock(line)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(painterResource(R.drawable.ic_redesign_triangle_alert), null, Modifier.size(16.dp), tint = m.warningText)
+                            Text("За 1С у магазині ${QTY.format(line.inShop ?: 0.0)} шт", fontSize = 12.sp, color = m.warningText)
+                        }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CartQuantity(line.qty) { onQty(line.barcode, it) }
+                        val sum = Cart.lineSum(line)
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                            if (sum != null) {
+                                Text(cartPrice(sum), style = PriceStyle.copy(fontSize = 16.sp), color = m.text, textAlign = TextAlign.End)
+                                line.regularKop?.takeIf { it > (line.priceKop ?: Long.MAX_VALUE) }?.let {
+                                    Text(cartPrice(it * line.qty), fontSize = 13.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
+                                }
+                            } else if (!line.failed) Text("Немає ціни на сайті", fontSize = 13.sp, color = m.warningText, textAlign = TextAlign.End)
+                        }
+                    }
+                    if (line.failed) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Не вдалося завантажити товар", Modifier.weight(1f), fontSize = 13.sp, color = m.warningText)
+                        TextButton(onClick = { onRetry(line.barcode) }) { Text("Повторити", color = m.link) }
+                    }
+                }
+            }
+            IconButton(onClick = { onRemove(line.barcode) }, modifier = Modifier.align(Alignment.TopEnd).size(28.dp)) {
+                Icon(painterResource(R.drawable.ic_redesign_x), "Прибрати", Modifier.size(18.dp), tint = m.textSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CartQuantity(quantity: Int, onChange: (Int) -> Unit) {
+    val m = Mine.colors
+    Row(
+        Modifier.height(36.dp).border(1.dp, m.outline, RoundedCornerShape(6.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        QuantityButton(R.drawable.ic_redesign_minus, "Менше", quantity > 1) { onChange(quantity - 1) }
+        Text(quantity.toString(), Modifier.widthIn(min = 36.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text, textAlign = TextAlign.Center)
+        QuantityButton(R.drawable.ic_redesign_plus, "Більше", quantity < Cart.MAX_QTY) { onChange(quantity + 1) }
+    }
+}
+
+@Composable
+private fun QuantityButton(@DrawableRes icon: Int, label: String, enabled: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(width = 36.dp, height = 34.dp)) {
+        val m = Mine.colors
+        Icon(painterResource(icon), label, Modifier.size(16.dp), tint = if (enabled) m.text else m.textTertiary)
+    }
+}
+
+private val QTY = DecimalFormat("#,##0.###")
+
+private fun ids(line: CartLine) = listOfNotNull(
+    line.article.ifBlank { null }?.let { "арт. $it" }, line.code1C.ifBlank { null }, line.barcode,
+).joinToString(" · ")
+
+private fun cartPrice(kop: Long): String =
+    if (kop % 100L == 0L) Cart.money(kop).removeSuffix(",00 ₴") + " ₴" else Cart.money(kop)
+
+@Composable
+private fun CartTotals(lines: List<CartLine>) {
+    val m = Mine.colors
+    val total = Cart.total(lines)
+    val savings = Cart.savings(lines)
     val unpriced = Cart.unpriced(lines)
     val loading = lines.count { it.loading }
-    val savings = Cart.savings(lines)
-    Surface(color = m.card, contentColor = m.text, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp), border = BorderStroke(1.dp, m.line)) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Text("Разом · ${Cart.units(lines)} шт", fontSize = 15.sp, color = m.textSecondary)
-                    if (savings > 0) Text("Знижка ${Cart.money(savings)}", fontSize = 14.sp, color = m.success, fontWeight = FontWeight.Bold)
-                }
-                Text(Cart.money(Cart.total(lines)), fontSize = 30.sp, fontWeight = FontWeight.Black)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Без знижок", fontSize = 15.sp, color = m.textSecondary)
+            Text(cartPrice(total + savings), fontSize = 15.sp, color = m.text)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Знижка", fontSize = 15.sp, color = m.textSecondary)
+            Text("−${cartPrice(savings)}", fontSize = 15.sp, color = m.onDanger)
+        }
+        HorizontalDivider(Modifier.padding(top = 4.dp), color = m.line)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Разом", Modifier.alignByBaseline(), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            Text(Cart.money(total), Modifier.alignByBaseline(), style = PriceStyle.copy(fontSize = 26.sp), color = m.text)
+        }
+        Text("Ціни з сайту мережі. Остаточна сума — на касі.", fontSize = 13.sp, color = m.textTertiary)
+        when {
+            loading > 0 -> Text("Шукаю ціну ще для $loading товар(ів)…", fontSize = 13.sp, color = m.textSecondary)
+            unpriced > 0 -> Text("У сумі не враховано товари без ціни: $unpriced", fontSize = 13.sp, color = m.warningText)
+        }
+    }
+}
+
+@Composable
+private fun CartActionBar(
+    onScan: () -> Unit,
+    onCashier: () -> Unit,
+    cashierReady: Boolean,
+    onTerminal: (() -> Unit)?,
+    terminalReady: Boolean,
+) {
+    val m = Mine.colors
+    Column(Modifier.fillMaxWidth().background(m.card).navigationBarsPadding()) {
+        HorizontalDivider(color = m.line)
+        Column(
+            Modifier.padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CartButton("Сканувати ще", onScan, Modifier.weight(1f), icon = R.drawable.ic_redesign_scan_barcode)
+                CartButton("Показати касиру", onCashier, Modifier.weight(1f), primary = true, enabled = cashierReady)
             }
-            when {
-                loading > 0 -> Text("Шукаю ціну ще для $loading товар(ів)…", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.textSecondary)
-                unpriced > 0 -> Text("У сумі не враховано товари без ціни: $unpriced", Modifier.padding(top = 4.dp), fontSize = 14.sp, color = m.warningText)
-            }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MineButton("Показати касиру", onCashier, Modifier.weight(1f), enabled = lines.any { !it.loading })
-                MinePrimaryButton("Сканувати ще", onScan, Modifier.weight(1f), height = 48.dp)
-            }
-            onTerminal?.let { MineButton("Сума для термінала", it, Modifier.padding(top = 8.dp), enabled = terminalReady) }
+            if (onTerminal != null) CartButton("Сума для термінала", onTerminal, Modifier.fillMaxWidth(), enabled = terminalReady)
+        }
+    }
+}
+
+@Composable
+private fun CartButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null,
+    primary: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val m = Mine.colors
+    Surface(
+        onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 44.dp),
+        shape = RoundedCornerShape(6.dp), color = if (primary && enabled) m.accent else m.card,
+        contentColor = if (!enabled) m.textTertiary else if (primary) m.onAccent else m.text,
+        border = if (primary && enabled) null else BorderStroke(1.dp, m.outline),
+    ) {
+        Row(
+            Modifier.heightIn(min = 44.dp).padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) Icon(painterResource(icon), null, Modifier.size(20.dp))
+            Text(label, fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
         }
     }
 }
@@ -263,39 +392,78 @@ private fun CashierView(lines: List<CartLine>, onClose: () -> Unit) {
         }
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // Білий фон незалежно від теми — так сканер каси читає надійніше.
-        Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().navigationBarsPadding().padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Товар ${idx + 1} з ${lines.size}", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Закрити", tint = Color.Black) }
+        CashierContent(
+            line = l, index = idx, count = lines.size, onClose = onClose,
+            onPrevious = if (idx > 0) ({ i = idx - 1 }) else null,
+            onNext = if (idx < lines.lastIndex) ({ i = idx + 1 }) else null,
+        )
+    }
+}
+
+@Composable
+internal fun CashierContent(
+    line: CartLine,
+    index: Int,
+    count: Int,
+    onClose: () -> Unit,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+) {
+    val ink = Color(0xFF111111)
+    Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().navigationBarsPadding()) {
+        Row(
+            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+                Icon(painterResource(R.drawable.ic_redesign_x), "Закрити", Modifier.size(24.dp), tint = ink)
             }
-            Spacer(Modifier.weight(0.4f))
-            BigBarcode(l.barcode, Modifier.fillMaxWidth().height(180.dp))
-            Text(l.barcode, Modifier.fillMaxWidth().padding(top = 8.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.Black, textAlign = TextAlign.Center, letterSpacing = 2.sp)
-            Text("× ${l.qty} шт", Modifier.fillMaxWidth().padding(top = 18.dp), fontSize = 56.sp, fontWeight = FontWeight.Black, color = Color.Black, textAlign = TextAlign.Center)
-            Text(l.name, Modifier.fillMaxWidth().padding(top = 8.dp), fontSize = 17.sp, color = Color(0xFF444444), textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Cart.lineSum(l)?.let { Text(Cart.money(it), Modifier.fillMaxWidth().padding(top = 4.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black, textAlign = TextAlign.Center) }
-            Spacer(Modifier.weight(1f))
-            Text("Разом: ${Cart.money(Cart.total(lines))}", Modifier.fillMaxWidth(), fontSize = 18.sp, color = Color.Black, textAlign = TextAlign.Center)
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                NavButton("Назад", Icons.AutoMirrored.Rounded.ArrowBack, enabled = idx > 0, Modifier.weight(1f)) { i = idx - 1 }
-                if (idx < lines.lastIndex) NavButton("Далі", Icons.AutoMirrored.Rounded.ArrowForward, enabled = true, Modifier.weight(1f)) { i = idx + 1 }
-                else NavButton("Готово", null, enabled = true, Modifier.weight(1f), onClick = onClose)
+            Text("Для каси · ${index + 1} з $count", Modifier.padding(start = 8.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = ink)
+        }
+        Column(
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+        ) {
+            Text(
+                line.name, Modifier.widthIn(max = 260.dp), fontSize = 17.sp, lineHeight = 22.1.sp, fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
+            )
+            Column(Modifier.widthIn(max = 352.dp).fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                BigBarcode(line.barcode, Modifier.fillMaxWidth().height(130.dp))
+                Text(line.barcode, Modifier.padding(top = 4.dp), fontSize = 15.sp, color = ink, textAlign = TextAlign.Center, letterSpacing = 1.2.sp)
             }
+            Text("× ${line.qty} шт", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ink)
+            Text("Яскравість екрана піднято до максимуму", fontSize = 13.sp, color = Color(0xFF555555), textAlign = TextAlign.Center)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 34.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CashierButton("Назад", Modifier.weight(1f), onPrevious, R.drawable.ic_redesign_chevron_left)
+            CashierButton("Далі", Modifier.weight(1f), onNext, R.drawable.ic_redesign_chevron_right, next = true)
         }
     }
 }
 
 @Composable
-private fun NavButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun CashierButton(
+    label: String,
+    modifier: Modifier,
+    action: (() -> Unit)?,
+    @DrawableRes icon: Int,
+    next: Boolean = false,
+) {
+    val enabled = action != null
     Surface(
-        onClick = onClick, enabled = enabled, modifier = modifier.height(60.dp), shape = RoundedCornerShape(30.dp),
-        color = if (enabled) Mine.colors.accent else Color(0xFFE6E6E6), contentColor = if (enabled) Mine.colors.onAccent else Color(0xFF999999),
+        onClick = { action?.invoke() }, enabled = enabled, modifier = modifier.height(52.dp), shape = RoundedCornerShape(6.dp),
+        color = if (next && enabled) Color(0xFF111111) else Color(0xFFEEF0F3),
+        contentColor = if (!enabled) Color(0xFF666C77) else if (next) Color.White else Color(0xFF111111),
     ) {
-        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null && text == "Назад") { Icon(icon, null); Spacer(Modifier.width(8.dp)) }
-            Text(text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            if (icon != null && text != "Назад") { Spacer(Modifier.width(8.dp)); Icon(icon, null) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+            if (!next) Icon(painterResource(icon), null, Modifier.size(20.dp))
+            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            if (next) Icon(painterResource(icon), null, Modifier.size(20.dp))
         }
     }
 }

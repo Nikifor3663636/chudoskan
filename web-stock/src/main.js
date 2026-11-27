@@ -151,19 +151,27 @@ const importKinds = [
 const icon = (path) => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 
 const navIcons = {
-  products: 'M4 7l8-4 8 4v10l-8 4-8-4z M4 7l8 4 8-4 M12 11v10',
-  shops: 'M3 10h18l-2-6H5z M5 10v10h14V10 M10 20v-6h4v6 M3 10c0 4 6 4 6 0 0 4 6 4 6 0 0 4 6 4 6 0',
-  staff: 'M16 20v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M14 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M20 20v-2a4 4 0 0 0-3-4',
-  printers: 'M6 8V3h12v5 M6 17H3V8h18v9h-3 M6 14h12v7H6z M17 11h1',
-  devices: 'M3 4h18v13H3z M8 21h8 M12 17v4',
-  deviceAccess: 'M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M11 17h2',
-  security: 'M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z M9 11l2 2 4-4',
-  audit: 'M3 12a9 9 0 1 1 2 6 M3 6v6h6 M12 7v5l3 2',
+  products: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" /> <path d="M12 22V12" /> <path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7" /> <path d="m7.5 4.27 9 5.15" />',
+  shops: '<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" /> <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /> <path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" /> <path d="M2 7h20" /> <path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" />',
+  staff: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <circle cx="9" cy="7" r="4" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <path d="M16 3.13a4 4 0 0 1 0 7.75" />',
+  printers: '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /> <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" /> <rect x="6" y="14" width="12" height="8" rx="1" />',
+  devices: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16" />',
+  deviceAccess: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2" /> <path d="M12 18h.01" />',
+  security: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /> <path d="m9 12 2 2 4-4" />',
+  audit: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /> <path d="M12 7v5l4 2" />',
+  stock: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /> <path d="M14 2v4a2 2 0 0 0 2 2h4" /> <path d="M8 13h2" /> <path d="M14 13h2" /> <path d="M8 17h2" /> <path d="M14 17h2" />',
+  new: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" /> <path d="M12 22V12" /> <path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7" /> <path d="m7.5 4.27 9 5.15" />',
+  promo: '<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /> <path d="m15 9-6 6" /> <path d="M9 9h.01" /> <path d="M15 15h.01" />',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /> <path d="M12 7v5l4 2" />',
+  search: '<circle cx="11" cy="11" r="8" /> <path d="m21 21-4.3-4.3" />',
+  out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /> <polyline points="16 17 21 12 16 7" /> <line x1="21" x2="9" y1="12" y2="12" />',
+
 };
+const navIcon = key => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${navIcons[key]}</svg>`;
 
 function importWorkspace(active, heading, content) {
   const sections = Object.fromEntries(Object.entries(adminSections).map(([key, item]) =>
-    [key, { key, label: item.title, path: navIcons[key] }]));
+    [key, { key, label: item.title }]));
   const imports = Object.fromEntries(importKinds.map(item => [item.key, item]));
   const groups = [
     ['Робота', [sections.products, imports.stock, imports.new, imports.promo]],
@@ -172,24 +180,31 @@ function importWorkspace(active, heading, content) {
     ['Дані', [imports.history]],
   ].map(([label, items]) => [label, items.filter(item =>
     (sb || item.key === 'stock') && canViewSection(item.key, me))]);
+  const role = me.superAdmin ? 'Адмін мережі' : me.shopAdmin ? 'Адмін магазину' : 'Адмін залишків';
+  const initials = me.name.trim().split(/\s+/u).slice(0, 2).map(part => Array.from(part)[0] ?? '').join('').toUpperCase();
   const scope = me.superAdmin ? 'Уся мережа' : me.shopAdmin ? 'Мій магазин' : 'Залишки мережі';
   render(`<div class="workspace">
     <nav class="import-nav" aria-label="Розділи адміністратора">
-      <div class="sidebar-brand"><img src="../logo.svg" alt=""><strong>ЧудоСкан</strong><small>Адмін</small></div>
-      <div class="sidebar-scope">${icon(navIcons.shops)}<div><strong>${scope}</strong><small>${me.superAdmin ? 'Адмін мережі' : me.shopAdmin ? 'Адмін магазину' : 'Адмін залишків'}</small></div></div>
+      <div class="sidebar-brand"><img src="../logo.svg" alt=""><strong>ЧудоСкан</strong></div>
+      <div class="sidebar-scope">${navIcon("shops")}<div><strong>${scope}</strong><small>${role}</small></div></div>
       <select class="mobile-nav" aria-label="Розділ адміністратора">
         ${groups.filter(([, items]) => items.length).map(([label, items]) => `<optgroup label="${label}">
           ${items.map(item => `<option value="${item.key}" ${item.key === active ? 'selected' : ''}>${item.label}</option>`).join('')}
         </optgroup>`).join('')}
       </select>
-      ${groups.filter(([, items]) => items.length).map(([label, items]) => `<div class="nav-section">
-        <span class="nav-group">${label}</span>
-        ${items.map(item => `<button type="button" data-kind="${item.key}" ${item.key === active ? 'aria-current="page"' : ''}>${icon(item.path)}${item.label}</button>`).join('')}
-      </div>`).join('')}
-      <div class="account"><span>${esc(me.name)}</span><button class="link" id="out">Вийти</button></div>
+      <div class="sidebar-links">
+        ${groups.filter(([, items]) => items.length).map(([label, items]) => `<div class="nav-section">
+          <span class="nav-group">${label}</span>
+          ${items.map(item => `<button type="button" data-kind="${item.key}" ${item.key === active ? 'aria-current="page"' : ''}>${navIcon(item.key)}${item.label}</button>`).join('')}
+        </div>`).join('')}
+      </div>
+      <div class="account">
+        <span class="initials" aria-hidden="true">${esc(initials)}</span><span class="account-name">${esc(me.name)}</span>
+        <button type="button" class="link" id="out" aria-label="Вийти" title="Вийти">${navIcon('out')}</button>
+      </div>
     </nav>
     <section aria-labelledby="import-title">
-      <header class="page-head"><div><h1 id="import-title">${esc(heading)}</h1><small>${scope}</small></div></header>
+      <header class="page-head"><h1 id="import-title">${esc(heading)}</h1><small>${scope}</small></header>
       <div class="page-body">${content}</div>
     </section>
   </div>`);
@@ -251,7 +266,9 @@ async function adminView(key, search = '', offset = 0, status = '') {
   importWorkspace(key, section.title, `<div class="card admin-panel">
     <div class="admin-toolbar">
       <form id="admin-search" class="row">
-        <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="${staff ? 'Ім’я, телефон, магазин' : 'Пошук'}" maxlength="100">
+        <label class="search-field">${navIcon('search')}
+          <input type="search" aria-label="Пошук" name="search" value="${esc(search)}" placeholder="${staff ? 'Ім’я, телефон, магазин' : 'Пошук'}" maxlength="100">
+        </label>
         <button type="submit">Знайти</button>
       </form>
       ${filters.length ? `<div class="filters" role="group" aria-label="Статус">${filters.map(([value, label]) =>
@@ -290,6 +307,11 @@ async function adminView(key, search = '', offset = 0, status = '') {
       return esc(typeof value === 'number' ? fmt(value) : value);
     };
     const page = rows.slice(0, PAGE_SIZE);
+    const columnClass = column => {
+      if (column.key === 'q') return 'num';
+      if (['barcode', 'code', 'code1c'].includes(column.key)) return 'mono';
+      return '';
+    };
     const columns = section.columns.filter(column => !manageDevices || column.key !== 'id');
     const canApproveStaff = staff && (me.superAdmin || me.shopAdmin);
     const rowButtons = row => {
@@ -303,8 +325,8 @@ async function adminView(key, search = '', offset = 0, status = '') {
     };
     const hasActions = manageDevices || canApproveStaff;
     result.innerHTML = `${page.length ? `<div class="table-wrap" tabindex="0" role="region" aria-label="${section.title}">
-      <table><thead><tr>${columns.map(column => `<th scope="col">${column.label}</th>`).join('')}${hasActions ? '<th scope="col">Дії</th>' : ''}</tr></thead>
-      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td>${cell(column, row)}</td>`).join('')}${hasActions ? `<td data-action-row="${index}">${rowButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
+      <table><thead><tr>${columns.map(column => `<th scope="col" class="${columnClass(column)}">${column.label}</th>`).join('')}${hasActions ? '<th scope="col">Дії</th>' : ''}</tr></thead>
+      <tbody>${page.map((row, index) => `<tr>${columns.map(column => `<td class="${columnClass(column)}">${key === "products" && column.key === "name" ? `<span class="cell-title">${cell(column, row)}</span>` : cell(column, row)}</td>`).join('')}${hasActions ? `<td data-action-row="${index}">${rowButtons(row)}</td>` : ''}</tr>`).join('')}</tbody></table>
     </div>` : `<p class="admin-message muted">${search || status ? 'За цим фільтром нічого не знайдено.' : 'Записів немає.'}</p>`}
     ${offset || rows.length > PAGE_SIZE ? `<div class="row pagination">
       ${offset ? '<button type="button" id="previous-page">Назад</button>' : ''}

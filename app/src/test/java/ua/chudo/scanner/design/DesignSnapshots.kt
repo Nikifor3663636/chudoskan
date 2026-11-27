@@ -2,6 +2,7 @@ package ua.chudo.scanner.design
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -89,12 +90,21 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun labelBatchRedesign() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            val item = ua.chudo.scanner.data.NetItem("Конструктор LEGO DUPLO", "BOC001", "10954", emptyMap())
+            val first = ua.chudo.scanner.data.NetAvailability("5702016911114", item, null, null, emptyList(), null, null)
+            val second = first.copy(barcode = "4820000000103", item = item.copy(name = "М’яч гумовий", article = "A-3"))
+            ua.chudo.scanner.ui.stock.LabelBatchContent(listOf(first, second), setOf(first.barcode), Template.TAG_68x38)
+        }
+    }
+
     @Test fun printSheetMine() = paparazzi.snapshot {
         ChudoTheme(dark = true) {
             Box(Modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
                 Surface(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = Mine.colors.sheet, contentColor = Mine.colors.text,
+                    shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp), color = Mine.colors.sheet, contentColor = Mine.colors.text,
                 ) {
                     Column(Modifier.padding(top = 28.dp)) {
                         PrintSheetContent(
@@ -182,6 +192,21 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun cartRedesignEmpty() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.cart.CartContent(emptyList())
+        }
+    }
+
+    @Test fun cartRedesignCashier() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            ua.chudo.scanner.ui.cart.CashierContent(
+                line = ua.chudo.scanner.data.CartLine("5702016911114", "Конструктор LEGO DUPLO", qty = 2),
+                index = 0, count = 2, onClose = {}, onPrevious = null, onNext = {},
+            )
+        }
+    }
+
     /** Залишки мережі: свій магазин великим шрифтом і магазини міста — як після скану. */
     @Test fun networkStockMine() = paparazzi.snapshot {
         val item = ua.chudo.scanner.data.NetItem(
@@ -205,6 +230,82 @@ class DesignSnapshots {
                     ua.chudo.scanner.ui.stock.NetworkStockCard(av, Modifier.padding(top = 16.dp))
                 }
             }
+        }
+    }
+
+    @Test fun scannerReady() = scanChrome(hit = false)
+
+    @Test fun scannerRecognized() = scanChrome(hit = true)
+
+    private fun scanChrome(hit: Boolean) = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xFF49453D))) {
+                ua.chudo.scanner.ui.scan.ScannerChrome(
+                    hit = hit,
+                    onClose = {},
+                    onTorch = {},
+                    onManual = {},
+                    onSearch = {},
+                    onCartMode = {},
+                    onPriceMode = {},
+                )
+            }
+        }
+    }
+
+    @Test fun newProductsRedesign() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            Surface(color = Mine.colors.bg) {
+                Column(Modifier.fillMaxSize()) {
+                    ua.chudo.scanner.ui.stock.HighlightsHeader(
+                        ua.chudo.scanner.data.HighlightKind.NEW, onBack = {}, onPromos = {}, onNew = {},
+                    )
+                    ua.chudo.scanner.ui.stock.HighlightProductRow(
+                        ua.chudo.scanner.data.ProductHighlight(
+                            barcode = "5702016911114", article = "10954", name = "Конструктор LEGO DUPLO",
+                        ),
+                        kind = ua.chudo.scanner.data.HighlightKind.NEW, onClick = {},
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun promoRedesign() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            Surface(color = Mine.colors.bg) {
+                Column(Modifier.fillMaxSize()) {
+                    ua.chudo.scanner.ui.stock.HighlightsHeader(
+                        ua.chudo.scanner.data.HighlightKind.PROMO, onBack = {}, onPromos = {}, onNew = {},
+                    )
+                    ua.chudo.scanner.ui.stock.HighlightTabs("Кампанії", "Акційні товари", false, {}, {})
+                    ua.chudo.scanner.ui.stock.HighlightProductRow(
+                        ua.chudo.scanner.data.ProductHighlight(
+                            barcode = "5702016911114", article = "10954", name = "Конструктор LEGO DUPLO",
+                            promoPrice = 649.0, endsOn = "30.11.2026",
+                        ),
+                        kind = ua.chudo.scanner.data.HighlightKind.PROMO, onClick = {},
+                    )
+                    ua.chudo.scanner.ui.stock.PromoCampaignRow(
+                        ua.chudo.scanner.data.PromoCampaign(
+                            "Знижки на конструктори", "LEGO", "", "20.11.2026", "30.11.2026", "Завершено", emptyList(),
+                        ),
+                        onClick = {},
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun recentProducts() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.home.HistoryContent(recent, onBack = {}, onClear = {}, onOpenProduct = {})
+        }
+    }
+
+    @Test fun recentProductsEmpty() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            ua.chudo.scanner.ui.home.HistoryContent(emptyList(), onBack = {}, onClear = {}, onOpenProduct = {})
         }
     }
 
@@ -232,7 +333,7 @@ class DesignSnapshots {
         ChudoTheme(dark = dark) {
             androidx.compose.material3.Scaffold(
                 containerColor = Mine.colors.bg,
-                bottomBar = { MineBottomBar(MainTab.HOME, onTab = {}, onScan = {}) },
+                bottomBar = { MineBottomBar(MainTab.HOME, onTab = {}, onScan = {}, newOrders = 3) },
             ) { inner ->
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
@@ -242,6 +343,16 @@ class DesignSnapshots {
                     )
                 }
             }
+        }
+    }
+
+    @Test fun scannerSettingsRedesign() = paparazzi.snapshot {
+        ChudoTheme(dark = true) {
+            ua.chudo.scanner.ui.profile.ScannerSettingsContent(
+                options = ua.chudo.scanner.data.ScannerOptions(sound = false, vibrate = true, continuous = true),
+                onBack = {}, onOptions = {}, onOffline = {},
+                offline = ua.chudo.scanner.ui.profile.OfflineSettingsUi(rows = 21870, loading = false),
+            )
         }
     }
 
@@ -263,7 +374,36 @@ class DesignSnapshots {
         }
     }
 
-    @Test fun productLikeSite() = paparazzi.snapshot {
+    @Test fun tabletOrdersRedesign() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = tabletDevice())
+        paparazzi.snapshot {
+            ChudoTheme(dark = false) {
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+                    ua.chudo.scanner.ui.common.TabletRail(MainTab.ORDERS, printing = false, onTab = {}, onScan = {}, onPrint = {})
+                    Box(Modifier.weight(1f)) {
+                        ua.chudo.scanner.ui.orders.TabletOrders(
+                            OrdersUi(shop = "Gagarin Plaza", orders = DemoOrders.load(""), tab = OrderStage.NEW, demo = true),
+                            onTab = {}, onOrder = {}, onScan = {},
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun tabletDevice() = DeviceConfig.PIXEL_5.copy(
+        screenWidth = 1180, screenHeight = 820, density = com.android.resources.Density.MEDIUM,
+        orientation = com.android.resources.ScreenOrientation.LANDSCAPE,
+    )
+
+    @Test fun productLikeSite() = productSnapshot(tablet = false)
+
+    @Test fun tabletProductRedesign() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = tabletDevice())
+        productSnapshot(tablet = true)
+    }
+
+    private fun productSnapshot(tablet: Boolean) = paparazzi.snapshot {
         val lego = uniffi.chudo_core.ProductDetails(
             1L, "10954", "Конструктор LEGO Duplo Потяг із цифрами – вчимося рахувати (10954)", "lego", ".html",
             uniffi.chudo_core.StockStatus.IN_STOCK, null, uniffi.chudo_core.Price(649.0, 969.0, 33.0, "UAH"), emptyList(),
@@ -279,14 +419,46 @@ class DesignSnapshots {
         )
         ChudoTheme(dark = false) {
             Surface(color = Mine.colors.bg) {
-                Column(Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxSize()) {
+                    if (tablet) {
+                        ua.chudo.scanner.ui.common.TabletRail(MainTab.HOME, printing = false, onTab = {}, onScan = {}, onPrint = {})
+                        Box(Modifier.size(width = 380.dp, height = 820.dp).background(Mine.colors.card)) {
+                            Text("Пошук", Modifier.padding(16.dp), color = Mine.colors.text)
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
                     Box(Modifier.weight(1f)) {
                         ua.chudo.scanner.ui.product.ProductPage(
                             lego, shops, "вул. Генуезька, 5/2, ТРЦ Gagarinn Plaza",
                             ua.chudo.scanner.data.StockItem("10954", "5702016911114", "LEGO Duplo", 9.0), "Одеса", "5702016911114",
+                            tablet = tablet,
+                            printPanel = if (tablet) ({
+                                PrintSheetContent(
+                                    PrintSheetUi(
+                                        subtitle = "LEGO DUPLO · 649 ₴", format = Template.TAG_68x38, promo = true,
+                                        oldPrice = "969", qty = 1, printer = PrinterLine("Brother · Каса", true),
+                                    ),
+                                    scroll = false,
+                                )
+                            }) else null,
+                            net = ua.chudo.scanner.data.NetAvailability(
+                                barcode = "5702016911114",
+                                item = ua.chudo.scanner.data.NetItem(
+                                    "LEGO Duplo", "BOC001", "10954", mapOf("22" to 9.0, "8" to 1.0, "15" to 4.0),
+                                ),
+                                ownCode = "22",
+                                own = 9.0,
+                                city = listOf(
+                                    ua.chudo.scanner.data.StoreQty("15", "ЧО 15 · ТРЦ RIVIERA", 4.0),
+                                    ua.chudo.scanner.data.StoreQty("8", "ЧО 8 · ТРЦ Острів", 1.0),
+                                ),
+                                cityName = "Одеса",
+                                updatedAt = todayAt930(),
+                            ),
                         )
                     }
-                    ua.chudo.scanner.ui.product.ProductActions(onPrint = {}, onCart = {})
+                        ua.chudo.scanner.ui.product.ProductActions(onPrint = {}, onCart = {})
+                    }
                 }
             }
         }
