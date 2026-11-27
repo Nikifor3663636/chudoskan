@@ -8,6 +8,11 @@ on:
     paths-ignore: [docs/**, "*.md", iosApp/**, proxy/**, printer/**, rules-tests/**, .github/workflows/ios.yml, .github/workflows/pages.yml, .github/workflows/printer.yml, .github/workflows/rules.yml]
   pull_request:
   workflow_dispatch:
+    inputs:
+      device_gateway_url:
+        description: HTTPS URL of the device gateway for a pilot APK
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -81,11 +86,18 @@ jobs:
 
       - name: Lint, тесты, APK
         env:
+          DEVICE_GATEWAY_URL: ${{ inputs.device_gateway_url }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           # Де дані: firestore | supabase (змінна репозиторію BACKEND; порожньо — supabase; відкат — firestore).
           BACKEND: ${{ vars.BACKEND }}
-        run: ./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest :app:assembleRelease --console=plain
+        run: |
+          args=()
+          if [[ -n "$DEVICE_GATEWAY_URL" ]]; then
+            test -s app/google-services.json && test -s "$ANDROID_KEYSTORE_FILE"
+            args+=("-PdeviceGatewayUrl=$DEVICE_GATEWAY_URL" "-Pbackend=supabase")
+          fi
+          ./gradlew :app:lintDebug :app:testDebugUnitTest :shared:testDebugUnitTest :app:assembleRelease --console=plain "${args[@]}"
 
       - uses: actions/upload-artifact@v7
         with:

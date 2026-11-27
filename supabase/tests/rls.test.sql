@@ -524,5 +524,60 @@ select is(tests.rows($q$insert into security_events(action, target) values ('ses
 select is(tests.rows($q$delete from security_events$q$), -1, 'client cannot erase security events');
 reset role;
 
+-- Device enrollment must be approved before a challenge can be issued.
+select is(app.request_device_enrollment('emp22', 1, decode('04' || repeat('01', 64), 'hex'), '192.0.2.1'),
+  'pending', 'first device waits for an administrator');
+select is(app.issue_device_challenge('emp22', 1, decode(repeat('aa', 32), 'hex')),
+  null::bigint, 'pending device cannot request a challenge');
+select tests.login('emp22');
+select is((select count(*)::int from device_access), 0, 'employee cannot see device IP');
+select is(decide_device_access(gen_random_uuid(), 'approve'), false, 'employee cannot approve a device');
+select tests.login('adm22');
+select is((select count(*)::int from device_access), 0, 'shop admin cannot see device IP');
+select tests.login('sup');
+select is((select request_ip from device_access where uid = 'emp22'), '192.0.2.1', 'network admin sees the gateway IP');
+select ok(decide_device_access((select id from device_access where uid = 'emp22'), 'approve'),
+  'network admin approves the exact key');
+reset role;
+select isnt(app.issue_device_challenge('emp22', 1, decode(repeat('aa', 32), 'hex')),
+  null::bigint, 'approved device can request a challenge');
+-- This privileged test call stands in for a successful Rust signature check.
+select set_config('tests.old_device_session',
+  app.finish_device_challenge('emp22', 1, decode(repeat('aa', 32), 'hex'), '192.0.2.2')::text, true);
+select ok(app.device_session_valid('emp22', 1, current_setting('tests.old_device_session')::uuid), 'first session is active');
+insert into app.device_required values ('emp22'), ('emp62');
+select set_config('request.headers', '{}', true);
+select tests.login('emp22');
+select is(app.firebase_ok(), false, 'pilot account cannot use Firebase token alone');
+select is((select uid from device_login_profile()), 'emp22', 'pilot account can read its own enrollment profile');
+select is((select count(*)::int from stock), 0, 'pilot account without device session cannot read stock');
+select set_config('request.headers', jsonb_build_object('x-device-session', current_setting('tests.old_device_session'))::text, true);
+select is(app.firebase_ok(), true, 'active Android session authorizes a request for the same account');
+select tests.login('emp62');
+select is(app.firebase_ok(), false, 'active session cannot be reused by another Firebase account');
+reset role;
+select is(app.request_device_enrollment('emp22', 1, decode('04' || repeat('02', 64), 'hex'), '192.0.2.3'),
+  'pending', 'second key still awaits approval');
+select ok(app.device_session_valid('emp22', 1, current_setting('tests.old_device_session')::uuid),
+  'pending replacement does not interrupt the existing session');
+select tests.login('sup', 'foreign');
+select is((select count(*)::int from device_access), 0, 'foreign issuer cannot read device information');
+select tests.login('sup');
+select is((select last_ip from device_access where uid = 'emp22' and status = 'approved'), '192.0.2.2',
+  'network admin sees the verified session IP');
+select ok(decide_device_access((select id from device_access where uid = 'emp22' and status = 'pending'), 'approve'),
+  'network admin approves the replacement');
+reset role;
+select is(app.device_session_valid('emp22', 1, current_setting('tests.old_device_session')::uuid), false,
+  'replacement revokes the old session');
+select tests.login('emp22');
+select is(app.firebase_ok(), false, 'protected API rejects the revoked device session');
+select tests.login('sup');
+select ok(decide_device_access((select id from device_access where uid = 'emp22' and status = 'approved'), 'block'),
+  'network admin can block an approved key');
+reset role;
+select is(app.request_device_enrollment('emp22', 1, decode('04' || repeat('02', 64), 'hex'), '192.0.2.4'),
+  'blocked', 'blocked key cannot re-enroll from a different IP');
+
 select * from finish();
 rollback;

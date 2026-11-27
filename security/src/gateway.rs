@@ -3,7 +3,8 @@
 
 use std::net::IpAddr;
 
-use postgres::Client;
+use p256::ecdsa::VerifyingKey;
+use postgres::{Client, GenericClient};
 
 use crate::{Challenge, DeviceUse, InvalidProof};
 
@@ -26,12 +27,73 @@ impl From<InvalidProof> for GatewayError {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Enrollment {
+    Pending,
+    Approved,
+    Blocked,
+    AnotherPending,
+}
+
+/// Call after verifying the Firebase identity and hardware attestation for this exact key.
+pub fn request_enrollment(
+    db: &mut impl GenericClient,
+    account: &str,
+    purpose: DeviceUse,
+    attested_key: &[u8],
+    observed_ip: IpAddr,
+) -> Result<Enrollment, GatewayError> {
+    VerifyingKey::from_sec1_bytes(attested_key).map_err(|_| InvalidProof::Key)?;
+    if attested_key.len() != 65 || attested_key.first() != Some(&4) {
+        return Err(InvalidProof::Key.into());
+    }
+    let ip = observed_ip.to_string();
+    let status: String = db
+        .query_one(
+            "select app.request_device_enrollment($1,$2,$3,$4::text::inet)",
+            &[&account, &(purpose as i32), &attested_key, &ip],
+        )?
+        .get(0);
+    match status.as_str() {
+        "pending" => Ok(Enrollment::Pending),
+        "approved" => Ok(Enrollment::Approved),
+        "blocked" => Ok(Enrollment::Blocked),
+        "another_pending" => Ok(Enrollment::AnotherPending),
+        _ => Err(GatewayError::Unavailable),
+    }
+}
+
+/// Check every protected request against the verified account and device purpose.
+pub fn session_valid(
+    db: &mut Client,
+    account: &str,
+    purpose: DeviceUse,
+    session: &str,
+) -> Result<bool, GatewayError> {
+    Ok(db
+        .query_one(
+            "select app.device_session_valid($1,$2,$3::text::uuid)",
+            &[&account, &(purpose as i32), &session],
+        )?
+        .get(0))
+}
+
 /// The account is the UID extracted from a verified Firebase token.
 pub fn issue(
     db: &mut Client,
     account: &str,
     purpose: DeviceUse,
 ) -> Result<([u8; 32], Vec<u8>), GatewayError> {
+    let (nonce, expires_at) = issue_with_expiry(db, account, purpose)?;
+    let challenge = Challenge::from_storage(account, purpose, nonce, expires_at)?;
+    Ok((nonce, challenge.payload()))
+}
+
+pub fn issue_with_expiry(
+    db: &mut Client,
+    account: &str,
+    purpose: DeviceUse,
+) -> Result<([u8; 32], u64), GatewayError> {
     let nonce = Challenge::random_nonce()?;
     let expires_at: Option<i64> = db
         .query_one(
@@ -39,9 +101,10 @@ pub fn issue(
             &[&account, &(purpose as i32), &&nonce[..]],
         )?
         .get(0);
-    let expires_at = deadline(expires_at.ok_or(GatewayError::Unavailable)?)?;
-    let challenge = Challenge::from_storage(account, purpose, nonce, expires_at)?;
-    Ok((nonce, challenge.payload()))
+    Ok((
+        nonce,
+        deadline(expires_at.ok_or(GatewayError::Unavailable)?)?,
+    ))
 }
 
 /// Return a session only after a valid signature and atomic consumption.

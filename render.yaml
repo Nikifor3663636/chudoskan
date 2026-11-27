@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: chudoscan-device-gateway
+    runtime: docker
+    plan: free
+    region: frankfurt
+    rootDir: security
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEVICE_DATABASE_URL
+        sync: false
+      - key: ANDROID_SIGNING_SHA256
+        sync: false

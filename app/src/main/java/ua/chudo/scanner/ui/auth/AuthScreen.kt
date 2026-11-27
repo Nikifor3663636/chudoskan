@@ -311,6 +311,22 @@ private fun AuthScreen(state: AuthState) {
                 )
                 TextButton(onClick = app.auth::signOut) { Text("Вийти") }
             }
+            AuthState.DevicePending -> {
+                Notice(
+                    Icons.Rounded.HourglassTop,
+                    "Пристрій очікує підтвердження",
+                    "Адміністратор мережі має підтвердити цей пристрій. Стан оновлюється автоматично.",
+                )
+                TextButton(onClick = app.auth::signOut) { Text("Вийти") }
+            }
+            AuthState.DeviceBlocked -> {
+                Notice(
+                    Icons.Rounded.WarningAmber,
+                    "Пристрій заблоковано",
+                    "Звернись до адміністратора мережі.",
+                )
+                TextButton(onClick = app.auth::signOut) { Text("Вийти") }
+            }
             is AuthState.Failed -> {
                 Notice(Icons.Rounded.WarningAmber, "Не вдалося завантажити профіль", state.message)
                 TextButton(onClick = app.auth::signOut) { Text("Вийти") }

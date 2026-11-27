@@ -30,6 +30,10 @@ android {
         val backend = (findProperty("backend") as String? ?: System.getenv("BACKEND")).orEmpty().trim().lowercase().ifEmpty { "supabase" }
         require(backend in setOf("firestore", "supabase")) { "backend: firestore | supabase, а не $backend" }
         buildConfigField("String", "BACKEND", "\"$backend\"")
+        val gateway = providers.gradleProperty("deviceGatewayUrl").orNull.orEmpty().trim()
+        require(gateway.isEmpty() || (backend == "supabase" &&
+            Regex("https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?").matches(gateway)))
+        buildConfigField("String", "DEVICE_GATEWAY_URL", "\"$gateway\"")
         // Публічні: URL проєкту й publishable key (доступ вирішують RLS-політики, supabase/migrations).
         buildConfigField("String", "SUPABASE_URL", "\"https://wbboztsxzuxfocdqjyzk.supabase.co\"")
         buildConfigField("String", "SUPABASE_KEY", "\"sb_publishable_pXZn08SVg5og-I9_PuX5LA_qdTmydyk\"")

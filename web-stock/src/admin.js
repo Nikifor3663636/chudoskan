@@ -22,6 +22,13 @@ export const adminSections = {
     title: "Комп'ютери", table: 'devices', search: 'name', order: 'uid',
     columns: [by('name', 'Назва'), by('shop_id', 'Магазин'), by('paired_at', 'Підключено')],
   },
+  deviceAccess: {
+    title: 'Доступ пристроїв', table: 'device_access', search: 'name', order: 'requested_at', tie: 'id', descending: true,
+    columns: [by('id', 'Запит'), by('name', "Ім’я"), by('uid', 'Обліковий запис'),
+      by('purpose', 'Тип', row => ({ 1: 'Android', 2: 'Адмінка', 3: 'Принтер' })[row.purpose]),
+      by('status', 'Стан', row => ({ pending: 'Очікує', approved: 'Підтверджено', blocked: 'Заблоковано', replaced: 'Замінено' })[row.status]),
+      by('requested_at', 'Подано'), by('request_ip', 'IP запиту'), by('last_ip', 'IP останнього входу'), by('seen_at', 'Останній вхід')],
+  },
   security: {
     title: 'Події безпеки', table: 'security_events', search: 'action', order: 'id', descending: true,
     columns: [by('at', 'Час'), by('by_uid', 'Обліковий запис'), by('action', 'Подія'), by('target', 'Запис'),
@@ -36,7 +43,7 @@ export const adminSections = {
 export const PAGE_SIZE = 30;
 
 export function canViewSection(key, account) {
-  if (key === 'audit' || key === 'security') return account.superAdmin;
+  if (['audit', 'security', 'deviceAccess'].includes(key)) return account.superAdmin;
   if (key === 'history' || ['stock', 'new', 'promo'].includes(key)) return account.canImport;
   if (['staff', 'printers', 'devices'].includes(key)) return account.superAdmin || account.shopAdmin;
   return account.canImport || account.shopAdmin;
