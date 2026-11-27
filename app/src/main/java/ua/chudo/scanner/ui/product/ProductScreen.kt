@@ -71,7 +71,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.createSavedStateHandle
@@ -237,7 +236,7 @@ internal fun TabletProduct(
     DisposableEffect(owner) { onDispose { owner.viewModelStore.clear() } }
     val model: ProductViewModel = viewModel(viewModelStoreOwner = owner, factory = viewModelFactory {
         initializer {
-            ProductViewModel(app.repository, app.prefs, SavedStateHandle(mapOf("urlKey" to key, "bc" to barcode, "scanned" to scanned)))
+            ProductViewModel(app.repository, app.prefs, key, barcode, scanned)
         }
     })
     ProductScreen(employee, onBack = onClose, onScan = onScan, tabletModel = model)

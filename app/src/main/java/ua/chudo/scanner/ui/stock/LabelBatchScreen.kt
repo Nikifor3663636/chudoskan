@@ -61,7 +61,7 @@ fun LabelBatchScreen(employee: Employee, vm: StockViewModel, onBack: () -> Unit,
     val progress by vm.labelsProgress.collectAsStateWithLifecycle()
     val printTags by vm.printTags.collectAsStateWithLifecycle()
     val template by app.printing.store.lastTemplate.collectAsStateWithLifecycle(null)
-    var excluded by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    var excluded by rememberSaveable { mutableStateOf<List<String>>(arrayListOf()) }
     var openPreview by rememberSaveable { mutableStateOf(false) }
     val checked = candidates.map { it.barcode }.filterNot { it in excluded }.toSet()
 

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -162,7 +163,7 @@ private fun Setting(title: String, detail: String, checked: Boolean, enabled: Bo
             Modifier.size(width = 44.dp, height = 26.dp).background(track.copy(alpha = if (enabled) 1f else 0.5f), CircleShape),
         ) {
             Box(
-                Modifier.align(Alignment.CenterStart).offset(x = offset).size(20.dp)
+                Modifier.align(Alignment.CenterStart).offset { IntOffset(offset.roundToPx(), 0) }.size(20.dp)
                     .shadow(1.dp, CircleShape).background(Color.White, CircleShape),
             )
         }

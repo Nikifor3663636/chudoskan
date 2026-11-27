@@ -38,16 +38,21 @@ data class ProductUiState(
 class ProductViewModel(
     private val repo: ChudoRepository,
     private val prefs: AppPrefs,
-    handle: SavedStateHandle,
+    val urlKey: String,
+    barcode: String?,
+    scanned: String?,
 ) : ViewModel() {
-    val urlKey: String = checkNotNull(handle["urlKey"])
-    /** Штрихкод, по которому открыли товар (для ценника). */
-    val barcode: String? = handle.get<String>("bc")?.takeIf { it.isNotBlank() }
+    constructor(repo: ChudoRepository, prefs: AppPrefs, handle: SavedStateHandle) : this(
+        repo, prefs, checkNotNull(handle["urlKey"]), handle["bc"], handle["scanned"],
+    )
 
-    val highlightBarcode: String? = handle.get<String>("scanned") ?: barcode
+    /** Штрихкод, по которому открыли товар (для ценника). */
+    val barcode: String? = barcode?.takeIf { it.isNotBlank() }
+
+    val highlightBarcode: String? = scanned ?: this.barcode
 
     private val _state = MutableStateFlow(
-        ProductUiState(barcodeToRemember = barcode?.takeIf { prefs.rememberedProduct(it) != urlKey })
+        ProductUiState(barcodeToRemember = this.barcode?.takeIf { prefs.rememberedProduct(it) != urlKey })
     )
     val state = _state.asStateFlow()
     private var shopsJob: Job? = null

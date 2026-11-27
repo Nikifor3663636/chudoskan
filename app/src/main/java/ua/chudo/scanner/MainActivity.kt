@@ -252,7 +252,7 @@ private fun AppNavHost(
         entry.savedStateHandle["catalogIndex"] = items.indexOf(selected)
     }
     val wide by androidx.compose.runtime.rememberUpdatedState(tablet)
-    var searchHistory by rememberSaveable(employee.uid) { mutableStateOf(arrayListOf<String>()) }
+    var searchHistory by rememberSaveable(employee.uid) { mutableStateOf<List<String>>(arrayListOf()) }
     NavHost(nav, startDestination = Routes.HOME, modifier = modifier) {
         composable(Routes.STOCK) { entry ->
             val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
@@ -445,7 +445,7 @@ private fun AppNavHost(
             )
         }
         composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType; defaultValue = "" })) { resultsEntry ->
-            var selection by rememberSaveable { mutableStateOf<ArrayList<String?>?>(null) }
+            var selection by rememberSaveable { mutableStateOf<List<String?>?>(null) }
             val results: @Composable () -> Unit = {
                 ResultsScreen(
                     onBrowseProducts = { resultsEntry.savedStateHandle["productBrowse"] = ArrayList(it) },
