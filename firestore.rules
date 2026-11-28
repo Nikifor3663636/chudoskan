@@ -123,8 +123,8 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      // Спільний реєстр принтерів магазину. Знайдений або той, що надрукував, телефон робить upsert;
-      // щільність, швидкість і назву Godex змінює лише адмін; видаляє лише адмін.
+      // Спільний реєстр принтерів магазину: підключає, налаштовує (назва, щільність, швидкість)
+      // і прибирає будь-який співробітник свого магазину («Профіль → Принтери»).
       match /printers/{printerId} {
         allow read: if canSee(shopId);
         allow create, update: if (worksAt(shopId) || canManage(shopId))
@@ -136,13 +136,8 @@ service cloud.firestore {
           && request.resource.data.ip is string && request.resource.data.ip.size() <= 45
           && request.resource.data.port is int
           && request.resource.data.lastSeen == request.time
-          && (!('lastOkBy' in request.resource.data) || request.resource.data.lastOkBy is string)
-          && (canManage(shopId) || (
-            request.resource.data.get('density', null) == (resource == null ? null : resource.data.get('density', null))
-            && request.resource.data.get('speed', null) == (resource == null ? null : resource.data.get('speed', null))
-            && request.resource.data.get('name', null) == (resource == null ? null : resource.data.get('name', null))
-          ));
-        allow delete: if canManage(shopId);
+          && (!('lastOkBy' in request.resource.data) || request.resource.data.lastOkBy is string);
+        allow delete: if worksAt(shopId) || canManage(shopId);
       }
 
       // Старі залишки магазину (до залишків мережі): читає свій магазин і адмін мережі,

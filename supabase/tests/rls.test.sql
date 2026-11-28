@@ -356,11 +356,12 @@ select ok(tests.no($$update shops set code1c = 'x' where id = '22'$$), 'code1c �
 select ok(tests.no($$update shops set region = 'x', address = 'y' where id = '22'$$), 'зведення магазину — не співробітник');
 select ok(tests.ok($$update shops set printer_subnets = '{192.0.2.0/24}' where id = '22'$$), 'співробітник дописує підмережу');
 select ok(tests.ok($$insert into printers (shop_id, id, model, kind, ip, port, transport) values ('22', 'g', 'Godex G500', 'label_40x24', '192.0.2.11', 9100, 'tcp') on conflict (shop_id, id) do update set ip = excluded.ip, last_seen = now()$$), 'телефон робить upsert принтера');
-select ok(tests.no($$update printers set name = 'Каса' where shop_id = '22' and id = 'g'$$), 'назву принтера — не співробітник');
-select ok(tests.no($$update printers set density = 10 where shop_id = '22' and id = 'g'$$), 'щільність — не співробітник');
-select ok(tests.no($$insert into printers (shop_id, id, model, kind, ip, port, transport, speed) values ('22', 'n', 'Godex', 'label_40x24', '192.0.2.12', 9100, 'tcp', 3)$$), 'швидкість при створенні — не співробітник');
+select ok(tests.ok($$update printers set name = 'Каса' where shop_id = '22' and id = 'g'$$), 'співробітник називає принтер свого магазину');
+select ok(tests.ok($$update printers set density = 10 where shop_id = '22' and id = 'g'$$), 'співробітник змінює щільність');
+select ok(tests.ok($$insert into printers (shop_id, id, model, kind, ip, port, transport, speed) values ('22', 'n', 'Godex', 'label_40x24', '192.0.2.12', 9100, 'tcp', 3)$$), 'співробітник задає швидкість при підключенні');
+select ok(tests.no($$update printers set shop_id = '62' where shop_id = '22' and id = 'g'$$), 'принтер не перенести в інший магазин');
 select ok(tests.no($$insert into printers (shop_id, id, model, kind, ip, port, transport) values ('22', 'n', 'Godex', 'зебра', '192.0.2.12', 9100, 'tcp')$$), 'невідомий kind — ні');
-select ok(tests.no($$delete from printers where shop_id = '22' and id = 'g'$$), 'співробітник не видаляє принтер');
+select ok(tests.ok($$delete from printers where shop_id = '22' and id = 'g'$$), 'співробітник прибирає принтер свого магазину');
 select tests.login('adm22');
 select ok(tests.ok($$update printers set name = 'Каса' where shop_id = '22' and id = 'g'$$), 'назву принтера — адмін');
 select tests.login('sup');
