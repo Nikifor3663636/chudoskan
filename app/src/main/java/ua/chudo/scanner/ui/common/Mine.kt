@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Button
@@ -43,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.ui.theme.Mine
 
-/** Основная кнопка: на всю ширину, 56 dp, акцент. */
+/** Основна кнопка M3 (filled): на всю ширину, 56 dp, пігулка. */
 @Composable
 fun MinePrimaryButton(
     text: String,
@@ -58,38 +59,35 @@ fun MinePrimaryButton(
     Button(
         onClick = onClick, enabled = enabled && !busy,
         modifier = modifier.fillMaxWidth().heightIn(min = height),
-        shape = Mine.fieldShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = m.accent, contentColor = m.onAccent,
-            disabledContainerColor = m.accent.copy(alpha = 0.5f), disabledContentColor = m.onAccent.copy(alpha = 0.7f),
-        ),
+        shape = Mine.pillShape,
+        colors = ButtonDefaults.buttonColors(containerColor = m.accent, contentColor = m.onAccent),
     ) {
         if (busy) {
             CircularProgressIndicator(Modifier.size(22.dp), color = m.onAccent, strokeWidth = 2.dp)
         } else {
             icon?.let { Icon(it, null, Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)) }
-            Text(text, fontSize = if (height > 56.dp) 18.sp else 17.sp, fontWeight = FontWeight.Bold)
+            Text(text, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
 
-/** Кнопка в карточке: 48 dp, скругление 14. [tone] — акцент, ошибка или контур. */
+/** Кнопка M3 у картці: 48 dp, пігулка. [tone] — filled, помилка (tonal) або outlined. */
 enum class MineTone { ACCENT, DANGER, OUTLINE }
 
 @Composable
 fun MineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, tone: MineTone = MineTone.OUTLINE, enabled: Boolean = true, busy: Boolean = false) {
     val m = Mine.colors
-    val shape = Mine.fieldShape
-    val pad = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+    val shape = Mine.pillShape
+    val pad = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
     val content: @Composable () -> Unit = {
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = LocalContentColorOr(tone, m))
-        else Text(text, fontSize = 15.sp, fontWeight = if (tone == MineTone.OUTLINE) FontWeight.Medium else FontWeight.Bold, textAlign = TextAlign.Center)
+        else Text(text, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
     }
     when (tone) {
         MineTone.OUTLINE -> OutlinedButton(
             onClick, modifier.heightIn(min = 48.dp), enabled = enabled && !busy, shape = shape, contentPadding = pad,
             border = BorderStroke(1.dp, m.outline),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = m.text),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = m.link),
         ) { content() }
         else -> Button(
             onClick, modifier.heightIn(min = 48.dp), enabled = enabled && !busy, shape = shape, contentPadding = pad,
@@ -105,10 +103,10 @@ fun MineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 private fun LocalContentColorOr(tone: MineTone, m: ua.chudo.scanner.ui.theme.MineColors): Color = when (tone) {
     MineTone.ACCENT -> m.onAccent
     MineTone.DANGER -> m.onDanger
-    MineTone.OUTLINE -> m.text
+    MineTone.OUTLINE -> m.link
 }
 
-/** Карточка: фон карточки, скругление 20, отступ 18. */
+/** Картка M3 (elevated-тон): surfaceContainerLow, 12 dp. */
 @Composable
 fun MineCard(modifier: Modifier = Modifier, padding: Dp = 18.dp, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier.fillMaxWidth(), shape = Mine.cardShape, color = Mine.colors.card, contentColor = Mine.colors.text) {
@@ -130,28 +128,28 @@ fun StatusDot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).clip(CircleShape).background(color))
 }
 
-/** Заголовок экрана с навигацией и дополнительным действием. */
+/** Заголовок екрана як M3 Top App Bar (small): 64 dp, «Назад», назва titleLarge, дія справа. */
 @Composable
 fun MineHeader(title: String, onBack: () -> Unit, action: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад", tint = Mine.colors.text) }
-        Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp), color = Mine.colors.text)
+        Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = Mine.colors.text, maxLines = 1)
         action()
     }
 }
 
-/** Чип выбора (формат): 44 dp, скругление 12; выбранный — тон ошибки, как в макете. */
+/** Чип вибору M3 (filter chip): 8 dp, вибраний — secondaryContainer без рамки. */
 @Composable
-fun MineChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 48.dp) {
-    val m = Mine.colors
+fun MineChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 40.dp) {
+    val c = MaterialTheme.colorScheme
     Surface(
-        onClick = onClick, modifier = modifier.heightIn(min = height), shape = Mine.fieldShape,
-        color = if (selected) m.text else m.card,
-        contentColor = if (selected) m.bg else m.text,
-        border = if (selected) null else BorderStroke(1.dp, m.outline),
+        onClick = onClick, modifier = modifier.heightIn(min = height), shape = RoundedCornerShape(8.dp),
+        color = if (selected) c.secondaryContainer else Color.Transparent,
+        contentColor = if (selected) c.onSecondaryContainer else c.onSurfaceVariant,
+        border = if (selected) null else BorderStroke(1.dp, c.outlineVariant),
     ) {
-        Box(Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+        Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
 }
@@ -181,10 +179,10 @@ private fun StepButton(sign: String, label: String, enabled: Boolean, onClick: (
     }
 }
 
-/** Строка на поверхности: скругление 16, текст слева, подсказка справа. */
+/** Рядок на поверхні: 12 dp. */
 @Composable
 fun MineRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Surface(modifier.fillMaxWidth(), shape = Mine.fieldShape, color = Mine.colors.surface, contentColor = Mine.colors.text) {
+    Surface(modifier.fillMaxWidth(), shape = Mine.cardShape, color = Mine.colors.surface, contentColor = Mine.colors.text) {
         content()
     }
 }

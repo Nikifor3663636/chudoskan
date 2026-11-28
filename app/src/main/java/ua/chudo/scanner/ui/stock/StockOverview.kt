@@ -92,7 +92,7 @@ fun StockTitle(shop: String) {
 @Composable
 fun StockBanner(info: ShopStockInfo?, stores: Int, modifier: Modifier = Modifier) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier.fillMaxWidth().background(m.surface, shape).border(1.dp, m.line, shape).padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -117,15 +117,15 @@ fun StockBanner(info: ShopStockInfo?, stores: Int, modifier: Modifier = Modifier
 fun StockSegments(tab: StockTab, counts: Map<StockTab, Long?>, onTab: (StockTab) -> Unit, modifier: Modifier = Modifier) {
     val m = Mine.colors
     Row(
-        modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp))
-            .border(1.dp, m.line, RoundedCornerShape(8.dp)).selectableGroup().padding(3.dp),
+        modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(50))
+            .border(1.dp, m.line, RoundedCornerShape(50)).selectableGroup().padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         StockTab.entries.forEach { t ->
             val selected = t == tab
             Surface(
-                Modifier.weight(1f).height(34.dp).selectable(selected, role = Role.Tab, onClick = { onTab(t) }),
-                shape = RoundedCornerShape(6.dp), border = if (selected) BorderStroke(1.dp, m.line) else null,
+                Modifier.weight(1f).height(40.dp).selectable(selected, role = Role.Tab, onClick = { onTab(t) }),
+                shape = RoundedCornerShape(50), border = if (selected) BorderStroke(1.dp, m.line) else null,
                 color = if (selected) m.card else Color.Transparent,
             ) {
                 Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -150,7 +150,7 @@ fun LowStockRow(item: LowItem, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(48.dp).background(m.surface, RoundedCornerShape(6.dp)).border(1.dp, m.line, RoundedCornerShape(6.dp)),
+            Modifier.size(48.dp).background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) { Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(22.dp), tint = m.textTertiary) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

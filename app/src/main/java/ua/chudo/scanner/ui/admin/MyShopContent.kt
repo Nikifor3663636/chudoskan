@@ -77,10 +77,10 @@ fun MyShopContent(
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
             Row(
-                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -193,7 +193,7 @@ fun TempPasswordDialog(r: PasswordRequest, password: String, onDone: () -> Unit)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = {},
         containerColor = m.card,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(28.dp),
         title = { Text("Тимчасовий пароль", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -201,7 +201,7 @@ fun TempPasswordDialog(r: PasswordRequest, password: String, onDone: () -> Unit)
                     "Для: ${r.name ?: maskPhone(formatPhone(r.phone))}", fontSize = 14.sp, color = m.textSecondary,
                 )
                 Box(
-                    Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp)).border(1.dp, m.line, RoundedCornerShape(8.dp))
+                    Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp))
                         .padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -246,12 +246,13 @@ private fun Initials(name: String) {
 @Composable
 private fun SmallAction(text: String, primary: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
+    // M3: filled (основна дія) або text button, 40 dp, пігулка.
     Surface(
-        onClick = onClick, enabled = enabled, modifier = Modifier.height(36.dp), shape = RoundedCornerShape(6.dp),
-        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.text,
+        onClick = onClick, enabled = enabled, modifier = Modifier.height(40.dp), shape = RoundedCornerShape(50),
+        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.link,
     ) {
-        Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Box(Modifier.padding(horizontal = if (primary) 24.dp else 12.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
         }
     }
 }

@@ -138,7 +138,7 @@ fun ProductScanScreen(
                         val found = summary
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Surface(
-                                modifier = Modifier.size(64.dp), shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.size(64.dp), shape = RoundedCornerShape(12.dp),
                                 color = m.surface, border = BorderStroke(1.dp, m.line),
                             ) {
                                 if (found?.image != null) ProductImage(found.image, Modifier.fillMaxWidth())
@@ -254,7 +254,7 @@ private fun ScanSheetButton(
 ) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, modifier = modifier.height(44.dp), shape = RoundedCornerShape(6.dp),
+        onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(50),
         color = if (primary) m.accent else m.card,
         contentColor = if (primary) m.onAccent else m.text,
         border = if (primary) null else BorderStroke(1.dp, m.outline),

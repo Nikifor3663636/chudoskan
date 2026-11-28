@@ -108,10 +108,10 @@ internal fun LabelBatchContent(
     val available = checked.isNotEmpty() && progress == null
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Column(Modifier.padding(start = 4.dp)) {
@@ -203,7 +203,7 @@ private fun BatchButton(
     val m = Mine.colors
     Surface(
         onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = if (primary) 52.dp else 36.dp),
-        shape = RoundedCornerShape(6.dp),
+        shape = RoundedCornerShape(50),
         color = when {
             !enabled -> m.surface
             primary -> m.accent

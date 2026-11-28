@@ -306,7 +306,7 @@ fun ProductPage(
         contentPadding = if (tablet) PaddingValues(horizontal = 24.dp, vertical = 12.dp) else PaddingValues(bottom = 4.dp),
     ) {
         if (tablet) item {
-            val shape = RoundedCornerShape(8.dp)
+            val shape = RoundedCornerShape(16.dp)
             BoxWithConstraints(Modifier.fillMaxWidth().clip(shape).border(1.dp, m.line, shape).background(m.card)) {
                 if (maxWidth >= 490.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -385,7 +385,7 @@ private val H = 16.dp
 @Composable
 private fun TopBar(onBack: () -> Unit, onShare: () -> Unit, onScan: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(Mine.colors.bg).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().background(Mine.colors.bg).statusBarsPadding().height(64.dp).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -442,7 +442,7 @@ private fun Gallery(images: List<String>, discount: Double, new: Boolean, compac
 @Composable
 private fun ProductBadge(text: String, background: Color, color: Color) {
     Box(
-        Modifier.height(22.dp).background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+        Modifier.height(22.dp).background(background, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = color) }
 }
@@ -496,12 +496,12 @@ internal fun ProductActions(onPrint: () -> Unit, onCart: (() -> Unit)?) {
             Row(Modifier.fillMaxWidth().padding(start = H, end = H, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
                     onClick = { onCart?.invoke() }, enabled = onCart != null,
-                    modifier = Modifier.size(width = 48.dp, height = 44.dp), shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.size(48.dp), shape = RoundedCornerShape(50),
                     border = BorderStroke(1.dp, m.line), color = m.card, contentColor = m.text,
                 ) {
                     Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_redesign_shopping_cart), "Додати до кошика", Modifier.size(20.dp), tint = if (onCart != null) m.text else m.textTertiary) }
                 }
-                Surface(onClick = onPrint, modifier = Modifier.weight(1f).height(44.dp), shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent) {
+                Surface(onClick = onPrint, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
                         Icon(painterResource(R.drawable.ic_redesign_printer), null, Modifier.size(20.dp))
                         Text("Друкувати цінник", fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -608,7 +608,7 @@ private fun PhotoViewer(images: List<String>, index: Int, onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             ) {
                 images.forEachIndexed { page, url ->
-                    val shape = RoundedCornerShape(6.dp)
+                    val shape = RoundedCornerShape(12.dp)
                     Box(
                         Modifier.size(56.dp).clip(shape).clickable(onClickLabel = "Фото ${page + 1}") {
                             scope.launch { pager.animateScrollToPage(page) }

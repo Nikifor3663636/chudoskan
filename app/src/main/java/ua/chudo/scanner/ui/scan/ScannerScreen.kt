@@ -338,8 +338,8 @@ internal fun ScannerChrome(
                 CameraButton(R.drawable.ic_redesign_x, "Закрити", onClose)
                 if (onPriceMode != null && onCartMode != null) {
                     Row(
-                        Modifier.clip(Mine.fieldShape).background(CameraInk.copy(alpha = 0.6f))
-                            .border(1.dp, Color.White.copy(alpha = 0.12f), Mine.fieldShape)
+                        Modifier.clip(RoundedCornerShape(16.dp)).background(CameraInk.copy(alpha = 0.6f))
+                            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
                             .selectableGroup().padding(3.dp),
                     ) {
                         ScanMode("Товар", !priceMode && cartUnits == null) { onPriceMode(false) }
@@ -390,7 +390,7 @@ private val CameraInk = Color(0xFF14161A)
 
 @Composable
 private fun ScanMode(label: String, active: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Text(
         label,
         Modifier.clip(shape).background(if (active) Color.White else Color.Transparent)
@@ -423,7 +423,7 @@ private fun CameraAction(
     light: Boolean = false,
 ) {
     Surface(
-        onClick = onClick, modifier = modifier.height(44.dp), shape = RoundedCornerShape(6.dp),
+        onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(50),
         color = if (light) Color.White else CameraInk.copy(alpha = 0.72f),
         contentColor = if (light) Color(0xFF111111) else Color.White,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),

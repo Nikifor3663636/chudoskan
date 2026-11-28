@@ -49,6 +49,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -375,7 +376,7 @@ private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRe
             val date = result.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
             Row(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                    .background(m.warningTint, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                    .background(m.warningTint, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_redesign_triangle_alert), null, Modifier.padding(top = 1.dp).size(18.dp), tint = m.warningText)
@@ -403,7 +404,7 @@ private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRe
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(48.dp).background(m.surface, RoundedCornerShape(6.dp)).border(1.dp, m.line, RoundedCornerShape(6.dp)),
+                    Modifier.size(48.dp).background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) { SearchIcon(R.drawable.ic_redesign_package, 22) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -486,13 +487,13 @@ private fun ResultsHeader(
     onClear: () -> Unit,
 ) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(start = 8.dp, end = 12.dp),
+        Modifier.fillMaxWidth().height(64.dp).padding(start = 4.dp, end = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
             Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
         }
         Row(
@@ -525,20 +526,23 @@ private fun ResultsHeader(
 
 @Composable
 private fun SearchChip(label: String, selected: Boolean? = null, @DrawableRes icon: Int? = null, onClick: () -> Unit) {
-    val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    // M3 filter chip (вибір) / assist chip (дія): 32 dp, 8 dp; вибраний — secondaryContainer з галочкою.
+    val c = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(8.dp)
     val active = selected == true
-    val color = if (active) m.card else m.textSecondary
+    val color = if (active) c.onSecondaryContainer else c.onSurfaceVariant
     val action = if (selected != null) Modifier.toggleable(selected, role = Role.Checkbox, onValueChange = { onClick() })
         else Modifier.clickable(role = Role.Button, onClick = onClick)
     Row(
-        Modifier.height(32.dp).clip(shape).background(if (active) m.text else m.card)
-            .border(1.dp, if (active) m.text else m.outline, shape).then(action).padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.height(32.dp).clip(shape).background(if (active) c.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+            .then(if (active) Modifier else Modifier.border(1.dp, c.outlineVariant, shape)).then(action)
+            .padding(start = if (active || icon != null) 8.dp else 16.dp, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) Icon(painterResource(icon), null, Modifier.size(16.dp), tint = color)
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = color)
+        if (active) Icon(androidx.compose.material.icons.Icons.Rounded.Check, null, Modifier.size(18.dp), tint = color)
+        else if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp), tint = c.primary)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
@@ -676,7 +680,7 @@ private fun ManyList(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val shape = RoundedCornerShape(6.dp)
+                val shape = RoundedCornerShape(12.dp)
                 Box(
                     Modifier.size(48.dp).clip(shape).background(m.surface).border(1.dp, m.line, shape),
                     contentAlignment = Alignment.Center,

@@ -1,5 +1,12 @@
 package ua.chudo.scanner.ui.profile
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
@@ -203,119 +210,148 @@ fun ProfileContent(
     onOperations: () -> Unit = {},
 ) {
     val m = Mine.colors
-    Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().verticalScroll(rememberScrollState())) {
+    Column(
+        Modifier.fillMaxSize().background(m.bg).statusBarsPadding().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Text(
-            "Профіль", Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 12.dp),
-            fontSize = 26.sp, lineHeight = 29.9.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.39).sp, color = m.text,
+            "Профіль", Modifier.padding(top = 8.dp, bottom = 4.dp),
+            style = MaterialTheme.typography.headlineMedium, color = m.text,
         )
-        HorizontalDivider(color = m.line)
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 72.dp).background(m.card)
-                .clickable(onClickLabel = "Змінити ім’я", onClick = onEditName)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // Хто я: велика картка, натискання — змінити ім’я.
+        Surface(
+            onClick = onEditName, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+            color = m.card, contentColor = m.text,
         ) {
-            Box(
-                Modifier.size(44.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape),
-                contentAlignment = Alignment.Center,
+            Row(
+                Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(initials(ui.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(ui.name, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text)
-                val suffix = listOf(ui.role, ui.shop.ifBlank { ui.city }, ui.phone).filter(String::isNotBlank).joinToString(" · ")
-                Text(suffix, fontSize = 13.sp, color = m.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Box(Modifier.size(56.dp).background(m.accentTone, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(initials(ui.name), style = MaterialTheme.typography.titleLarge, color = m.link)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(ui.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (ui.role.isNotBlank()) Text(ui.role, fontSize = 14.sp, color = m.link, fontWeight = FontWeight.Medium)
+                    ui.shop.ifBlank { ui.city }.takeIf(String::isNotBlank)?.let {
+                        Text(it, fontSize = 14.sp, color = m.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (ui.phone.isNotBlank()) Text(ui.phone, fontSize = 14.sp, color = m.textTertiary)
+                }
+                Icon(painterResource(R.drawable.ic_redesign_chevron_right), "Змінити ім’я", Modifier.size(20.dp), tint = m.textTertiary)
             }
         }
-        HorizontalDivider(color = m.line)
 
         ProfileSection("Робота")
-        HorizontalDivider(color = m.line)
-        if (ui.networkAdmin) {
-            ProfileRow(R.drawable.ic_redesign_users, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin)
-        }
-        if (ui.myShop) {
-            ProfileRow(R.drawable.ic_redesign_users, "Мій магазин", "Співробітники", onClick = onMyShop)
-        }
-        if (ui.admin) {
-            ProfileRow(R.drawable.ic_redesign_printer, "Принтери", "Налаштування", onClick = onPrinters)
-        }
-        ProfileRow(R.drawable.ic_redesign_history, "Історія операцій", onClick = onOperations)
-
-        ProfileSection("Тема")
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(m.surface, Mine.fieldShape)
-                .border(1.dp, m.line, Mine.fieldShape).selectableGroup().padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK).forEach { mode ->
-                val active = mode == ui.theme
-                Surface(
-                    Modifier.weight(1f).height(34.dp).selectable(active, role = Role.Tab, onClick = { onTheme(mode) }),
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (active) m.card else Color.Transparent,
-                    border = if (active) BorderStroke(1.dp, m.line) else null,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(mode.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (active) m.text else m.textSecondary)
-                    }
-                }
+        ProfileGroup {
+            val rows = buildList<@Composable () -> Unit> {
+                if (ui.networkAdmin) add { ProfileRow(R.drawable.ic_redesign_users, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin) }
+                if (ui.myShop) add { ProfileRow(R.drawable.ic_redesign_users, "Мій магазин", "Співробітники, запити", onClick = onMyShop) }
+                if (ui.admin) add { ProfileRow(R.drawable.ic_redesign_printer, "Принтери", "Налаштування друку", onClick = onPrinters) }
+                add { ProfileRow(R.drawable.ic_redesign_history, "Історія операцій", "Друк, замовлення, скани", onClick = onOperations) }
+            }
+            rows.forEachIndexed { i, row ->
+                if (i > 0) ProfileDivider()
+                row()
             }
         }
 
         ProfileSection("Застосунок")
-        HorizontalDivider(color = m.line)
-        ProfileRow(R.drawable.ic_redesign_settings, "Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
-        ProfileRow(R.drawable.ic_redesign_lock, "Змінити пароль", onClick = onPassword)
-        ProfileRow(
-            R.drawable.ic_redesign_download, "Перевірити оновлення",
-            if (ui.checking) "Перевіряємо…" else ui.version.takeIf(String::isNotEmpty)?.let { "Версія $it" },
-            chevron = false, onClick = onCheckUpdate,
-        )
-        ProfileRow(R.drawable.ic_redesign_log_out, "Вийти", danger = true, chevron = false, onClick = onLogout)
+        ProfileGroup {
+            ProfileRow(R.drawable.ic_redesign_settings, "Налаштування сканера", "Звук, вібрація, безперервний скан", onClick = onScannerSettings)
+            ProfileDivider()
+            ProfileRow(R.drawable.ic_redesign_lock, "Змінити пароль", onClick = onPassword)
+            ProfileDivider()
+            ProfileRow(
+                R.drawable.ic_redesign_download, "Перевірити оновлення",
+                if (ui.checking) "Перевіряємо…" else ui.version.takeIf(String::isNotEmpty)?.let { "Версія $it" },
+                chevron = false, onClick = onCheckUpdate,
+            )
+        }
+
+        ProfileSection("Тема")
+        // Сегментована кнопка M3: 48 dp, пігулка, вибраний сегмент — тональний з галочкою.
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(50)).border(1.dp, m.outline, RoundedCornerShape(50))
+                .selectableGroup(),
+        ) {
+            listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK).forEachIndexed { i, mode ->
+                val active = mode == ui.theme
+                if (i > 0) Box(Modifier.fillMaxHeight().width(1.dp).background(m.outline))
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().background(if (active) m.accentTone else Color.Transparent)
+                        .selectable(active, role = Role.Tab, onClick = { onTheme(mode) }),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (active) Icon(Icons.Rounded.Check, null, Modifier.padding(end = 6.dp).size(18.dp), tint = m.link)
+                    Text(mode.title, style = MaterialTheme.typography.labelLarge, color = if (active) m.link else m.textSecondary, maxLines = 1)
+                }
+            }
+        }
+
+        ui.message?.let { Text(it, fontSize = 14.sp, color = m.textSecondary) }
+        // «Вийти» — окремо й унизу, щоб не натиснути випадково.
+        OutlinedButton(
+            onClick = onLogout, modifier = Modifier.padding(top = 12.dp).fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(50), border = BorderStroke(1.dp, m.outline),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = m.logout),
+        ) {
+            Icon(painterResource(R.drawable.ic_redesign_log_out), null, Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Вийти", style = MaterialTheme.typography.titleMedium)
+        }
         Text(
-            "Магазин і місто змінює адміністратор.", Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
+            "Магазин і місто змінює адміністратор.", Modifier.padding(bottom = 16.dp),
             fontSize = 13.sp, color = m.textTertiary,
         )
-        ui.message?.let { Text(it, Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp), fontSize = 14.sp, color = m.textSecondary) }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
 internal fun ProfileSection(label: String) {
     Text(
-        label, Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
-        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Mine.colors.textSecondary,
+        label, Modifier.padding(start = 4.dp, top = 8.dp),
+        style = MaterialTheme.typography.titleSmall, color = Mine.colors.textSecondary,
     )
 }
 
+/** Група рядків — картка 16 dp. */
+@Composable
+private fun ProfileGroup(content: @Composable () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = Mine.colors.card, contentColor = Mine.colors.text) {
+        Column { content() }
+    }
+}
+
+@Composable
+private fun ProfileDivider() = HorizontalDivider(Modifier.padding(start = 72.dp), color = Mine.colors.line)
+
+/** Рядок профілю: від 64 dp, іконка в колі 40 dp, назва 16 sp, підпис 14 sp — зручно влучити пальцем. */
 @Composable
 private fun ProfileRow(
     @DrawableRes icon: Int,
     label: String,
     value: String? = null,
-    danger: Boolean = false,
     chevron: Boolean = true,
     onClick: () -> Unit,
 ) {
     val m = Mine.colors
-    val color = if (danger) m.logout else m.text
     Row(
-        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick)
-            .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = color)
+        Box(Modifier.size(40.dp).background(m.accentTone, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, Modifier.size(22.dp), tint = m.link)
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = color)
-            value?.let { Text(it, fontSize = 13.sp, color = m.textTertiary) }
+            Text(label, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = m.text)
+            value?.let { Text(it, fontSize = 14.sp, color = m.textTertiary) }
         }
         if (chevron) Icon(
-            painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(18.dp), tint = m.textTertiary,
+            painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(20.dp), tint = m.textTertiary,
         )
     }
-    HorizontalDivider(color = m.line)
 }

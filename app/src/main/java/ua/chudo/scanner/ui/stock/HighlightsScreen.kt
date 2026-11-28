@@ -77,16 +77,14 @@ fun HighlightsScreen(
     onSearch: (String) -> Unit,
     onBrowseCatalog: (List<String>, String) -> Unit = { _, _ -> },
     initialKind: HighlightKind = HighlightKind.NEW,
-    onPromos: () -> Unit = {},
-    onNew: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val kind = initialKind
     val promo = kind == HighlightKind.PROMO
     val sheet = ctx.chudoApp.promoSheet
-    var productsTab by rememberSaveable { mutableStateOf(false) }
-    val showProducts = !promo || productsTab
+    // «Новинки» — товари; «Акції» — лише текстові кампанії (товарів в акціях немає).
+    val showProducts = !promo
     var campaigns by remember { mutableStateOf<List<PromoCampaign>?>(null) }
     var campaignError by remember { mutableStateOf(false) }
     var currentCampaign by remember { mutableStateOf<PromoCampaign?>(null) }
@@ -166,20 +164,13 @@ fun HighlightsScreen(
 
     LazyColumn(Modifier.fillMaxSize().background(Mine.colors.bg).statusBarsPadding()) {
         item {
-            HighlightsHeader(kind, onBack, onPromos, onNew)
-            if (promo) HighlightTabs(
-                left = "Кампанії", right = "Акційні товари", leftActive = !productsTab,
-                onLeft = { productsTab = false }, onRight = { productsTab = true },
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            HighlightsHeader(kind, onBack)
         }
         item {
-            OutlinedTextField(
+            ua.chudo.scanner.ui.common.MineSearchField(
                 query, { if (showProducts) productQuery = it else campaignQuery = it },
-                Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 12.dp),
-                enabled = !working,
-                label = { Text(if (showProducts) "Назва, штрихкод або артикул" else "Назва акції, ТМ або постачальник") },
-                singleLine = true, shape = Mine.fieldShape,
+                if (showProducts) "Назва, штрихкод або артикул" else "Назва акції, ТМ або постачальник", onSubmit = {},
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 12.dp),
             )
         }
         if (!showProducts) {
@@ -192,10 +183,11 @@ fun HighlightsScreen(
             val visible = campaigns.orEmpty().filter { campaign ->
                 listOf(campaign.title, campaign.brand, campaign.supplier).any { it.contains(term, ignoreCase = true) }
             }
-            if (campaigns != null && visible.isEmpty()) item { HighlightState("Кампаній не знайдено.") }
-            if (visible.isNotEmpty()) item { HorizontalDivider(color = Mine.colors.line) }
+            if (campaigns != null && visible.isEmpty()) item {
+                HighlightState(if (term.isEmpty()) "Активних акцій поки немає." else "Акцій не знайдено.")
+            }
             items(visible) { campaign ->
-                PromoCampaignRow(campaign) { currentCampaign = campaign }
+                PromoCampaignRow(campaign, Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { currentCampaign = campaign }
             }
         }
         if (showProducts) {
@@ -332,54 +324,18 @@ fun HighlightsScreen(
     }
 }
 
+/** Заголовок як M3 Top App Bar: «Назад» 48 dp і назва — «Новинки» або «Акції», без перемикача між ними. */
 @Composable
-internal fun HighlightsHeader(kind: HighlightKind, onBack: () -> Unit, onPromos: () -> Unit, onNew: () -> Unit) {
+internal fun HighlightsHeader(kind: HighlightKind, onBack: () -> Unit) {
     val m = Mine.colors
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-            Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+            Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.text)
         }
-        Text(kind.title, Modifier.padding(start = 4.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text)
-    }
-    HighlightTabs("Акції", "Новинки", kind == HighlightKind.PROMO, onPromos, onNew)
-}
-
-@Composable
-internal fun HighlightTabs(
-    left: String,
-    right: String,
-    leftActive: Boolean,
-    onLeft: () -> Unit,
-    onRight: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val m = Mine.colors
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp).background(m.surface, Mine.fieldShape)
-            .border(1.dp, m.line, Mine.fieldShape).selectableGroup().padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        HighlightTab(left, leftActive, onLeft, Modifier.weight(1f))
-        HighlightTab(right, !leftActive, onRight, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun HighlightTab(label: String, active: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
-    Surface(
-        modifier.height(34.dp).selectable(active, role = Role.Tab, onClick = { if (!active) onClick() }),
-        shape = shape, border = if (active) BorderStroke(1.dp, m.line) else null,
-        color = if (active) m.card else Color.Transparent,
-        contentColor = if (active) m.text else m.textSecondary,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        }
+        Text(kind.title, Modifier.padding(start = 4.dp), style = androidx.compose.material3.MaterialTheme.typography.titleLarge, color = m.text)
     }
 }
 
@@ -406,18 +362,40 @@ internal fun HighlightProductRow(product: ProductHighlight, kind: HighlightKind,
     }
 }
 
+/** Акція — текстова картка: назва, ТМ / постачальник, дати, статус і перші умови; натискання — повний текст. */
 @Composable
-internal fun PromoCampaignRow(campaign: PromoCampaign, onClick: () -> Unit) {
+internal fun PromoCampaignRow(campaign: PromoCampaign, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val m = Mine.colors
     val dates = listOf(campaign.startsOn, campaign.endsOn).filter(String::isNotBlank).joinToString(" – ")
-    val detail = listOf(campaign.brand.ifBlank { campaign.supplier }, dates).filter(String::isNotBlank).joinToString(" · ")
-    HighlightListRow(campaign.title, detail, R.drawable.ic_redesign_badge_percent, onClick) {
-        if (campaign.status.isNotBlank()) {
-            val active = campaign.isActive()
-            HighlightBadge(
-                campaign.status, if (active) m.successTint else m.surface,
-                if (active) m.success else m.textSecondary,
-            )
+    val who = listOf(campaign.brand, campaign.supplier).filter(String::isNotBlank).distinct().joinToString(" · ")
+    Surface(
+        onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+        color = m.card, contentColor = m.text,
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Box(Modifier.size(40.dp).background(m.accentTone, androidx.compose.foundation.shape.CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_redesign_badge_percent), null, Modifier.size(22.dp), tint = m.link)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(campaign.title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    if (who.isNotBlank()) Text(who, fontSize = 14.sp, color = m.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            campaign.details.filter { it.second.isNotBlank() }.take(2).forEach { (label, value) ->
+                Text("$label: $value", fontSize = 14.sp, lineHeight = 20.sp, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (dates.isNotBlank()) Text(dates, Modifier.weight(1f), fontSize = 13.sp, color = m.textTertiary)
+                else Box(Modifier.weight(1f))
+                if (campaign.status.isNotBlank()) {
+                    val active = campaign.isActive()
+                    HighlightBadge(
+                        campaign.status, if (active) m.successTint else m.surface,
+                        if (active) m.success else m.textSecondary,
+                    )
+                }
+            }
         }
     }
 }
@@ -437,7 +415,7 @@ private fun HighlightListRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val shape = RoundedCornerShape(6.dp)
+        val shape = RoundedCornerShape(12.dp)
         Box(
             Modifier.size(48.dp).background(m.surface, shape).border(1.dp, m.line, shape),
             contentAlignment = Alignment.Center,
@@ -462,7 +440,7 @@ private fun HighlightListRow(
 @Composable
 private fun HighlightBadge(label: String, background: Color, color: Color) {
     Box(
-        Modifier.height(22.dp).background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+        Modifier.height(22.dp).background(background, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)

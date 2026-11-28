@@ -95,10 +95,10 @@ fun AuthNavPage(
     val m = Mine.colors
     Column(Modifier.fillMaxSize().background(m.card).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -137,7 +137,7 @@ fun AuthField(label: String, hint: String? = null, error: String? = null, conten
     }
 }
 
-/** Рамка `.input`: 44 dp, радіус 6, у фокусі — синя, з помилкою — червона. */
+/** Поле M3 (outlined): 56 dp, 4 dp; у фокусі — рамка 2 dp кольору primary, з помилкою — error. */
 @Composable
 fun AuthInputBox(
     focused: Boolean,
@@ -146,15 +146,15 @@ fun AuthInputBox(
     content: @Composable RowScope.() -> Unit,
 ) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = Mine.fieldShape
     val ring = when {
-        isError -> m.danger
+        isError -> m.onDanger
         focused -> m.info
-        else -> null
+        else -> m.outline
     }
     Row(
         modifier.fillMaxWidth()
-            .height(44.dp).background(m.card, shape).border(1.dp, ring ?: m.outline, shape).padding(horizontal = 12.dp),
+            .height(56.dp).border(if (isError || focused) 2.dp else 1.dp, ring, shape).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
@@ -240,42 +240,42 @@ fun MinePasswordField(value: String, enabled: Boolean, isError: Boolean = false,
     }
 }
 
-/** `.btn.primary.lg.block`: 52 dp, акцент. */
+/** Основна кнопка M3 (filled): 56 dp, пігулка. */
 @Composable
 fun AuthPrimaryButton(text: String, busy: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, enabled = !busy, modifier = modifier.fillMaxWidth().height(52.dp),
-        shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent,
+        onClick = onClick, enabled = !busy, modifier = modifier.fillMaxWidth().height(56.dp),
+        shape = Mine.pillShape, color = m.accent, contentColor = m.onAccent,
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = m.onAccent)
-            else Text(text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            else Text(text, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
         }
     }
 }
 
-/** `.btn.ghost.block`: 44 dp, без фону. */
+/** Текстова кнопка M3: 48 dp, пігулка, колір primary. */
 @Composable
-fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.text, onClick: () -> Unit) {
+fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.link, onClick: () -> Unit) {
     Box(
-        modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick),
+        modifier.fillMaxWidth().height(48.dp).clip(Mine.pillShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = color)
+        Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
-/** `.btn.secondary.sm`: 36 dp, рамка. */
+/** Outlined-кнопка M3: 40 dp, пігулка. */
 @Composable
 fun AuthSecondarySmall(text: String, onClick: () -> Unit) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, modifier = Modifier.height(36.dp), shape = RoundedCornerShape(6.dp),
-        color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.outline),
+        onClick = onClick, modifier = Modifier.height(40.dp), shape = Mine.pillShape,
+        color = Color.Transparent, contentColor = m.link, border = BorderStroke(1.dp, m.outline),
     ) {
-        Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Box(Modifier.padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -362,7 +362,7 @@ enum class StepState { DONE, ACTIVE, TODO }
 @Composable
 fun AuthSteps(steps: List<Triple<StepState, String, String?>>) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(16.dp)
     Column(Modifier.fillMaxWidth().background(m.card, shape).border(1.dp, m.line, shape)) {
         steps.forEachIndexed { i, (state, title, sub) ->
             if (i > 0) HorizontalDivider(color = m.line)

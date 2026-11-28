@@ -62,7 +62,7 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(
-                Modifier.fillMaxWidth().height(52.dp).background(m.card).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(64.dp).background(m.card).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
@@ -74,7 +74,7 @@ internal fun ManualScanInput(onClose: () -> Unit, onSubmit: (String) -> Unit) {
             val bad = text.length == 13 && text.all(Char::isDigit) && !ean13Valid(text)
             Column(Modifier.fillMaxWidth().background(m.card).padding(16.dp)) {
                 Row(
-                    Modifier.fillMaxWidth().height(60.dp).border(1.dp, if (bad) m.danger else m.outline, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp),
+                    Modifier.fillMaxWidth().height(60.dp).border(1.dp, if (bad) m.danger else m.outline, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val style = CodeStyle.copy(fontSize = 26.sp, letterSpacing = 1.56.sp)

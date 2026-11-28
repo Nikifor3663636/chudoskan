@@ -1,5 +1,6 @@
 package ua.chudo.scanner.ui.auth
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Box
@@ -452,7 +453,7 @@ fun ForgotForm(ui: ForgotUi, onDigits: (String) -> Unit, onPickShop: () -> Unit,
         }
         Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(
-                Modifier.height(22.dp).background(m.infoTint, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+                Modifier.height(22.dp).background(m.infoTint, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) { Text("Нове", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = m.info) }
             Text(

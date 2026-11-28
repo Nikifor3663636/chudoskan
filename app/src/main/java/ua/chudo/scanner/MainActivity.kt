@@ -52,7 +52,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ua.chudo.scanner.data.Employee
-import ua.chudo.scanner.data.OrderStage
 import ua.chudo.scanner.ui.auth.AuthGate
 import ua.chudo.scanner.ui.common.RegionPickerSheet
 import ua.chudo.scanner.ui.orders.OrdersScreen
@@ -158,8 +157,8 @@ private object Routes {
 }
 
 // Сканер, настройки принтеров, карточка товара (у неё своя панель «Друкувати цінник · Сканувати ще»)
-// и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации.
-private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART, Routes.LABELS)
+// и кошик (своя панель «Разом · Сканувати ще») — без нижней навигации. «Друк» (цінники пакетом) — вкладка панелі.
+private val FULLSCREEN = setOf(Routes.SCAN, Routes.PRINTERS, Routes.PRODUCT, Routes.CART)
 
 
 @Composable
@@ -175,7 +174,6 @@ private fun AppNav(home: Employee) {
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val printing = LocalContext.current.chudoApp.printing
     val ordersRepo = LocalContext.current.chudoApp.orders
-    val orders by ordersRepo.orders.collectAsStateWithLifecycle()
     LaunchedEffect(employee.shopId) { ordersRepo.load(employee.shopId) }
     // Магазин — для печати через ПК магазина; сохранённые принтеры, сменившие IP, тихо находим заново.
     LaunchedEffect(employee.shopId) {
@@ -190,7 +188,10 @@ private fun AppNav(home: Employee) {
     val tab = when (route) {
         Routes.HOME, Routes.RESULTS, Routes.CATALOG, Routes.HISTORY -> MainTab.HOME
         Routes.ORDERS -> MainTab.ORDERS
-        Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
+        Routes.LABELS -> MainTab.PRINT
+        Routes.STOCK -> MainTab.STOCK
+        // Новинки / акції: підсвічуємо вкладку, з якої відкрили (головна або «Залишки»).
+        Routes.HIGHLIGHTS -> if (nav.previousBackStackEntry?.destination?.route == Routes.STOCK) MainTab.STOCK else MainTab.HOME
         Routes.PROFILE -> MainTab.PROFILE
         else -> null
     }
@@ -209,6 +210,7 @@ private fun AppNav(home: Employee) {
                     nav.popBackStack(Routes.HOME, inclusive = false)
                 }
                 MainTab.ORDERS -> openTab(Routes.ORDERS)
+                MainTab.PRINT -> openTab(Routes.LABELS)
                 MainTab.STOCK -> openTab(Routes.STOCK)
                 MainTab.PROFILE -> openTab(Routes.PROFILE)
             }
@@ -223,7 +225,6 @@ private fun AppNav(home: Employee) {
                     acting?.let { a -> ActingBanner(a, withInsets = railVisible || route in FULLSCREEN) { switchShop(null) } }
                     if (!tablet && route != null && route !in FULLSCREEN) MineBottomBar(
                         tab = tab,
-                        newOrders = orders.count { it.stage == OrderStage.NEW },
                         onTab = onTab,
                         scanLabel = if (route == Routes.STOCK) "Сканувати для пошуку залишків" else "Сканувати товар",
                         onScan = onScan,
@@ -323,13 +324,6 @@ private fun AppNavHost(
             if (Backend.isSupabase) HighlightsScreen(
                 canUpload = employee.stockAdmin || employee.superAdmin,
                 initialKind = kind,
-                onPromos = { nav.navigate(Routes.highlights(HighlightKind.PROMO)) },
-                onNew = {
-                    val route = Routes.highlights(HighlightKind.NEW)
-                    if (!nav.popBackStack(route, inclusive = false)) {
-                        nav.navigate(route) { popUpTo(Routes.HIGHLIGHTS) { inclusive = true } }
-                    }
-                },
                 onBack = { nav.popBackStack() },
                 onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
                 onBrowseCatalog = { items, selected -> setCatalog(entry, items, selected) },

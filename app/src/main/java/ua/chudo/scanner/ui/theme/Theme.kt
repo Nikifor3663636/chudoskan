@@ -31,7 +31,7 @@ import ua.chudo.scanner.R
 /** Тема оформлення в профілі. */
 enum class ThemeMode(val title: String) { DARK("Темна"), LIGHT("Світла"), SYSTEM("Як у системі") }
 
-/** Кольори дизайн-системи chudoskan-redesign.html. */
+/** Кольори застосунку (палітра chudoskan-redesign.html); форми й компоненти — Material 3. */
 @Immutable
 data class MineColors(
     val dark: Boolean,
@@ -173,44 +173,30 @@ private fun scheme(m: MineColors) =
 private val DarkScheme = scheme(MineDark)
 private val LightScheme = scheme(MineLight)
 
-private val PlexSans = FontFamily(
-    Font(R.font.ibm_plex_sans_400, FontWeight.Normal),
-    Font(R.font.ibm_plex_sans_500, FontWeight.Medium),
-    Font(R.font.ibm_plex_sans_600, FontWeight.SemiBold),
-    Font(R.font.ibm_plex_sans_700, FontWeight.Bold),
-)
-
 val CodeStyle = TextStyle(
-    fontFamily = FontFamily(Font(R.font.ibm_plex_mono_500, FontWeight.Medium)),
+    fontFamily = FontFamily.Monospace,
     fontWeight = FontWeight.Medium,
     fontSize = 13.sp,
 )
 
 val PriceStyle = TextStyle(
-    fontFamily = PlexSans,
     fontSize = 30.sp,
     fontWeight = FontWeight.SemiBold,
     letterSpacing = (-0.3).sp,
     fontFeatureSettings = "tnum",
 )
 
-private val AppTypography = Typography(
-    displayLarge = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-    displayMedium = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-    displaySmall = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-    headlineLarge = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.39).sp),
-    headlineMedium = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.39).sp),
-    headlineSmall = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 13.sp, fontWeight = FontWeight.Medium),
-    bodyLarge = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 16.sp, lineHeight = 24.sp),
-    bodyMedium = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 15.sp, lineHeight = 22.5.sp),
-    bodySmall = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 13.sp, lineHeight = 19.5.sp),
-    labelLarge = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 15.sp, fontWeight = FontWeight.Medium),
-    labelMedium = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 13.sp, fontWeight = FontWeight.Medium),
-    labelSmall = TextStyle(fontFamily = PlexSans, fontFeatureSettings = "tnum", fontSize = 13.sp),
-)
+/** Шкала шрифтів Material 3 (Roboto); цифри — табличні, щоб ціни й кількості не «стрибали». */
+private val AppTypography = Typography().let { t ->
+    fun TextStyle.tnum() = copy(fontFeatureSettings = "tnum")
+    Typography(
+        displayLarge = t.displayLarge.tnum(), displayMedium = t.displayMedium.tnum(), displaySmall = t.displaySmall.tnum(),
+        headlineLarge = t.headlineLarge.tnum(), headlineMedium = t.headlineMedium.tnum(), headlineSmall = t.headlineSmall.tnum(),
+        titleLarge = t.titleLarge.tnum(), titleMedium = t.titleMedium.tnum(), titleSmall = t.titleSmall.tnum(),
+        bodyLarge = t.bodyLarge.tnum(), bodyMedium = t.bodyMedium.tnum(), bodySmall = t.bodySmall.tnum(),
+        labelLarge = t.labelLarge.tnum(), labelMedium = t.labelMedium.tnum(), labelSmall = t.labelSmall.tnum(),
+    )
+}
 
 private val NoPrefs = MutableStateFlow(ThemeMode.SYSTEM)
 
