@@ -243,21 +243,16 @@ fun ResultsScreen(
     val own = remember(vm.query) { androidx.compose.runtime.mutableStateMapOf<String, Double>() }
     LaunchedEffect(state) {
         val many = (state as? ResultsState.Done)?.result as? LookupResult.Many ?: return@LaunchedEffect
-        kotlinx.coroutines.supervisorScope {
-            many.items.mapNotNull { it.article?.takeIf(String::isNotBlank) }.distinct().take(40).forEach { article ->
-                launch {
-                    val key = articleKey(article)
-                    if (key in own) return@launch
-                    val qty = try {
-                        app.networkLookup.byArticle(employee.shopId, article).firstOrNull()?.own
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        null
-                    }
-                    if (qty != null) own[key] = qty
-                }
-            }
+        // Один запит на весь список: кількість у своєму магазині за артикулом (залишки 1С).
+        val articles = many.items.mapNotNull { it.article?.takeIf(String::isNotBlank) }
+            .filter { articleKey(it) !in own }.distinct()
+        if (articles.isEmpty()) return@LaunchedEffect
+        try {
+            own.putAll(app.networkLookup.ownByArticles(employee.shopId, articles))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Немає зв’язку з базою залишків — лишаємо наявність із сайту.
         }
     }
     val newArticles by androidx.compose.runtime.produceState(emptySet<String>(), newOnly, vm.query) {
@@ -702,17 +697,9 @@ private fun ManyList(
                     val price = item.price
                     if (price != null && price.regularPrice > price.finalPrice + 0.001) {
                         Text(Cart.money((price.regularPrice * 100).roundToLong()), fontSize = 13.sp, color = m.textTertiary, textDecoration = TextDecoration.LineThrough)
-                    } else own[articleKey(item.article)]?.let { qty ->
-                        Text(
-                            if (qty > 0) "${java.text.NumberFormat.getInstance().format(qty)} шт" else "немає",
-                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                            color = when {
-                                qty <= 0 -> m.textTertiary
-                                qty <= 2 -> m.warningText
-                                else -> m.success
-                            },
-                        )
-                    } ?: run {
+                    }
+                    // Залишок свого магазину — завжди, кольоровою пігулкою; немає даних 1С — наявність із сайту.
+                    own[articleKey(item.article)]?.let { qty -> ShopQtyPill(qty) } ?: run {
                         val available = item.stock == StockStatus.IN_STOCK
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             StatusDot(if (available) m.success else m.outline, Modifier.size(8.dp))
@@ -730,6 +717,26 @@ private fun ManyList(
             }
             HorizontalDivider(color = m.line)
         }
+    }
+}
+
+/** «4 шт» зеленим, «1 шт» бурштиновим, «немає» сірим — залишок свого магазину з 1С. */
+@Composable
+private fun ShopQtyPill(qty: Double) {
+    val m = Mine.colors
+    val (tone, ink) = when {
+        qty <= 0 -> m.surface to m.textTertiary
+        qty <= 2 -> m.warningTint to m.warningText
+        else -> m.successTint to m.success
+    }
+    Box(
+        Modifier.padding(top = 2.dp).height(24.dp).background(tone, RoundedCornerShape(50)).padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (qty > 0) "${java.text.NumberFormat.getInstance().format(qty)} шт" else "немає",
+            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ink, maxLines = 1,
+        )
     }
 }
 

@@ -11,6 +11,18 @@ data class NetStore(val code: String, val name: String, val city: String)
 /** Товар мережі: кількість за кодом магазину, лише ненульові. */
 data class NetItem(val name: String, val code: String, val article: String, val q: Map<String, Double>)
 
+/** Артикул для звірки сайту з 1С: лише літери й цифри, без регістру («SM-22 009» = «sm22009»). */
+fun stockArticleKey(article: String?): String = article.orEmpty().filter(Char::isLetterOrDigit).lowercase(java.util.Locale.ROOT)
+
+/**
+ * Залишок свого магазину ([code] — «ЧО NN») за артикулом для списку результатів.
+ * Кілька штрихкодів одного артикула (кольори, розміри) — сумуємо; товари без артикула пропускаємо.
+ */
+fun ownByArticle(items: List<NetItem>, code: String): Map<String, Double> =
+    items.filter { stockArticleKey(it.article).isNotEmpty() }
+        .groupBy { stockArticleKey(it.article) }
+        .mapValues { (_, same) -> same.sumOf { it.q[code] ?: 0.0 } }
+
 data class NetworkStock(
     val stores: List<NetStore>,
     /** Штрихкод → товар. */

@@ -4,7 +4,7 @@ import uniffi.chudo_core.ProductSummary
 import java.util.Locale
 
 /** Артикул для зіставлення сайту з 1С: лише літери й цифри, без регістру. */
-fun articleKey(article: String?): String = article.orEmpty().filter(Char::isLetterOrDigit).lowercase(Locale.ROOT)
+fun articleKey(article: String?): String = ua.chudo.scanner.data.stockArticleKey(article)
 
 /** Фільтри пошуку як у дизайні: «Є в магазині», «Акції», «Новинки». */
 data class SearchFilters(val shop: Boolean = false, val promo: Boolean = false, val fresh: Boolean = false) {

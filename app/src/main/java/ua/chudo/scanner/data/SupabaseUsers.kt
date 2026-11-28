@@ -41,11 +41,13 @@ data class UserRow(
     @SerialName("super_admin") val superAdmin: Boolean = false,
     @SerialName("stock_admin") val stockAdmin: Boolean = false,
     @SerialName("changed_at") val changedAt: String? = null,
+    @SerialName("must_change_password") val mustChangePassword: Boolean = false,
 ) {
     fun employee(fallbackPhone: String) = Employee(
         uid = uid, name = name, phone = phone.ifEmpty { fallbackPhone }, region = region, shop = shop, shopId = shopId,
         approved = approved, admin = admin,
         stockAdmin = approved && (stockAdmin || superAdmin), superAdmin = approved && superAdmin,
+        mustChangePassword = mustChangePassword,
     )
 
     fun staff() = StaffMember(uid, name, phone, shopId, shop, region, approved, admin, superAdmin, parseTime(changedAt))
@@ -92,6 +94,11 @@ object SupabaseUsers {
             if (e.code != "23505") throw e
             db.from("users").update(fields) { filter { eq("uid", uid) } }
         }
+    }
+
+    /** Тимчасовий пароль замінено — зняти позначку must_change_password (лише собі). */
+    suspend fun passwordChanged() {
+        db.postgrest.rpc("password_changed")
     }
 
     suspend fun updateName(uid: String, name: String) {

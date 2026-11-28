@@ -44,6 +44,8 @@ data class Employee(
      */
     val actingCode: String? = null,
     val homeShopId: String = shopId,
+    /** Адмін скинув пароль — після входу спершу «Придумайте новий пароль» (users.must_change_password). */
+    val mustChangePassword: Boolean = false,
 ) {
     /** Налаштовує принтери магазину: адмін магазину або адмін мережі. */
     val managesShop: Boolean get() = admin || superAdmin
@@ -193,6 +195,17 @@ class AuthRepository(context: Context) {
         val login = user.email ?: loginFor(phoneOf(user))
         user.reauthenticate(EmailAuthProvider.getCredential(login, current)).await()
         user.updatePassword(new).await()
+    }
+
+    /**
+     * Новий пароль замість тимчасового: вхід щойно був, тож Firebase не просить поточний.
+     * Потім знімаємо позначку в базі й одразу пускаємо в застосунок.
+     */
+    suspend fun replaceTemporaryPassword(new: String) {
+        val user = auth.currentUser ?: error("Не виконано вхід")
+        user.updatePassword(new).await()
+        if (Backend.isSupabase) SupabaseUsers.passwordChanged()
+        (_state.value as? AuthState.Ready)?.let { _state.value = AuthState.Ready(it.employee.copy(mustChangePassword = false)) }
     }
 
     /** Дописать анкету, если аккаунт уже создан. */

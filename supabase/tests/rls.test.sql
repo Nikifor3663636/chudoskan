@@ -619,6 +619,18 @@ select ok(tests.ok($$update password_requests set status = 'rejected', done_by =
   'адмін відхиляє запит свого магазину');
 select ok(tests.no($$update password_requests set status = 'done', done_by = 'adm22' where phone = '+380500000000'$$),
   'адмін не ставить «done» в обхід скидання');
+select tests.login('emp22');
+select is((select must_change_password from users where uid = 'emp22'), true, 'після скидання — треба змінити пароль');
+select ok(tests.no($$update users set must_change_password = false where uid = 'emp22'$$), 'позначку не зняти напряму');
+select tests.login('emp62');
+select lives_ok('select password_changed()', 'чужий виклик нічого не ламає');
+select tests.login('emp22');
+select is((select must_change_password from users where uid = 'emp22'), true, 'чужий виклик не знімає позначку emp22');
+select lives_ok('select password_changed()', 'співробітник повідомляє, що змінив пароль');
+select is((select must_change_password from users where uid = 'emp22'), false, 'позначку знято');
+select tests.anon();
+select throws_ok('select password_changed()', '42501', null, 'анонім не викликає');
+
 select tests.login('sup');
 select is((select count(*)::int from admin_log where action = 'passwordReset' and target = 'emp22'), 1, 'скидання — у журналі дій');
 

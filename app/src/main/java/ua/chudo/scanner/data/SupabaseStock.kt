@@ -58,6 +58,11 @@ object SupabaseStock {
         db.from("stock").select { filter { eq("barcode", bc) }; limit(1) }.decodeList<SbStockRow>().firstOrNull()?.item()
 
     /** `field` — code або article (індекси stock_code / stock_article). */
+    /** Рядки залишків за кількома артикулами одним запитом (список результатів пошуку). */
+    suspend fun byArticles(articles: List<String>, limit: Long = 500): List<NetItem> =
+        if (articles.isEmpty()) emptyList()
+        else db.from("stock").select { filter { isIn("article", articles) }; limit(limit) }.decodeList<SbStockRow>().map { it.item() }
+
     suspend fun byField(field: String, value: String, limit: Long = 10): List<Pair<String, NetItem>> =
         db.from("stock").select { filter { eq(field, value) }; limit(limit) }.decodeList<SbStockRow>().map { it.barcode to it.item() }
 
