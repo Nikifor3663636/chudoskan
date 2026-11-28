@@ -186,7 +186,8 @@ private fun AppNav(home: Employee) {
     val updater = LocalContext.current.chudoApp.updater
     LaunchedEffect(Unit) { updater.check() }
     val tab = when (route) {
-        Routes.HOME, Routes.RESULTS, Routes.CATALOG, Routes.HISTORY -> MainTab.HOME
+        Routes.HOME, Routes.RESULTS, Routes.HISTORY -> MainTab.HOME
+        Routes.CATALOG -> MainTab.CATALOG
         Routes.ORDERS -> MainTab.ORDERS
         Routes.LABELS -> MainTab.PRINT
         Routes.STOCK -> MainTab.STOCK
@@ -209,6 +210,7 @@ private fun AppNav(home: Employee) {
                 } else if (route != Routes.HOME) {
                     nav.popBackStack(Routes.HOME, inclusive = false)
                 }
+                MainTab.CATALOG -> openTab(Routes.CATALOG)
                 MainTab.ORDERS -> openTab(Routes.ORDERS)
                 MainTab.PRINT -> openTab(Routes.LABELS)
                 MainTab.STOCK -> openTab(Routes.STOCK)
@@ -234,7 +236,7 @@ private fun AppNav(home: Employee) {
         ) { inner ->
             Row(Modifier.fillMaxSize().padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner)) {
                 if (railVisible) TabletRail(
-                    selected = tab, printing = route == Routes.LABELS,
+                    selected = if (tab == MainTab.CATALOG) MainTab.HOME else tab, printing = route == Routes.LABELS,
                     onTab = onTab, onScan = onScan, onPrint = { openTab(Routes.LABELS) },
                 )
                 AppNavHost(
@@ -288,6 +290,7 @@ private fun AppNavHost(
                 employee, onBack = { nav.popBackStack() },
                 onScannerSettings = { nav.navigate(Routes.SCANNER_SETTINGS) },
                 onOperations = { nav.navigate(Routes.OPERATIONS) },
+                onPrint = { nav.navigate(Routes.LABELS) },
                 onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,

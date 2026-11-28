@@ -78,6 +78,8 @@ fun ProfileScreen(
     onMyShop: (() -> Unit)? = null,
     onScannerSettings: () -> Unit = {},
     onOperations: () -> Unit = {},
+    /** «Друк цінників» — перенесено сюди з нижньої панелі. */
+    onPrint: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
@@ -105,7 +107,7 @@ fun ProfileScreen(
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,
         ),
-        onScannerSettings = onScannerSettings, onOperations = onOperations,
+        onScannerSettings = onScannerSettings, onOperations = onOperations, onPrint = onPrint,
         onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onPrinters = { onPrinters?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
@@ -208,6 +210,7 @@ fun ProfileContent(
     onCheckUpdate: () -> Unit = {},
     onScannerSettings: () -> Unit = {},
     onOperations: () -> Unit = {},
+    onPrint: () -> Unit = {},
 ) {
     val m = Mine.colors
     Column(
@@ -246,6 +249,7 @@ fun ProfileContent(
         ProfileSection("Робота")
         ProfileGroup {
             val rows = buildList<@Composable () -> Unit> {
+                add { ProfileRow(R.drawable.ic_redesign_printer, "Друк цінників", "Пакетний друк", onClick = onPrint) }
                 if (ui.networkAdmin) add { ProfileRow(R.drawable.ic_redesign_users, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin) }
                 if (ui.myShop) add { ProfileRow(R.drawable.ic_redesign_users, "Мій магазин", "Співробітники, запити", onClick = onMyShop) }
                 if (ui.admin) add { ProfileRow(R.drawable.ic_redesign_printer, "Принтери", "Налаштування друку", onClick = onPrinters) }

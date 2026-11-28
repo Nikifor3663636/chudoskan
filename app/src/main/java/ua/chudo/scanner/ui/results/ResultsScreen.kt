@@ -295,7 +295,8 @@ fun ResultsScreen(
             SearchChip("Є в магазині", selected = shopOnly, onClick = { shopOnly = !shopOnly })
             SearchChip("Акції", selected = promoOnly, onClick = { promoOnly = !promoOnly })
             SearchChip("Новинки", selected = newOnly, onClick = { newOnly = !newOnly })
-            SearchChip("Каталог", icon = R.drawable.ic_redesign_layout_grid, onClick = onCatalog)
+            // На телефоні «Каталог» — вкладка нижньої панелі; на планшеті панелі немає, лишаємо чип.
+            if (tablet) SearchChip("Каталог", icon = R.drawable.ic_redesign_layout_grid, onClick = onCatalog)
         }
         Box(Modifier.fillMaxSize()) {
             AnimatedContent(targetState = state, label = "results", contentKey = { it::class }) { s ->
