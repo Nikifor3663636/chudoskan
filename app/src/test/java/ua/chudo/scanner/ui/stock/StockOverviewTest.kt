@@ -3,7 +3,6 @@ package ua.chudo.scanner.ui.stock
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import ua.chudo.scanner.data.NetItem
-import ua.chudo.scanner.data.SbStockRow
 import ua.chudo.scanner.data.StoreDoc
 
 class StockOverviewTest {
@@ -13,16 +12,13 @@ class StockOverviewTest {
         "41" to StoreDoc("ЧО 41 · Дніпро", "Дніпро", null),
     )
 
-    @Test fun lowStockKeepsOnlyEndingItemsAvailableInCity() {
-        val rows = listOf(
-            SbStockRow("1", "Багато", q = mapOf("22" to 5.0, "62" to 3.0)),
-            SbStockRow("2", "Один", q = mapOf("22" to 1.0, "62" to 2.0)),
-            SbStockRow("3", "Немає", q = mapOf("62" to 4.0)),
-            SbStockRow("4", "Лише в Дніпрі", q = mapOf("22" to 0.0, "41" to 9.0)),
-        )
-        val low = lowStock(rows, "22", stores)
-        assertEquals(listOf("3", "2"), low.map { it.row.barcode })
-        assertEquals(4.0, low.first().city, 0.0)
+    @Test fun storeOrderPutsOwnThenCityThenRest() {
+        val all = stores + mapOf("7" to StoreDoc("ЧО 7", "Одеса", null), "3" to StoreDoc("ЧО 3", "Київ", null))
+        assertEquals(listOf("22", "7", "62", "41", "3"), storeOrder(all, "22").map { it.first })
+    }
+
+    @Test fun storeOrderWithoutOwnSortsByCityAndNumber() {
+        assertEquals(listOf("41", "22", "62"), storeOrder(stores, null).map { it.first })
     }
 
     @Test fun networkCitiesPutOwnStoreAndCityFirst() {

@@ -2,6 +2,8 @@ package ua.chudo.scanner.ui.stock
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,29 +43,26 @@ import ua.chudo.scanner.R
 import ua.chudo.scanner.data.SbStockRow
 import ua.chudo.scanner.data.ShopStockInfo
 import ua.chudo.scanner.data.StoreDoc
+import ua.chudo.scanner.data.StoreItem
 import ua.chudo.scanner.ui.theme.Mine
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** Вкладки огляду залишків. */
-enum class StockTab(val title: String) { PROMO("Акції"), NEW("Новинки"), LOW("Закінчуються") }
-
-/** Товар, що закінчується: у своєму магазині ≤ 1 шт, а в місті ще є. */
-data class LowItem(val row: SbStockRow, val own: Double, val city: Double)
-
-/** Відбір «Закінчуються»: свій магазин ≤ 1, інші магазини міста > 0; спершу «немає», далі за назвою. */
-fun lowStock(rows: List<SbStockRow>, ownCode: String, stores: Map<String, StoreDoc>): List<LowItem> {
-    val ownCity = stores[ownCode]?.city?.trim()?.lowercase()
-    return rows.mapNotNull { r ->
-        val own = r.q[ownCode] ?: 0.0
-        if (own > 1.0) return@mapNotNull null
-        val city = r.q.filter { (code, qty) ->
-            code != ownCode && qty > 0 && (ownCity == null || stores[code]?.city?.trim()?.lowercase() == ownCity)
-        }.values.sum()
-        if (city <= 0.0) null else LowItem(r, own, city)
-    }.sortedWith(compareBy<LowItem> { it.own }.thenBy { it.row.name })
+/**
+ * Порядок магазинів у «Залишки по магазинах»: свій першим, далі магазини свого міста,
+ * далі решта — за містом; усередині — за номером ЧО.
+ */
+fun storeOrder(stores: Map<String, StoreDoc>, own: String?): List<Pair<String, StoreDoc>> {
+    val ownCity = own?.let { stores[it]?.city?.trim()?.lowercase() }
+    fun num(code: String) = code.toIntOrNull() ?: Int.MAX_VALUE
+    return stores.entries.sortedWith(
+        compareBy<Map.Entry<String, StoreDoc>> { it.key != own }
+            .thenBy { ownCity == null || it.value.city.trim().lowercase() != ownCity }
+            .thenBy { it.value.city.trim().lowercase() }
+            .thenBy { num(it.key) }.thenBy { it.key },
+    ).map { it.key to it.value }
 }
 
 /** «Оновлено сьогодні о 09:30» / «Оновлено 25.11 о 09:30». */
@@ -113,39 +112,39 @@ fun StockBanner(info: ShopStockInfo?, stores: Int, modifier: Modifier = Modifier
     }
 }
 
+/** Магазини мережі великими пігулками: свій — «Мій · ЧО 22». Гортаються вбік. */
 @Composable
-fun StockSegments(tab: StockTab, counts: Map<StockTab, Long?>, onTab: (StockTab) -> Unit, modifier: Modifier = Modifier) {
+fun StoreChips(stores: List<Pair<String, StoreDoc>>, own: String?, selected: String?, onPick: (String) -> Unit, modifier: Modifier = Modifier) {
     val m = Mine.colors
     Row(
-        modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(50))
-            .border(1.dp, m.line, RoundedCornerShape(50)).selectableGroup().padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        StockTab.entries.forEach { t ->
-            val selected = t == tab
+        stores.forEach { (code, store) ->
+            val active = code == selected
             Surface(
-                Modifier.weight(1f).height(40.dp).selectable(selected, role = Role.Tab, onClick = { onTab(t) }),
-                shape = RoundedCornerShape(50), border = if (selected) BorderStroke(1.dp, m.line) else null,
-                color = if (selected) m.card else Color.Transparent,
+                Modifier.height(52.dp).selectable(active, role = Role.Tab, onClick = { onPick(code) }),
+                shape = RoundedCornerShape(16.dp), color = if (active) m.accentTone else m.card,
+                border = BorderStroke(1.dp, if (active) m.accentTone else m.line),
             ) {
-                Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Text(t.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (selected) m.text else m.textSecondary, maxLines = 1)
-                    counts[t]?.let {
-                        Spacer(Modifier.width(6.dp))
-                        Text("$it", fontSize = 12.sp, color = m.textTertiary)
-                    }
+                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.Center) {
+                    Text(
+                        (if (code == own) "Мій · " else "") + "ЧО $code", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = if (active) m.link else m.text, maxLines = 1,
+                    )
+                    if (store.city.isNotBlank()) Text(store.city, fontSize = 12.sp, color = m.textTertiary, maxLines = 1)
                 }
             }
         }
     }
 }
 
-/** Рядок товару, що закінчується: «1 шт» жовтим або «немає», під ним — скільки в місті. */
+/** Товар у вибраному магазині: назва, артикул і кількість великим праворуч. */
 @Composable
-fun LowStockRow(item: LowItem, onClick: () -> Unit) {
+fun StoreItemRow(item: StoreItem, onClick: () -> Unit) {
     val m = Mine.colors
     Row(
-        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick).heightIn(min = 56.dp)
+        Modifier.fillMaxWidth().background(m.card).clickable(onClick = onClick).heightIn(min = 64.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -154,20 +153,14 @@ fun LowStockRow(item: LowItem, onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) { Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(22.dp), tint = m.textTertiary) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(item.row.name.ifBlank { item.row.barcode }, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.item.name.ifBlank { item.barcode }, fontSize = 15.sp, lineHeight = 19.5.sp, fontWeight = FontWeight.Medium, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
-                listOf(item.row.article.takeIf(String::isNotBlank)?.let { "арт. $it" }, item.row.barcode.takeIf(String::isNotBlank))
+                listOf(item.item.article.takeIf(String::isNotBlank)?.let { "арт. $it" }, item.item.code.takeIf(String::isNotBlank))
                     .filterNotNull().joinToString(" · "),
                 fontSize = 13.sp, color = m.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                if (item.own > 0) "${item.own.toLong()} шт" else "немає", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                color = if (item.own > 0) m.warningText else m.textTertiary,
-            )
-            Text("у місті ${item.city.toLong()}", fontSize = 13.sp, color = m.textTertiary)
-        }
+        Text("${qtyText(item.qty)} шт", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = m.text)
     }
     HorizontalDivider(color = m.line)
 }
