@@ -288,6 +288,7 @@ private fun AppNavHost(
                 employee, onBack = { nav.popBackStack() },
                 onScannerSettings = { nav.navigate(Routes.SCANNER_SETTINGS) },
                 onOperations = { nav.navigate(Routes.OPERATIONS) },
+                onPrint = { nav.navigate(Routes.LABELS) },
                 onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
