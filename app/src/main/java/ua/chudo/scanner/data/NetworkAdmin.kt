@@ -207,9 +207,19 @@ class NetworkAdminRepository(private val db: FirebaseFirestore) {
     /** Останні дії (лише superAdmin читає журнал). */
     suspend fun history(limit: Long = 100): List<AdminLogEntry> =
         if (Backend.isSupabase) SupabaseUsers.history(limit) else db.collection("adminLog").orderBy("at", Query.Direction.DESCENDING).limit(limit).get().await().documents.map {
-            AdminLogEntry(it.id, it.getString("by").orEmpty(), it.getString("action").orEmpty(), it.getString("target").orEmpty(),
-                it.getString("shopId").orEmpty(), it.getString("details").orEmpty(), (it.get("at") as? Timestamp)?.toDate())
+            it.toLogEntry()
         }
+
+    /** Журнал свого магазину для адміна магазину (правила пускають лише до свого shopId). */
+    suspend fun shopHistory(shopId: String, limit: Long = 30): List<AdminLogEntry> =
+        if (Backend.isSupabase) SupabaseUsers.history(limit, shopId)
+        else db.collection("adminLog").whereEqualTo("shopId", shopId).limit(200).get().await().documents
+            .map { it.toLogEntry() }.sortedByDescending { it.at }.take(limit.toInt())
+
+    private fun DocumentSnapshot.toLogEntry() = AdminLogEntry(
+        id, getString("by").orEmpty(), getString("action").orEmpty(), getString("target").orEmpty(),
+        getString("shopId").orEmpty(), getString("details").orEmpty(), (get("at") as? Timestamp)?.toDate(),
+    )
 
     /** Нові й змінені анкети (Realtime) — адмін бачить їх без «Оновити». Firestore — без підписки. */
     fun staffChanges(): kotlinx.coroutines.flow.Flow<Unit> =

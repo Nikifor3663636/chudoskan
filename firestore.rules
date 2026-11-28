@@ -314,8 +314,12 @@ service cloud.firestore {
         && request.resource.data.action is string && request.resource.data.action.size() <= 100
         && (!('target' in request.resource.data) || (request.resource.data.target is string && request.resource.data.target.size() <= 200))
         && (!('shopId' in request.resource.data) || request.resource.data.shopId is string)
+        // Адмін магазину пише лише про свій магазин — інакше засмітив би журнал чужого.
+        && (isSuperAdmin() || isStockAdmin() || !('shopId' in request.resource.data) || request.resource.data.shopId == me().get('shopId', ''))
         && (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 1000));
-      allow read: if isSuperAdmin();
+      // Адмін мережі — увесь журнал; адмін магазину — записи свого магазину («Мій магазин» → «Журнал дій»).
+      allow read: if isSuperAdmin()
+        || (isAdmin() && resource.data.get('shopId', '') != '' && resource.data.get('shopId', '') == me().get('shopId', ''));
       allow update, delete: if false;
     }
   }

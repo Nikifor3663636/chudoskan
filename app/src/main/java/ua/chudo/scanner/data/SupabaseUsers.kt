@@ -156,8 +156,12 @@ object SupabaseUsers {
         })
     }
 
-    suspend fun history(limit: Long): List<AdminLogEntry> =
-        db.from("admin_log").select { order("at", Order.DESCENDING); limit(limit) }.decodeList<LogRow>().map { r ->
+    /** [shopId] — лише записи цього магазину («Мій магазин»); null — увесь журнал (адмін мережі). */
+    suspend fun history(limit: Long, shopId: String? = null): List<AdminLogEntry> =
+        db.from("admin_log").select {
+            shopId?.let { s -> filter { eq("shop_id", s) } }
+            order("at", Order.DESCENDING); limit(limit)
+        }.decodeList<LogRow>().map { r ->
             val text = (r.details as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: r.details?.toString().orEmpty()
             AdminLogEntry(r.id.toString(), r.byUid, r.action, r.target.orEmpty(), r.shopId.orEmpty(), text, parseTime(r.at))
         }
