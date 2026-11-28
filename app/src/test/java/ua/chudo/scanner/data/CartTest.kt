@@ -54,4 +54,16 @@ class CartTest {
         assertFalse(Cart.overStock(line("3", 100, qty = 2, inShop = 2.0)))
         assertFalse(Cart.overStock(line("3", 100, qty = 9, inShop = null)))
     }
+
+    @Test fun productWithoutBarcodeGoesInByItsSiteKey() {
+        val line = CartLine(Cart.SITE + "lego-city", "LEGO City", article = "60510", priceKop = 97300)
+        val once = Cart.addKnown(emptyList(), line.copy(qty = 7, loading = true))
+        org.junit.Assert.assertEquals(1, once.single().qty)
+        org.junit.Assert.assertFalse(once.single().loading)
+        val twice = Cart.addKnown(once, line)
+        org.junit.Assert.assertEquals(2, twice.single().qty)
+        org.junit.Assert.assertTrue(Cart.isSiteKey(twice.single().barcode))
+        org.junit.Assert.assertEquals("60510", Cart.cashierCode(twice.single()))
+        org.junit.Assert.assertEquals("4820000000103", Cart.cashierCode(CartLine("4820000000103", "М’яч")))
+    }
 }

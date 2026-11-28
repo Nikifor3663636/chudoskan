@@ -1,5 +1,6 @@
 package ua.chudo.scanner.data
 
+import uniffi.chudo_core.ProductDetails
 import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +69,21 @@ object Cart {
         return (listOf(CartLine(barcode, name = barcode, loading = true)) + lines) to true
     }
 
+    /** Ключ рядка для товару без штрихкоду (відкрили з пошуку чи каталогу): «site:<url_key>». */
+    const val SITE = "site:"
+
+    fun isSiteKey(key: String): Boolean = key.startsWith(SITE)
+
+    /** Код для каси: штрихкод, а для товару з сайту без штрихкоду — артикул або код 1С. */
+    fun cashierCode(l: CartLine): String = if (isSiteKey(l.barcode)) l.article.ifBlank { l.code1C } else l.barcode
+
+    /** Товар, про який уже все відомо (з картки): той самий ключ — +1, новий — нагору готовим рядком. */
+    fun addKnown(lines: List<CartLine>, line: CartLine): List<CartLine> {
+        val i = lines.indexOfFirst { it.barcode == line.barcode }
+        if (i >= 0) return lines.toMutableList().also { it[i] = it[i].copy(qty = (it[i].qty + 1).coerceAtMost(MAX_QTY)) }
+        return listOf(line.copy(qty = 1, loading = false, failed = false)) + lines
+    }
+
     /** 0 і менше — прибрати рядок. */
     fun setQty(lines: List<CartLine>, barcode: String, qty: Int): List<CartLine> =
         if (qty <= 0) lines.filter { it.barcode != barcode }
@@ -119,6 +135,24 @@ class CartRepository(
         _lines.update { cur -> Cart.add(cur, bc).also { isNew = it.second }.first }
         save()
         if (isNew) resolve(bc) else describeLast(bc)
+    }
+
+    /**
+     * «У кошик» з картки товару: назва, ціна й фото вже є, тож нічого не шукаємо.
+     * Без штрихкоду рядок отримує ключ «site:<url_key>» — касир побачить артикул.
+     */
+    fun addProduct(p: ProductDetails, barcode: String?, av: NetAvailability?) {
+        val key = barcode?.takeIf(String::isNotBlank) ?: (Cart.SITE + p.urlKey)
+        val price = Cart.kop(p.price?.finalPrice)
+        val line = CartLine(
+            barcode = key, name = p.name, article = p.article.orEmpty(), code1C = av?.item?.code.orEmpty(),
+            image = p.images.firstOrNull(), urlKey = p.urlKey, priceKop = price,
+            regularKop = Cart.kop(p.price?.regularPrice)?.takeIf { price != null && it > price },
+            inShop = av?.own,
+        )
+        _lines.update { Cart.addKnown(it, line) }
+        save()
+        describeLast(key)
     }
 
     fun setQty(barcode: String, qty: Int) { _lines.update { Cart.setQty(it, barcode, qty) }; save() }
