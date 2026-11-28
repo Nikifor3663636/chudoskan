@@ -459,6 +459,13 @@ private fun AppNavHost(
                 navArgument("cat") { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument("n") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
+            // З головної поле пошуку «піднімається» знизу вгору.
+            enterTransition = {
+                if (initialState.destination.route == Routes.HOME)
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 4 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))
+                else null
+            },
         ) { resultsEntry ->
             var selection by rememberSaveable { mutableStateOf<List<String?>?>(null) }
             val results: @Composable () -> Unit = {
