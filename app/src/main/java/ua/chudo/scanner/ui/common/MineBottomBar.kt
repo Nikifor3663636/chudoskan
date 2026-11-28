@@ -114,26 +114,23 @@ fun MineBottomBar(
     }
 }
 
+/** Розміри однакові для всіх клітинок: пігулки на одній лінії, підписи — на одній базовій лінії. */
+internal val TabPillWidth = 64.dp
+internal val TabPillHeight = 44.dp
+
+/** Сканер: така сама клітинка, як вкладки, лише пігулка завжди фірмового кольору. */
 @Composable
 private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
     val m = Mine.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(120), label = "scanKeyScale")
-    Column(
-        Modifier.weight(1f).fillMaxHeight()
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
+    TabCell(
+        Modifier.clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
             .semantics { contentDescription = label },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            Modifier.scale(scale).size(width = 72.dp, height = 60.dp).clip(RoundedCornerShape(20.dp)).background(m.accent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(32.dp), tint = m.onAccent)
-        }
-    }
+        pill = m.accent, pillScale = scale, icon = R.drawable.ic_redesign_scan_barcode, iconTint = m.onAccent,
+        label = "Скан", labelColor = m.textSecondary, bold = false,
+    )
 }
 
 @Composable
@@ -145,24 +142,40 @@ private fun RowScope.TabItem(
 ) {
     val m = Mine.colors
     val active = tab == selected
+    TabCell(
+        Modifier.selectable(active, role = Role.Tab, onClick = { onTab(tab) }),
+        pill = if (active) m.accentTone else Color.Transparent, icon = icon,
+        iconTint = if (active) m.link else m.textSecondary,
+        label = phoneTabLabel(tab), labelColor = if (active) m.text else m.textSecondary, bold = active,
+    )
+}
+
+@Composable
+private fun RowScope.TabCell(
+    modifier: Modifier,
+    pill: Color,
+    @DrawableRes icon: Int,
+    iconTint: Color,
+    label: String,
+    labelColor: Color,
+    bold: Boolean,
+    pillScale: Float = 1f,
+) {
     Column(
-        Modifier.weight(1f).fillMaxHeight()
-            .selectable(active, role = Role.Tab, onClick = { onTab(tab) }),
+        Modifier.weight(1f).fillMaxHeight().then(modifier),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
     ) {
         Box(
-            Modifier.size(width = 64.dp, height = 40.dp).clip(RoundedCornerShape(50))
-                .background(if (active) m.accentTone else Color.Transparent),
+            Modifier.scale(pillScale).size(width = TabPillWidth, height = TabPillHeight).clip(RoundedCornerShape(50)).background(pill),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(icon), null, Modifier.size(28.dp), tint = if (active) m.link else m.textSecondary)
+            Icon(painterResource(icon), null, Modifier.size(28.dp), tint = iconTint)
         }
         Text(
-            phoneTabLabel(tab), maxLines = 1, softWrap = false,
-            fontSize = 14.sp, lineHeight = 16.sp, letterSpacing = 0.sp,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-            color = if (active) m.text else m.textSecondary,
+            label, Modifier.height(18.dp), maxLines = 1, softWrap = false,
+            fontSize = 14.sp, lineHeight = 18.sp, letterSpacing = 0.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium, color = labelColor,
         )
     }
 }
