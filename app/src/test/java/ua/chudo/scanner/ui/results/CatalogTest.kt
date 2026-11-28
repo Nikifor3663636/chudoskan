@@ -43,4 +43,10 @@ class CatalogTest {
         assertEquals("Конструктори", r.query)
         assertTrue((categoryResult("Порожня", emptyList()) as ResultsState.Done).result is LookupResult.NotFound)
     }
+
+    @Test fun categoryPageSaysItIsOnlyTheFirst() {
+        assertEquals("Перші 60 з 2 234", categoryHeader(60, 2234))
+        assertEquals(null, categoryHeader(12, 12))
+        assertEquals(null, categoryHeader(60, null))
+    }
 }

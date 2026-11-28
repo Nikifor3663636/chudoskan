@@ -91,6 +91,10 @@ internal class CatalogViewModel(private val load: suspend () -> List<Category>) 
 /** «1284» → «1 284» з нерозривним пробілом, як у макеті. */
 fun groupDigits(n: Long): String = n.toString().reversed().chunked(3).joinToString(" ").reversed()
 
+/** Заголовок товарів категорії: сторінка менша за категорію — «Перші 60 з 2 234». */
+fun categoryHeader(shown: Int, total: Int?): String? =
+    total?.takeIf { it > shown }?.let { "Перші $shown з ${groupDigits(it.toLong())}" }
+
 @Composable
 fun CatalogScreen(onBack: () -> Unit, onCategory: (Category) -> Unit) {
     val app = LocalContext.current.chudoApp

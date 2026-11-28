@@ -118,7 +118,7 @@ private const val CART_MODE = "cart"
 private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
-    const val RESULTS = "results?q={q}&cat={cat}"
+    const val RESULTS = "results?q={q}&cat={cat}&n={n}"
     const val CATALOG = "catalog"
     const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
@@ -148,7 +148,7 @@ private object Routes {
 
     fun scan(price: Boolean = false) = if (price) "scan?mode=price" else "scan?mode=barcode"
     fun results(q: String) = if (q.isEmpty()) "results" else "results?q=${Uri.encode(q)}"
-    fun category(uid: String, title: String) = "results?q=${Uri.encode(title)}&cat=${Uri.encode(uid)}"
+    fun category(uid: String, title: String, total: UInt) = "results?q=${Uri.encode(title)}&cat=${Uri.encode(uid)}&n=$total"
     fun product(urlKey: String, bc: String?, scanned: String? = null, print: Boolean = false): String {
         val query = listOfNotNull(
             bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" }, "print=true".takeIf { print },
@@ -448,13 +448,14 @@ private fun AppNavHost(
             )
         }
         composable(Routes.CATALOG) {
-            CatalogScreen(onBack = { nav.popBackStack() }, onCategory = { nav.navigate(Routes.category(it.uid, it.name)) })
+            CatalogScreen(onBack = { nav.popBackStack() }, onCategory = { nav.navigate(Routes.category(it.uid, it.name, it.count)) })
         }
         composable(
             Routes.RESULTS,
             arguments = listOf(
                 navArgument("q") { type = NavType.StringType; defaultValue = "" },
                 navArgument("cat") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("n") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
         ) { resultsEntry ->
             var selection by rememberSaveable { mutableStateOf<List<String?>?>(null) }

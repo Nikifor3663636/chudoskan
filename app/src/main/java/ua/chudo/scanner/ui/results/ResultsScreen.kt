@@ -145,6 +145,8 @@ internal class ResultsViewModel(
     val query: String = checkNotNull(handle["q"])
     /** `uid` категорії з «Каталогу»: тоді `query` — її назва, а товари беремо з категорії. */
     val category: String? = handle.get<String>("cat")?.takeIf(String::isNotBlank)
+    /** Скільки всього товарів у категорії (з «Каталогу»): показуємо лише першу сторінку. */
+    val categoryTotal: Int? = handle.get<String>("n")?.toIntOrNull()?.takeIf { category != null }
     private val _state = MutableStateFlow<ResultsState>(if (query.isBlank()) ResultsState.Empty else ResultsState.Loading("Шукаємо…"))
     val state = _state.asStateFlow()
     private var job: Job? = null
@@ -325,7 +327,7 @@ fun ResultsScreen(
                         is LookupResult.Many -> {
                             val filters = SearchFilters(shopOnly, promoOnly, newOnly)
                             val items = applySearchFilters(r.items, filters, own, newArticles)
-                            ManyList(r, items, selectedProduct, own, filters.any) { urlKey ->
+                            ManyList(r, items, selectedProduct, own, filters.any, vm.categoryTotal) { urlKey ->
                                 val bc = r.barcode.takeIf { r.via !is Via.Direct }
                                 onBrowseProducts(items.map { it.urlKey }.distinct())
                                 onOpenProduct(urlKey, bc, null, false)
@@ -635,12 +637,18 @@ private fun ManyList(
     selectedProduct: String?,
     own: Map<String, Double>,
     filtered: Boolean,
+    categoryTotal: Int?,
     onClick: (String) -> Unit,
 ) {
     val m = Mine.colors
     LazyColumn {
         item {
             val count = products.size
+            categoryHeader(count, categoryTotal.takeUnless { filtered })?.let { header ->
+                SearchSection(header)
+                if (products.isNotEmpty()) HorizontalDivider(color = m.line)
+                return@item
+            }
             val noun = when {
                 count % 100 in 11..14 -> "товарів"
                 count % 10 == 1 -> "товар"
