@@ -249,7 +249,7 @@ flowchart TB
 | [`app/`](app) | 🤖 Android: `data/` · `print/` · `ui/{home,scan,results,product,stock,orders,admin,auth,profile}` |
 | [`shared/`](shared) | 🍏🌐 Kotlin Multiplatform: екрани iPhone і веб-версія, Firebase через REST |
 | [`printer/`](printer) | 💻 «ЧудоСкан Друк»: Core, тести, WinForms, установник Inno Setup |
-| [`supabase/`](supabase) | 🐘 Supabase: схема й RLS (`migrations/`), pgTAP-тести прав (`tests/`), Edge Function `ensure-role` |
+| [`supabase/`](supabase) | 🐘 Supabase: схема й RLS (`migrations/`), pgTAP-тести прав (`tests/`), Edge Functions `ensure-role`, `reset-password` |
 | [`scripts/`](scripts) | Перенесення Firestore → Supabase, `backfill-role`, вигрузка 1С `upload-stock-csv` (`npm test`) |
 | [`rules-tests/`](rules-tests) | 🔒 Тести `firestore.rules` на емуляторі (до вимкнення Firestore) |
 | [`proxy/`](proxy) | ☁️ Посередник Cloudflare Workers (сайт мережі не віддає CORS) |
@@ -294,6 +294,7 @@ supabase link --project-ref wbboztsxzuxfocdqjyzk
 supabase db push                                  # міграції supabase/migrations
 supabase start && supabase test db                # pgTAP-тести прав (як у CI, потрібен Docker)
 supabase functions deploy ensure-role --no-verify-jwt
+supabase functions deploy reset-password --no-verify-jwt   # скидання пароля адміном магазину
 supabase secrets set --env-file <файл з FIREBASE_SERVICE_ACCOUNT>
 ```
 

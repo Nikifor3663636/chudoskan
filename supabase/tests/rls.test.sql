@@ -579,5 +579,48 @@ reset role;
 select is(app.request_device_enrollment('emp22', 1, decode('04' || repeat('02', 64), 'hex'), '192.0.2.4'),
   'blocked', 'blocked key cannot re-enroll from a different IP');
 
+-- ===================== Запити на скидання пароля =====================
+reset role;
+select set_config('request.headers', '{}', true);
+delete from app.device_required;
+update users set phone = '+380671234567' where uid = 'emp22';
+update users set phone = '+380671234568' where uid = 'emp62';
+select tests.anon();
+select is(request_password_reset('+380671234567', '22'), 'ok', 'анонім створює запит із номером і магазином');
+select is(request_password_reset('+380671234567', '22'), 'too_soon', 'повторний запит на номер за 10 хв не створюється');
+select is(request_password_reset('0671234567', '22'), 'bad_phone', 'номер не у форматі +380XXXXXXXXX');
+select is(request_password_reset('+380671234569', '999'), 'bad_shop', 'неіснуючий магазин');
+select is(request_password_reset('+380500000000', '22'), 'ok', 'невідомий номер — та сама відповідь (номери не перебрати)');
+select is(request_password_reset('+380671234568', '22'), 'ok', 'запит на співробітника ЧО 62 від імені ЧО 22');
+select ok(tests.no($select * from password_requests$), 'анонім не читає запити');
+select ok(tests.no($insert into password_requests (phone, shop_id) values ('+380671111111', '22')$), 'анонім не пише в таблицю напряму');
+
+select tests.login('emp22');
+select ok(tests.no($select * from password_requests$), 'співробітник не бачить запитів');
+select is((select count(*)::int from password_requests_for('22')), 0, 'співробітник не отримує список');
+select tests.login('adm62');
+select ok(tests.no($select * from password_requests where shop_id = '22'$), 'адмін ЧО 62 не бачить запитів ЧО 22');
+select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234567')),
+  '42501', null, 'адмін ЧО 62 не скидає пароль у ЧО 22');
+select tests.login('adm22');
+select is((select count(*)::int from password_requests where shop_id = '22'), 3, 'адмін ЧО 22 бачить запити свого магазину');
+select is((select name from password_requests_for('22') where phone = '+380671234567'), 'Оля', 'у списку — ім’я з анкети');
+select is(password_reset_target((select id from password_requests where phone = '+380671234567')), 'emp22', 'адмін ЧО 22 скидає пароль свого співробітника');
+select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234568')),
+  'P0002', null, 'співробітника іншого магазину не скинути, навіть якщо запит у своєму');
+select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380500000000')),
+  'P0002', null, 'невідомий номер — нікого скидати');
+select lives_ok(format('select password_reset_finish(%L)', (select id from password_requests where phone = '+380671234567')),
+  'скидання закриває запит');
+select is((select status from password_requests where phone = '+380671234567'), 'done', 'запит закрито');
+select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234567')),
+  'P0001', null, 'закритий запит удруге не скинути');
+select ok(tests.ok($update password_requests set status = 'rejected', done_by = 'adm22', done_at = now() where phone = '+380500000000'$),
+  'адмін відхиляє запит свого магазину');
+select ok(tests.no($update password_requests set status = 'done', done_by = 'adm22' where phone = '+380500000000'$),
+  'адмін не ставить «done» в обхід скидання');
+select tests.login('sup');
+select is((select count(*)::int from admin_log where action = 'passwordReset' and target = 'emp22'), 1, 'скидання — у журналі дій');
+
 select * from finish();
 rollback;
