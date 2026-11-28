@@ -645,7 +645,7 @@ select tests.login('adm62');
 select ok(tests.no($$update users set job_title = 'senior' where uid = 'emp22'$$), 'адмін ЧО 62 не ставить посаду в ЧО 22');
 select tests.login('adm22');
 select ok(tests.no($$update users set job_title = 'boss' where uid = 'emp22'$$), 'невідома посада не пройде');
-select ok(tests.ok($$update users set job_title = 'senior' where uid = 'emp22'$$), 'адмін ЧО 22 ставить посаду співробітнику');
+select is(tests.run($$update users set job_title = 'senior' where uid = 'emp22'$$), 1, 'адмін ЧО 22 ставить посаду співробітнику');
 select lives_ok($$update users set job_title = 'manager' where uid = 'adm22'$$, 'адмін ставить посаду собі');
 select tests.login('emp22');
 select is((select count(*)::int from shop_team()), 2, 'співробітник бачить колектив: лише підтверджених свого магазину');
