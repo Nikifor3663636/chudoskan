@@ -64,3 +64,28 @@ fn upc_resolves_lego_set_number() {
     assert!(!c.contains(&"3789627".to_string()), "мусорное поле model не используется");
     assert!(upc_title(&json).unwrap().contains("Lego"));
 }
+
+// Категорії зняті з сайту 28.11.2026 (запит build_categories_body).
+#[test]
+fn categories_menu_in_site_order() {
+    use chudo_core::graphql::parse_categories;
+    let c = parse_categories(&fixture("categories_ua.json")).unwrap();
+    let names: Vec<&str> = c.iter().map(|x| x.name.as_str()).collect();
+    assert_eq!(names[0], "Конструктори", "сортування за позицією меню");
+    assert_eq!(c[0].count, 2234);
+    assert_eq!(c[0].uid, "Mjc=");
+    assert!(!names.contains(&"Іграшки"), "категорія на весь каталог прихована");
+    assert!(names.iter().all(|n| !n.to_lowercase().contains("тест")), "тестові приховані");
+    assert_eq!(names.iter().filter(|n| **n == "Конструктори").count(), 1, "повтор назви прибрано");
+    assert!(names.iter().all(|n| n.trim() == *n), "пробіли по краях прибрано");
+    assert!(!c[0].children.is_empty());
+    assert!(c[0].children.iter().all(|s| s.count > 0 && s.count < c[0].count));
+}
+
+#[test]
+fn category_products_parse_as_search() {
+    let r = parse_search(&fixture("category_konstruktory.json"), "").unwrap();
+    assert_eq!(r.len(), 4);
+    assert!(r.iter().all(|p| !p.exact_match));
+    assert!(r[0].price.is_some());
+}

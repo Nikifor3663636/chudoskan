@@ -64,6 +64,27 @@ pub struct ProductDetails {
     pub categories: Vec<String>,
 }
 
+/// Категорія каталогу сайту (верхній рівень меню) з підкатегоріями.
+#[derive(Debug, Clone, PartialEq, uniffi::Record, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Category {
+    /// `uid` Magento — за ним шукаємо товари категорії.
+    pub uid: String,
+    pub name: String,
+    pub url_key: String,
+    pub count: u32,
+    pub children: Vec<Subcategory>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Subcategory {
+    pub uid: String,
+    pub name: String,
+    pub url_key: String,
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, uniffi::Record, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShopAvailability {

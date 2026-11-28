@@ -180,6 +180,21 @@ class DesignSnapshots {
         }
     }
 
+    private val demoCategories = listOf(
+        "Конструктори" to 2234, "Ляльки і пупси" to 1554, "Дитячий транспорт" to 1965, "М’які іграшки" to 1601,
+        "Іграшки для творчості" to 2111, "Настільні ігри та пазли" to 1632, "Для активного відпочинку" to 1143, "Для малюків" to 2422,
+    ).mapIndexed { i, (name, n) -> uniffi.chudo_core.Category("c$i", name, "k$i", n.toUInt(), emptyList()) }
+
+    private fun catalog(state: ua.chudo.scanner.ui.results.CatalogState, dark: Boolean = false) = paparazzi.snapshot {
+        ChudoTheme(dark = dark) { ua.chudo.scanner.ui.results.CatalogContent(state, {}, {}, {}) }
+    }
+
+    @Test fun catalogRedesign() = catalog(ua.chudo.scanner.ui.results.CatalogState.Done(demoCategories))
+    @Test fun catalogRedesignDark() = catalog(ua.chudo.scanner.ui.results.CatalogState.Done(demoCategories), dark = true)
+    @Test fun catalogOffline() = catalog(
+        ua.chudo.scanner.ui.results.CatalogState.Failed(ua.chudo.scanner.ui.common.UiError("Немає інтернету", "Перевір підключення і спробуй ще раз.")),
+    )
+
     @Test fun orderPickRedesign() = paparazzi.snapshot {
         val order = DemoOrders.load("").first { it.stage == OrderStage.PICKING }
         ChudoTheme(dark = false) { ua.chudo.scanner.ui.orders.OrderPickContent(order, {}, {}, {}, {}, {}, {}) }
