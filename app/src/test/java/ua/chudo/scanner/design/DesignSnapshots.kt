@@ -181,6 +181,12 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun temporaryPassword() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.auth.TemporaryPasswordForm("Олена Коваль", "", "", false, null, {}, {}, {}, {})
+        }
+    }
+
     @Test fun forgotRedesign() = paparazzi.snapshot {
         ChudoTheme(dark = false) {
             ua.chudo.scanner.ui.auth.ForgotForm(ua.chudo.scanner.ui.auth.ForgotUi("671234567", "ЧО 22 · ТРЦ Gagarin Plaza", false, null, false), {}, {}, {}, {})
