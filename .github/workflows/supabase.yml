@@ -24,3 +24,9 @@ jobs:
       - run: supabase db start
       - run: supabase test db
       - run: supabase db lint --level error
+
+      # Чисті функції Edge Functions (тимчасовий пароль, розбір запиту).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test supabase/functions/reset-password/password.test.ts

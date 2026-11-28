@@ -42,6 +42,7 @@ import ua.chudo.scanner.print.PrinterStatus
 import ua.chudo.scanner.print.Template
 import ua.chudo.scanner.data.DemoOrders
 import ua.chudo.scanner.data.OrderStage
+import ua.chudo.scanner.data.problem
 import ua.chudo.scanner.ui.auth.LoginMineForm
 import ua.chudo.scanner.ui.common.MainTab
 import ua.chudo.scanner.ui.common.MineBottomBar
@@ -180,6 +181,54 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun forgotRedesign() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.auth.ForgotForm(ua.chudo.scanner.ui.auth.ForgotUi("671234567", "ЧО 22 · ТРЦ Gagarin Plaza", false, null, false), {}, {}, {}, {})
+        }
+    }
+
+    @Test fun forgotSent() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.auth.ForgotForm(ua.chudo.scanner.ui.auth.ForgotUi("671234567", "ЧО 22 · ТРЦ Gagarin Plaza", false, null, true), {}, {}, {}, {})
+        }
+    }
+
+    @Test fun forgotTooSoon() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.auth.ForgotForm(
+                ua.chudo.scanner.ui.auth.ForgotUi(
+                    "671234567", "ЧО 22 · ТРЦ Gagarin Plaza", false,
+                    ua.chudo.scanner.data.ResetRequestResult.TOO_SOON.problem(), false,
+                ),
+                {}, {}, {}, {},
+            )
+        }
+    }
+
+    @Test fun myShopResets() = paparazzi.snapshot {
+        val zone = java.time.ZoneId.systemDefault()
+        val now = java.util.Date.from(java.time.LocalDate.now(zone).atTime(10, 42).atZone(zone).toInstant())
+        val resets = listOf(
+            ua.chudo.scanner.data.PasswordRequest("r1", "+380671234567", now, "u3", "Андрій Мельник"),
+            ua.chudo.scanner.data.PasswordRequest("r2", "+380509998877", now, null, null),
+        )
+        val staff = listOf(ua.chudo.scanner.data.StaffMember("u3", "Андрій Мельник", "+380671234567", "s22", "ЧО 22", "odesa", true, false))
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.admin.MyShopContent(
+                "ЧО 22 · ТРЦ Gagarin Plaza", staff, null, null, false, { false }, {}, {}, {}, {}, resets = resets,
+            )
+        }
+    }
+
+    @Test fun tempPasswordDialog() = paparazzi.snapshot {
+        ChudoTheme(dark = false) {
+            Box(Modifier.fillMaxSize().background(Mine.colors.bg)) {
+                ua.chudo.scanner.ui.admin.TempPasswordDialog(
+                    ua.chudo.scanner.data.PasswordRequest("r1", "+380671234567", null, "u3", "Андрій Мельник"), "kP7mQ2xRta",
+                ) {}
+            }
+        }
+    }
     private val demoCategories = listOf(
         "Конструктори" to 2234, "Ляльки і пупси" to 1554, "Дитячий транспорт" to 1965, "М’які іграшки" to 1601,
         "Іграшки для творчості" to 2111, "Настільні ігри та пазли" to 1632, "Для активного відпочинку" to 1143, "Для малюків" to 2422,

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.R
+import ua.chudo.scanner.data.PasswordRequest
 import ua.chudo.scanner.data.StaffMember
 import ua.chudo.scanner.ui.common.formatPhone
 import ua.chudo.scanner.ui.common.maskPhone
@@ -68,6 +69,9 @@ fun MyShopContent(
     onApprove: (StaffMember) -> Unit,
     onReject: (StaffMember) -> Unit,
     onOpen: (StaffMember) -> Unit,
+    resets: List<PasswordRequest> = emptyList(),
+    onReset: (PasswordRequest) -> Unit = {},
+    onDismissReset: (PasswordRequest) -> Unit = {},
 ) {
     val m = Mine.colors
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
@@ -115,6 +119,10 @@ fun MyShopContent(
                     HorizontalDivider(color = m.line)
                 }
             }
+            if (resets.isNotEmpty()) {
+                item { Section("Скидання пароля") }
+                items(resets, key = { "r-" + it.id }) { r -> ResetRow(r, busy, onReset, onDismissReset) }
+            }
             item { Section("Співробітники · ${team.size}") }
             if (team.isEmpty()) item { Note("Підтверджених співробітників ще немає.", m.textSecondary) }
             items(team, key = { "t-" + it.uid }) { s ->
@@ -135,6 +143,81 @@ fun MyShopContent(
             item { Box(Modifier.height(16.dp)) }
         }
     }
+}
+
+/** Запит із «Відновлення пароля»: хто, коли; «Скинути» — лише якщо номер є серед співробітників магазину. */
+@Composable
+private fun ResetRow(r: PasswordRequest, busy: Boolean, onReset: (PasswordRequest) -> Unit, onDismiss: (PasswordRequest) -> Unit) {
+    val m = Mine.colors
+    val phone = maskPhone(formatPhone(r.phone))
+    Row(
+        Modifier.fillMaxWidth().background(m.card).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(36.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_redesign_lock), null, Modifier.size(18.dp), tint = m.textSecondary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(r.name ?: phone, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text)
+                Text(
+                    listOfNotNull(phone.takeIf { r.name != null }, r.createdAt?.let { resetTime(it) }).joinToString(" · "),
+                    fontSize = 13.sp, color = m.textTertiary,
+                )
+                if (r.uid == null) Text("Цього номера немає серед співробітників магазину", fontSize = 13.sp, color = m.warningText)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (r.uid != null) SmallAction("Скинути", primary = true, enabled = !busy) { onReset(r) }
+                SmallAction("Відхилити", primary = false, enabled = !busy) { onDismiss(r) }
+            }
+        }
+    }
+    HorizontalDivider(color = m.line)
+}
+
+/** «сьогодні о 10:42» / «26.11 о 18:20». */
+fun resetTime(at: java.util.Date, zone: java.time.ZoneId = java.time.ZoneId.systemDefault(), today: java.time.LocalDate = java.time.LocalDate.now(zone)): String {
+    val t = at.toInstant().atZone(zone)
+    val hm = t.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+    return when (t.toLocalDate()) {
+        today -> "сьогодні о $hm"
+        today.minusDays(1) -> "учора о $hm"
+        else -> t.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")) + " о $hm"
+    }
+}
+
+/** Тимчасовий пароль показуємо адміну один раз; після «Готово» він ніде не зберігається. */
+@Composable
+fun TempPasswordDialog(r: PasswordRequest, password: String, onDone: () -> Unit) {
+    val m = Mine.colors
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        containerColor = m.card,
+        shape = RoundedCornerShape(12.dp),
+        title = { Text("Тимчасовий пароль", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Для: ${r.name ?: maskPhone(formatPhone(r.phone))}", fontSize = 14.sp, color = m.textSecondary,
+                )
+                Box(
+                    Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp)).border(1.dp, m.line, RoundedCornerShape(8.dp))
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        password, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = m.text, letterSpacing = 2.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                }
+                Text(
+                    "Передайте пароль співробітнику особисто. Після закриття вікна його більше не буде видно. Змінити пароль можна в «Профіль → Змінити пароль».",
+                    fontSize = 13.sp, lineHeight = 18.sp, color = m.textTertiary,
+                )
+            }
+        },
+        confirmButton = { SmallAction("Готово", primary = true, enabled = true, onClick = onDone) },
+    )
 }
 
 @Composable

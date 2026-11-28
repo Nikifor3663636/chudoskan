@@ -92,6 +92,11 @@ import ua.chudo.scanner.ui.common.MinePrimaryButton
 import ua.chudo.scanner.ui.theme.Mine
 import ua.chudo.scanner.ui.theme.ThemeMode
 import ua.chudo.scanner.data.AuthRepository
+import ua.chudo.scanner.data.Backend
+import ua.chudo.scanner.data.PasswordRequests
+import ua.chudo.scanner.data.ResetRequestResult
+import ua.chudo.scanner.data.problem
+import ua.chudo.scanner.data.resetPhone
 import ua.chudo.scanner.data.AuthState
 import ua.chudo.scanner.data.ChudoRepository
 import ua.chudo.scanner.data.Employee
@@ -367,14 +372,116 @@ private fun SignedOutFlow(vm: AuthViewModel) {
                 )
             }
         }
-        SignedOutPage.FORGOT -> ForgotPage { open(SignedOutPage.LOGIN) }
+        SignedOutPage.FORGOT -> ForgotPage(vm) { open(SignedOutPage.LOGIN) }
         SignedOutPage.REGISTER -> ProfileFlow(vm, needsAccount = true, sub = "Крок 1 з 2", onBack = { open(SignedOutPage.LOGIN) })
     }
 }
 
-/** Відновлення пароля: пароль скидає адмін магазину, SMS не потрібні. */
+/** Відновлення пароля: запит адміну магазину (Supabase) або пояснення (резервне сховище Firestore). */
 @Composable
-private fun ForgotPage(onBack: () -> Unit) {
+private fun ForgotPage(vm: AuthViewModel, onBack: () -> Unit) {
+    if (!Backend.isSupabase) return ForgotInfoPage(onBack)
+    val app = LocalContext.current.chudoApp
+    val currentRegion by app.prefs.region.collectAsStateWithLifecycle()
+    var digits by rememberSaveable { mutableStateOf("") }
+    var region by rememberSaveable { mutableStateOf(currentRegion.code) }
+    var shop by rememberSaveable { mutableStateOf("") }
+    var picking by rememberSaveable { mutableStateOf(false) }
+    var sent by rememberSaveable { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(region) { vm.loadShops(region) }
+    if (picking) {
+        androidx.activity.compose.BackHandler { picking = false }
+        ShopPickerPage(
+            vm, region, shop,
+            onRegion = { region = it; shop = "" },
+            onPick = { shop = it; picking = false; error = null },
+            onManual = null,
+            onBack = { picking = false },
+        )
+        return
+    }
+    ForgotForm(
+        ForgotUi(digits, shop, busy, error, sent),
+        onDigits = { digits = it; error = null },
+        onPickShop = { picking = true },
+        onBack = onBack,
+        onSend = {
+            val problem = when {
+                resetPhone(digits) == null -> ResetRequestResult.BAD_PHONE.problem()
+                shop.isBlank() -> "Обери свій магазин."
+                else -> null
+            }
+            if (problem != null) {
+                error = problem
+            } else if (!busy) scope.launch {
+                busy = true
+                error = try {
+                    PasswordRequests.send(digits, AuthRepository.shopId(region, shop)).problem().also { if (it == null) sent = true }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e.authMessage()
+                } finally {
+                    busy = false
+                }
+            }
+        },
+    )
+}
+
+data class ForgotUi(val digits: String, val shop: String, val busy: Boolean, val error: String?, val sent: Boolean)
+
+/** `forgot` з еталона: «Нове», телефон, магазин, «Надіслати запит»; після — «Запит надіслано». */
+@Composable
+fun ForgotForm(ui: ForgotUi, onDigits: (String) -> Unit, onPickShop: () -> Unit, onSend: () -> Unit, onBack: () -> Unit) {
+    val m = Mine.colors
+    AuthNavPage("Відновлення пароля", onBack) {
+        if (ui.sent) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                AuthStateBlock(
+                    R.drawable.ic_redesign_circle_check, "Запит надіслано",
+                    "Адмін магазину побачить його в «Мій магазин» і передасть тимчасовий пароль особисто.",
+                )
+                AuthPrimaryButton("Повернутися до входу", busy = false, onClick = onBack)
+            }
+            return@AuthNavPage
+        }
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(
+                Modifier.height(22.dp).background(m.infoTint, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Нове", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = m.info) }
+            Text(
+                "Пароль скидає адмін вашого магазину — SMS не потрібні. Надішліть запит, і адмін побачить його в «Мій магазин».",
+                fontSize = 15.sp, lineHeight = 22.sp, color = m.text,
+            )
+            AuthField("Телефон") { MinePhoneField(ui.digits, !ui.busy, onChange = onDigits) }
+            AuthField("Магазин", error = ui.error) {
+                AuthInputBox(focused = false, isError = ui.error != null, modifier = Modifier.clickable(enabled = !ui.busy, onClick = onPickShop)) {
+                    Text(
+                        ui.shop.ifBlank { "Оберіть магазин" }, Modifier.weight(1f), fontSize = 16.sp,
+                        color = if (ui.shop.isBlank()) m.textTertiary else m.text, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Icon(painterResource(R.drawable.ic_redesign_chevron_down), null, Modifier.size(18.dp), tint = m.textTertiary)
+                }
+            }
+            AuthPrimaryButton("Надіслати запит", ui.busy, onClick = onSend)
+            Text(
+                "Після скидання адмін передасть тимчасовий пароль особисто. Змінити його можна в «Профіль → Змінити пароль».",
+                fontSize = 13.sp, lineHeight = 18.sp, color = m.textTertiary,
+            )
+        }
+    }
+}
+
+/** Без Supabase запитів немає — лише пояснення, як і раніше. */
+@Composable
+private fun ForgotInfoPage(onBack: () -> Unit) {
     val m = Mine.colors
     AuthNavPage("Відновлення пароля", onBack) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -459,7 +566,7 @@ private fun ShopPickerPage(
     selected: String,
     onRegion: (String) -> Unit,
     onPick: (String) -> Unit,
-    onManual: () -> Unit,
+    onManual: (() -> Unit)?,
     onBack: () -> Unit,
 ) {
     val app = LocalContext.current.chudoApp
@@ -490,14 +597,16 @@ private fun ShopPickerPage(
                 ShopsState.Loading -> Box(Modifier.fillMaxWidth().background(m.card).padding(16.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = m.accent)
                 }
-                ShopsState.Failed -> PickerRow("Не вдалося завантажити магазини — впишіть адресу вручну", selected = false, onClick = onManual)
+                ShopsState.Failed -> if (onManual != null) {
+                    PickerRow("Не вдалося завантажити магазини — впишіть адресу вручну", selected = false, onClick = onManual)
+                } else PickerRow("Не вдалося завантажити магазини — повторити", selected = false) { vm.loadShops(region) }
                 is ShopsState.Loaded -> {
                     val q = query.trim()
                     s.shops.filter { q.isEmpty() || it.contains(q, ignoreCase = true) || regionName.contains(q, ignoreCase = true) }
                         .forEach { address -> PickerRow(address, selected = address == selected) { onPick(address) } }
                 }
             }
-            PickerRow("Мого магазину немає в списку", selected = false, onClick = onManual)
+            onManual?.let { PickerRow("Мого магазину немає в списку", selected = false, onClick = it) }
         }
     }
     if (showRegions) {

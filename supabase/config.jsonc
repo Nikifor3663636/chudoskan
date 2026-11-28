@@ -467,7 +467,9 @@
 
   // ensure-role приймає Firebase ID token і перевіряє його сама (підпис Google, iss/aud).
   "functions": {
-    "ensure-role": { "verify_jwt": false }
+    "ensure-role": { "verify_jwt": false },
+    // reset-password теж перевіряє Firebase ID token сама; права — у базі (password_reset_target).
+    "reset-password": { "verify_jwt": false }
   },
 
   "analytics": {

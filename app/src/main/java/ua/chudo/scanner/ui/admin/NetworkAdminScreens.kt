@@ -81,6 +81,8 @@ data class AdminData(
     val staff: List<StaffMember> = emptyList(),
     val history: List<AdminLogEntry> = emptyList(),
     val stockInfo: NetworkStockInfo? = null,
+    /** «Мій магазин»: нові запити на скидання пароля (лише Supabase). */
+    val resets: List<ua.chudo.scanner.data.PasswordRequest> = emptyList(),
 )
 
 class NetworkAdminViewModel(
@@ -109,7 +111,13 @@ class NetworkAdminViewModel(
         try {
             _data.value = coroutineScope {
                 if (ownShopOnly) {
-                    AdminData(staff = repo.staff(employee.homeShopId))
+                    val staff = async { repo.staff(employee.homeShopId) }
+                    val resets = async {
+                        if (ua.chudo.scanner.data.Backend.isSupabase) {
+                            runCatching { ua.chudo.scanner.data.PasswordRequests.pending(employee.homeShopId) }.getOrDefault(emptyList())
+                        } else emptyList()
+                    }
+                    AdminData(staff = staff.await(), resets = resets.await())
                 } else {
                     val shops = async { repo.shops() }
                     val stores = async { runCatching { stock.stores() }.getOrDefault(emptyMap()) }
@@ -137,6 +145,29 @@ class NetworkAdminViewModel(
     fun link(code: String, shopId: String, onDone: (String) -> Unit) = act(onDone, "ЧО $code прив'язано") {
         stock.link(code, shopId)
         repo.log(employee.uid, "linkStore", code, shopId)
+    }
+
+    /** Тимчасовий пароль віддаємо лише в [onPassword] — у стані екрана він не зберігається. */
+    fun resetPassword(request: ua.chudo.scanner.data.PasswordRequest, onPassword: (String) -> Unit, onDone: (String) -> Unit) =
+        viewModelScope.launch {
+            if (_busy.value) return@launch
+            _busy.value = true
+            try {
+                onPassword(ua.chudo.scanner.data.PasswordRequests.reset(request.id))
+                load()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ua.chudo.scanner.data.ResetFailed) {
+                onDone(e.message.orEmpty())
+            } catch (e: Exception) {
+                onDone(e.authMessage())
+            } finally {
+                _busy.value = false
+            }
+        }
+
+    fun dismissReset(request: ua.chudo.scanner.data.PasswordRequest, onDone: (String) -> Unit) = act(onDone, "Запит відхилено") {
+        ua.chudo.scanner.data.PasswordRequests.reject(request.id, employee.uid)
     }
 
     fun logActAs(shopId: String, code: String?) = viewModelScope.launch {
@@ -316,6 +347,9 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
     var confirm by remember { mutableStateOf<Triple<StaffMember, StaffAction, ShopDoc?>?>(null) }
     var transfer by remember { mutableStateOf<StaffMember?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    // Лише в пам’яті: після закриття вікна пароль більше ніде не видно.
+    var tempPassword by remember { mutableStateOf<Pair<ua.chudo.scanner.data.PasswordRequest, String>?>(null) }
+    tempPassword?.let { (r, pass) -> TempPasswordDialog(r, pass) { tempPassword = null } }
     val m = Mine.colors
     val d = data
     val cityOfShop = d?.entries.orEmpty().filter { it.shopId != null }.associate { it.shopId!! to it.city }
@@ -323,6 +357,9 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
 
     if (ownShopOnly) MyShopContent(
         employee.shop, d?.staff, error, message, busy,
+        resets = d?.resets.orEmpty(),
+        onReset = { r -> vm.resetPassword(r, onPassword = { tempPassword = r to it }) { message = it } },
+        onDismissReset = { r -> vm.dismissReset(r) { message = it } },
         canReject = { s -> StaffAction.REJECT in NetworkAdmin.actions(s, employee.uid, false) },
         onBack = onBack,
         onApprove = { s -> vm.apply(s, StaffAction.APPROVE, null) { message = it } },
