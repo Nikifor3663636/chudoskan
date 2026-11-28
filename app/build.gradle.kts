@@ -22,8 +22,8 @@ android {
         applicationId = "com.chudoostriv.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "3.3.15"
+        versionCode = 37
+        versionName = "3.3.16"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
 
         // Де дані: supabase (за замовчуванням) | firestore (відкат: -Pbackend=firestore або змінна BACKEND). Вхід — завжди Firebase Auth.
