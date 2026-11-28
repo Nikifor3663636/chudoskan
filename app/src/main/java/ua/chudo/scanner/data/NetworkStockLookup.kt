@@ -180,6 +180,21 @@ class NetworkStockLookup(private val db: FirebaseFirestore) {
     suspend fun byCode(shopId: String, code: String): List<NetAvailability> =
         query(shopId, "code", code.trim().uppercase())
 
+    /**
+     * Кількість у своєму магазині для цілого списку товарів — одним запитом (Firestore — пачками по 30).
+     * Ключ — [stockArticleKey]; артикулів, яких немає в 1С, у відповіді немає.
+     */
+    suspend fun ownByArticles(shopId: String, articles: List<String>): Map<String, Double> {
+        val code = ownCode(shopId) ?: return emptyMap()
+        val clean = articles.map(String::trim).filter(String::isNotEmpty).distinct()
+        if (clean.isEmpty()) return emptyMap()
+        val items = if (Backend.isSupabase) SupabaseStock.byArticles(clean)
+        else clean.chunked(30).flatMap { chunk ->
+            db.collection(NetworkStockRepository.STOCK).whereIn("article", chunk).limit(300).get().await().documents.mapNotNull { it.toNetItem() }
+        }
+        return ownByArticle(items, code)
+    }
+
     suspend fun byArticle(shopId: String, article: String): List<NetAvailability> =
         query(shopId, "article", article.trim())
 
