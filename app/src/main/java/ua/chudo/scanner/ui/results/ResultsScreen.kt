@@ -130,12 +130,23 @@ internal sealed interface ResultsState {
     data class Offline(val updatedAt: Long?, val matches: List<OfflineStockItem>) : ResultsState
 }
 
+/** Товари категорії показуємо списком навіть коли товар один — не відкриваємо картку самі. */
+internal fun categoryResult(title: String, items: List<ProductSummary>): ResultsState =
+    ResultsState.Done(
+        if (items.isEmpty()) LookupResult.NotFound(title, null, emptyList())
+        else LookupResult.Many(title, null, items, Via.Direct),
+    )
+
 internal class ResultsViewModel(
     private val app: ChudoApp,
     private val employee: Employee,
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
+    /** `uid` категорії з «Каталогу»: тоді `query` — її назва, а товари беремо з категорії. */
+    val category: String? = handle.get<String>("cat")?.takeIf(String::isNotBlank)
+    /** Скільки всього товарів у категорії (з «Каталогу»): показуємо лише першу сторінку. */
+    val categoryTotal: Int? = handle.get<String>("n")?.toIntOrNull()?.takeIf { category != null }
     private val _state = MutableStateFlow<ResultsState>(if (query.isBlank()) ResultsState.Empty else ResultsState.Loading("Шукаємо…"))
     val state = _state.asStateFlow()
     private var job: Job? = null
@@ -144,6 +155,10 @@ internal class ResultsViewModel(
 
     fun load() {
         job?.cancel()
+        category?.let { uid ->
+            job = viewModelScope.launch { _state.value = ResultsState.Loading("Відкриваємо категорію…"); _state.value = loadCategory(uid) }
+            return
+        }
         job = viewModelScope.launch {
             _state.value = ResultsState.Loading("Шукаємо…")
             val manager = app.getSystemService(ConnectivityManager::class.java)
@@ -163,6 +178,14 @@ internal class ResultsViewModel(
                 ResultsState.Offline(snapshot?.updatedAt, matches)
             } else online
         }
+    }
+
+    private suspend fun loadCategory(uid: String): ResultsState = try {
+        categoryResult(query, app.repository.categoryProducts(uid))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        ResultsState.Failed(e.toUiError())
     }
 
     private suspend fun lookupOnline(): ResultsState {
@@ -245,7 +268,8 @@ fun ResultsScreen(
             emptySet()
         }
     }
-    LaunchedEffect(vm.query) { if (vm.query.isNotBlank()) onQueryUsed(vm.query) }
+    // Назву категорії в історію пошуку не пишемо — це не запит користувача.
+    LaunchedEffect(vm.query) { if (vm.query.isNotBlank() && vm.category == null) onQueryUsed(vm.query) }
     fun submit() {
         val clean = draft.trim()
         if (clean.isNotEmpty()) {
@@ -303,7 +327,7 @@ fun ResultsScreen(
                         is LookupResult.Many -> {
                             val filters = SearchFilters(shopOnly, promoOnly, newOnly)
                             val items = applySearchFilters(r.items, filters, own, newArticles)
-                            ManyList(r, items, selectedProduct, own, filters.any) { urlKey ->
+                            ManyList(r, items, selectedProduct, own, filters.any, vm.categoryTotal) { urlKey ->
                                 val bc = r.barcode.takeIf { r.via !is Via.Direct }
                                 onBrowseProducts(items.map { it.urlKey }.distinct())
                                 onOpenProduct(urlKey, bc, null, false)
@@ -613,12 +637,18 @@ private fun ManyList(
     selectedProduct: String?,
     own: Map<String, Double>,
     filtered: Boolean,
+    categoryTotal: Int?,
     onClick: (String) -> Unit,
 ) {
     val m = Mine.colors
     LazyColumn {
         item {
             val count = products.size
+            categoryHeader(count, categoryTotal.takeUnless { filtered })?.let { header ->
+                SearchSection(header)
+                if (products.isNotEmpty()) HorizontalDivider(color = m.line)
+                return@item
+            }
             val noun = when {
                 count % 100 in 11..14 -> "товарів"
                 count % 10 == 1 -> "товар"

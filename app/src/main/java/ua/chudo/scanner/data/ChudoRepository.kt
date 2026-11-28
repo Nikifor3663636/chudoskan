@@ -4,10 +4,14 @@ import uniffi.chudo_core.Lang
 import uniffi.chudo_core.ProductDetails
 import uniffi.chudo_core.ProductSummary
 import uniffi.chudo_core.ShopAvailability
+import uniffi.chudo_core.Category
+import uniffi.chudo_core.buildCategoriesBody
+import uniffi.chudo_core.buildCategoryProductsBody
 import uniffi.chudo_core.buildDetailsBody
 import uniffi.chudo_core.buildSearchBody
 import uniffi.chudo_core.classifyQuery
 import uniffi.chudo_core.isBarcode
+import uniffi.chudo_core.parseCategories
 import uniffi.chudo_core.parseDetails
 import uniffi.chudo_core.parseSearch
 import uniffi.chudo_core.parseShops
@@ -63,6 +67,14 @@ class ChudoRepository(
 
     suspend fun details(urlKey: String): ProductDetails =
         parseDetails(client.graphql(buildDetailsBody(urlKey), lang))
+
+    /** Категорії меню сайту з кількістю товарів (ядро прибирає приховані, тестові й повтори). */
+    suspend fun categories(): List<Category> =
+        parseCategories(client.graphql(buildCategoriesBody(), lang))
+
+    /** Товари категорії у порядку сайту. */
+    suspend fun categoryProducts(uid: String, pageSize: Int = 60): List<ProductSummary> =
+        parseSearch(client.graphql(buildCategoryProductsBody(uid, pageSize.toUInt()), lang), "")
 
     suspend fun shops(productId: Long, region: String): List<ShopAvailability> =
         parseShops(client.getJson(shopsUrl(lang, productId, region)))

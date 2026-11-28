@@ -682,9 +682,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_chudo_core_checksum_func_is_barcode(
     ): Int
+    external fun uniffi_chudo_core_checksum_func_build_categories_body(
+    ): Int
+    external fun uniffi_chudo_core_checksum_func_build_category_products_body(
+    ): Int
     external fun uniffi_chudo_core_checksum_func_build_details_body(
     ): Int
     external fun uniffi_chudo_core_checksum_func_build_search_body(
+    ): Int
+    external fun uniffi_chudo_core_checksum_func_parse_categories(
     ): Int
     external fun uniffi_chudo_core_checksum_func_parse_details(
     ): Int
@@ -737,9 +743,15 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_is_barcode(`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_chudo_core_fn_func_build_categories_body(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_chudo_core_fn_func_build_category_products_body(`uid`: RustBuffer.ByValue,`pageSize`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_build_details_body(`urlKey`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_build_search_body(`query`: RustBuffer.ByValue,`pageSize`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_chudo_core_fn_func_parse_categories(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_chudo_core_fn_func_parse_details(`json`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -900,10 +912,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_chudo_core_checksum_func_is_barcode() and 0xFFFF) != 10963) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_chudo_core_checksum_func_build_categories_body() and 0xFFFF) != 46635) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_chudo_core_checksum_func_build_category_products_body() and 0xFFFF) != 21954) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_chudo_core_checksum_func_build_details_body() and 0xFFFF) != 10519) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_chudo_core_checksum_func_build_search_body() and 0xFFFF) != 17528) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_chudo_core_checksum_func_parse_categories() and 0xFFFF) != 40830) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_chudo_core_checksum_func_parse_details() and 0xFFFF) != 65258) {
@@ -1214,6 +1235,65 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
         val byteBuf = toUtf8(value)
         buf.putInt(byteBuf.limit())
         buf.put(byteBuf)
+    }
+}
+
+
+
+/**
+ * Категорія каталогу сайту (верхній рівень меню) з підкатегоріями.
+ */
+data class Category (
+    /**
+     * `uid` Magento — за ним шукаємо товари категорії.
+     */
+    var `uid`: kotlin.String
+    , 
+    var `name`: kotlin.String
+    , 
+    var `urlKey`: kotlin.String
+    , 
+    var `count`: kotlin.UInt
+    , 
+    var `children`: List<Subcategory>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCategory: FfiConverterRustBuffer<Category> {
+    override fun read(buf: ByteBuffer): Category {
+        return Category(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterSequenceTypeSubcategory.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Category) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`urlKey`) +
+            FfiConverterUInt.allocationSize(value.`count`) +
+            FfiConverterSequenceTypeSubcategory.allocationSize(value.`children`)
+    )
+
+    override fun write(value: Category, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`urlKey`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+            FfiConverterSequenceTypeSubcategory.write(value.`children`, buf)
     }
 }
 
@@ -1544,6 +1624,54 @@ public object FfiConverterTypeShopAvailability: FfiConverterRustBuffer<ShopAvail
     override fun write(value: ShopAvailability, buf: ByteBuffer) {
             FfiConverterString.write(value.`address`, buf)
             FfiConverterBoolean.write(value.`available`, buf)
+    }
+}
+
+
+
+data class Subcategory (
+    var `uid`: kotlin.String
+    , 
+    var `name`: kotlin.String
+    , 
+    var `urlKey`: kotlin.String
+    , 
+    var `count`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSubcategory: FfiConverterRustBuffer<Subcategory> {
+    override fun read(buf: ByteBuffer): Subcategory {
+        return Subcategory(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: Subcategory) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`urlKey`) +
+            FfiConverterUInt.allocationSize(value.`count`)
+    )
+
+    override fun write(value: Subcategory, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`urlKey`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
     }
 }
 
@@ -2076,6 +2204,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeCategory: FfiConverterRustBuffer<List<Category>> {
+    override fun read(buf: ByteBuffer): List<Category> {
+        val len = buf.getInt()
+        return List<Category>(len) {
+            FfiConverterTypeCategory.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Category>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeCategory.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Category>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeCategory.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeProductSummary: FfiConverterRustBuffer<List<ProductSummary>> {
     override fun read(buf: ByteBuffer): List<ProductSummary> {
         val len = buf.getInt()
@@ -2153,6 +2309,34 @@ public object FfiConverterSequenceTypeShopAvailability: FfiConverterRustBuffer<L
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSubcategory: FfiConverterRustBuffer<List<Subcategory>> {
+    override fun read(buf: ByteBuffer): List<Subcategory> {
+        val len = buf.getInt()
+        return List<Subcategory>(len) {
+            FfiConverterTypeSubcategory.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<Subcategory>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSubcategory.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<Subcategory>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSubcategory.write(it, buf)
+        }
+    }
+}
         /**
          * Определяет, что ввёл/отсканировал пользователь.
          */ fun `classifyQuery`(`input`: kotlin.String): ClassifiedQuery {
@@ -2207,6 +2391,34 @@ public object FfiConverterSequenceTypeShopAvailability: FfiConverterRustBuffer<L
     )
     }
     
+
+        /**
+         * Дерево категорій сайту: корінь → верхній рівень меню → підкатегорії.
+         */ fun `buildCategoriesBody`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_chudo_core_fn_func_build_categories_body(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Товари однієї категорії (у порядку сайту); відповідь розбирає `parse_search`.
+         */ fun `buildCategoryProductsBody`(`uid`: kotlin.String, `pageSize`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_chudo_core_fn_func_build_category_products_body(
+    
+        
+        FfiConverterString.lower(`uid`),
+        FfiConverterUInt.lower(`pageSize`),_status)
+}
+    )
+    }
+    
  fun `buildDetailsBody`(`urlKey`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -2229,6 +2441,18 @@ public object FfiConverterSequenceTypeShopAvailability: FfiConverterRustBuffer<L
         
         FfiConverterString.lower(`query`),
         FfiConverterUInt.lower(`pageSize`),_status)
+}
+    )
+    }
+    
+
+    @Throws(CoreException::class) fun `parseCategories`(`json`: kotlin.String): List<Category> {
+            return FfiConverterSequenceTypeCategory.lift(
+    uniffiRustCallWithError(CoreException) { _status ->
+    UniffiLib.uniffi_chudo_core_fn_func_parse_categories(
+    
+        
+        FfiConverterString.lower(`json`),_status)
 }
     )
     }
