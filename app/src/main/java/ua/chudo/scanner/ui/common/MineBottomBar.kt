@@ -57,7 +57,8 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.R
 import ua.chudo.scanner.ui.theme.Mine
 
-enum class MainTab { HOME, ORDERS, STOCK, PROFILE }
+/** Вкладки: на телефоні в панелі — Пошук · Друк · Скан · Залишки · Профіль; Замовлення — плиткою на головній (і в панелі планшета). */
+enum class MainTab { HOME, ORDERS, PRINT, STOCK, PROFILE }
 
 /** Штрихкод в рамке — иконка сканера из макета (24×24, обводка). */
 val BarcodeScanIcon: ImageVector by lazy {
@@ -76,11 +77,10 @@ fun MineBottomBar(
     onTab: (MainTab) -> Unit,
     onScan: () -> Unit,
     scanLabel: String = "Сканувати товар",
-    newOrders: Int = 0,
 ) {
     androidx.compose.material3.NavigationBar(containerColor = Mine.colors.card) {
         TabItem(MainTab.HOME, tab, R.drawable.ic_redesign_search, "Пошук", onTab)
-        TabItem(MainTab.ORDERS, tab, R.drawable.ic_redesign_clipboard_list, "Замовлення", onTab, newOrders)
+        TabItem(MainTab.PRINT, tab, R.drawable.ic_redesign_printer, "Друк", onTab)
         ScanTab(scanLabel, onScan)
         TabItem(MainTab.STOCK, tab, R.drawable.ic_redesign_boxes, "Залишки", onTab)
         TabItem(MainTab.PROFILE, tab, R.drawable.ic_redesign_user, "Профіль", onTab)

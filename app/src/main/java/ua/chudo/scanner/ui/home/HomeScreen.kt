@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -242,41 +243,34 @@ fun HomeContent(
     banner: @Composable () -> Unit = {},
 ) {
     val m = Mine.colors
-    LazyColumn(
-        Modifier.fillMaxSize().background(m.bg).statusBarsPadding().imePadding(),
-        contentPadding = PaddingValues(bottom = Mine.spacing16),
-    ) {
+    // Пошук — унизу, над навігацією: туди дістає великий палець однією рукою.
+    Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().imePadding()) {
+    LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = Mine.spacing16)) {
         item {
             Row(
-                Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing4),
+                Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing8, top = Mine.spacing4),
                 horizontalArrangement = Arrangement.spacedBy(Mine.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
-                    Modifier.weight(1f).clickable(onClickLabel = "Змінити місто пошуку", onClick = onRegion)
-                        .padding(vertical = 6.dp),
+                    Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClickLabel = "Змінити місто пошуку", onClick = onRegion),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    HomeIcon(R.drawable.ic_redesign_store, 18)
+                    HomeIcon(R.drawable.ic_redesign_store, 20)
                     Text(
                         ui.shop.ifBlank { ui.region }, Modifier.weight(1f, fill = false),
-                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    HomeIcon(R.drawable.ic_redesign_chevron_down, 16)
+                    HomeIcon(R.drawable.ic_redesign_chevron_down, 18)
                 }
-                IconButton(onClick = onNotifications, modifier = Modifier.size(40.dp)) {
-                    Icon(painterResource(R.drawable.ic_redesign_bell), "Сповіщення", Modifier.size(20.dp), tint = m.textSecondary)
+                IconButton(onClick = onNotifications, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_bell), "Сповіщення", Modifier.size(24.dp), tint = m.textSecondary)
                 }
             }
-            Column(Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = 6.dp, bottom = Mine.spacing4)) {
-                MineSearchField(
-                    ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit,
-                    onScan = onScan, homeStyle = true, onOpenSearch = onOpenSearch,
-                )
+            Column(Modifier.padding(horizontal = Mine.spacing16)) {
                 Row(
-                    Modifier.padding(top = Mine.spacing8),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -290,47 +284,45 @@ fun HomeContent(
             }
         }
         item {
-            Text(
-                "Швидкі дії", Modifier.padding(start = Mine.spacing16, top = 14.dp, bottom = Mine.spacing8),
-                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary,
-            )
-            HorizontalDivider(color = m.line)
-            Row(Modifier.height(IntrinsicSize.Min).background(m.line), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                val cartDetail = if (ui.cartUnits == 0) "Порожній" else buildString {
-                    append("${ui.cartUnits} шт")
-                    ui.cartTotal?.let { append(" · ${Cart.money(it)}") }
-                }
-                QuickAction(R.drawable.ic_redesign_shopping_cart, "Кошик покупця", cartDetail, onCart, Modifier.weight(1f))
-                QuickAction(
-                    R.drawable.ic_redesign_clipboard_list, "Замовлення", orderDetail(ui), onOrders,
-                    Modifier.weight(1f), accent = ui.newOrders > 0,
-                )
+            val cartDetail = if (ui.cartUnits == 0) "Порожній" else buildString {
+                append("${ui.cartUnits} шт")
+                ui.cartTotal?.let { append(" · ${Cart.money(it)}") }
             }
-            HorizontalDivider(color = m.line)
-            Row(Modifier.height(IntrinsicSize.Min).background(m.line), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                QuickAction(R.drawable.ic_redesign_printer, "Цінники пакетом", null, onLabels, Modifier.weight(1f))
-                onHighlights?.let { open ->
-                    val counts = listOfNotNull(ui.promoCount?.let { "$it акцій" }, ui.newCount?.let { "$it новинок" })
+            Column(
+                Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing16),
+                verticalArrangement = Arrangement.spacedBy(Mine.spacing12),
+            ) {
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Mine.spacing12)) {
                     QuickAction(
-                        R.drawable.ic_redesign_badge_percent, "Новинки й акції",
-                        counts.joinToString(" · ").ifEmpty { null },
-                        { open(HighlightKind.NEW) }, Modifier.weight(1f),
+                        R.drawable.ic_redesign_clipboard_list, "Замовлення", orderDetail(ui), onOrders,
+                        Modifier.weight(1f), accent = ui.newOrders > 0, badge = ui.newOrders,
                     )
-                } ?: Spacer(Modifier.weight(1f).background(m.card).fillMaxHeight())
+                    QuickAction(R.drawable.ic_redesign_shopping_cart, "Кошик", cartDetail, onCart, Modifier.weight(1f))
+                }
+                onHighlights?.let { open ->
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Mine.spacing12)) {
+                        QuickAction(
+                            R.drawable.ic_redesign_sparkles, "Новинки", ui.newCount?.let { "$it товарів" },
+                            { open(HighlightKind.NEW) }, Modifier.weight(1f),
+                        )
+                        QuickAction(
+                            R.drawable.ic_redesign_badge_percent, "Акції", ui.promoCount?.let { "$it акцій" },
+                            { open(HighlightKind.PROMO) }, Modifier.weight(1f),
+                        )
+                    }
+                }
             }
-            HorizontalDivider(color = m.line)
         }
         if (ui.history.isNotEmpty()) {
             item {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing20, bottom = Mine.spacing8),
+                    Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing4, top = Mine.spacing20),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Нещодавні", Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary)
-                    Text(
-                        "Історія", Modifier.clickable(onClick = onHistory),
-                        fontSize = 14.sp, fontWeight = FontWeight.Medium, color = m.link,
-                    )
+                    Text("Нещодавні", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = m.textSecondary)
+                    androidx.compose.material3.TextButton(onClick = onHistory) {
+                        Text("Історія", style = MaterialTheme.typography.labelLarge, color = m.link)
+                    }
                 }
                 HorizontalDivider(color = m.line)
             }
@@ -338,6 +330,13 @@ fun HomeContent(
                 RecentProductRow(product, onOpenProduct)
                 HorizontalDivider(color = m.line)
             }
+        }
+    }
+        Box(Modifier.fillMaxWidth().background(m.bg).padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing8, bottom = Mine.spacing12)) {
+            MineSearchField(
+                ui.query, onQuery, "Штрихкод, артикул або назва", onSubmit,
+                onScan = onScan, homeStyle = true, onOpenSearch = onOpenSearch,
+            )
         }
     }
 }
@@ -360,6 +359,7 @@ private fun HomeIcon(@DrawableRes icon: Int, size: Int, tint: Color = Mine.color
     Icon(painterResource(icon), null, Modifier.size(size.dp), tint = tint)
 }
 
+/** Плитка швидкої дії: картка 16 dp, іконка в тональному колі, назва й підпис; уся площа — для натискання. */
 @Composable
 private fun QuickAction(
     @DrawableRes icon: Int,
@@ -368,19 +368,23 @@ private fun QuickAction(
     onClick: () -> Unit,
     modifier: Modifier,
     accent: Boolean = false,
+    badge: Int = 0,
 ) {
     val m = Mine.colors
-    Row(
-        modifier.fillMaxHeight().heightIn(min = 72.dp).background(m.card).clickable(onClick = onClick)
-            .padding(horizontal = Mine.spacing16, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(Mine.spacing12),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        onClick = onClick, modifier = modifier.fillMaxHeight().heightIn(min = 104.dp),
+        shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text,
     ) {
-        HomeIcon(icon, 24, m.textSecondary)
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            if (detail != null) {
-                Text(detail, fontSize = 13.sp, color = if (accent) m.link else m.textTertiary)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box {
+                Box(Modifier.size(44.dp).background(m.accentTone, CircleShape), contentAlignment = Alignment.Center) {
+                    HomeIcon(icon, 24, m.link)
+                }
+                if (badge > 0) androidx.compose.material3.Badge(Modifier.align(Alignment.TopEnd)) { Text("$badge") }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (detail != null) Text(detail, fontSize = 13.sp, color = if (accent) m.link else m.textTertiary, maxLines = 2)
             }
         }
     }

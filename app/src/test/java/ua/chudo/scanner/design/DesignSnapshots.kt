@@ -480,7 +480,7 @@ class DesignSnapshots {
         ChudoTheme(dark = dark) {
             androidx.compose.material3.Scaffold(
                 containerColor = Mine.colors.bg,
-                bottomBar = { MineBottomBar(MainTab.HOME, onTab = {}, onScan = {}, newOrders = 3) },
+                bottomBar = { MineBottomBar(MainTab.HOME, onTab = {}, onScan = {}) },
             ) { inner ->
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
