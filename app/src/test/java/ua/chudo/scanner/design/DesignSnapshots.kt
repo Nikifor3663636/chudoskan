@@ -85,7 +85,7 @@ class DesignSnapshots {
                         status = mapOf("pc" to PrinterStatus(true, "Онлайн через комп'ютер"), "mfc" to PrinterStatus(false, "Не відповідає. Перевір, що принтер увімкнений, і натисни «Знайти знову».")),
                         main = mapOf(LabelKind.STICKY to "pc", LabelKind.PLAIN to null), scanning = false, testing = null,
                     ),
-                    PrintersActions(),
+                    PrintersActions(onBatch = {}),
                 )
             }
         }

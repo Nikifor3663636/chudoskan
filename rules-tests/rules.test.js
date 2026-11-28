@@ -358,8 +358,10 @@ describe('shops', () => {
     await assertSucceeds(setDoc(doc(db, 'shops', '22'), { printerSubnets: ['192.0.2.0/24'] }, { merge: true }));
     await assertSucceeds(setDoc(doc(db, 'shops', '22', 'printers', 'g'),
       { model: 'Godex G500', kind: 'label_40x24', ip: '192.0.2.10', port: 9100, transport: 'tcp', lastSeen: serverTimestamp() }, { merge: true }));
-    // Назву й щільність — лише адмін.
-    await assertFails(updateDoc(doc(db, 'shops', '22', 'printers', 'g'), { name: 'Каса', lastSeen: serverTimestamp() }));
+    // Назву, щільність і швидкість налаштовує будь-який співробітник свого магазину; чужого — ні.
+    await assertSucceeds(updateDoc(doc(db, 'shops', '22', 'printers', 'g'), { name: 'Каса', density: 10, lastSeen: serverTimestamp() }));
+    await assertFails(updateDoc(doc(as('emp62'), 'shops', '22', 'printers', 'g'), { name: 'Чужий', lastSeen: serverTimestamp() }));
+    await assertFails(deleteDoc(doc(as('emp62'), 'shops', '22', 'printers', 'g')));
     await assertSucceeds(updateDoc(doc(as('adm22'), 'shops', '22', 'printers', 'g'), { name: 'Каса', lastSeen: serverTimestamp() }));
     await assertSucceeds(deleteDoc(doc(as('sup'), 'shops', '22', 'printers', 'g')));
   });
