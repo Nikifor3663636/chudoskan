@@ -512,7 +512,7 @@ class DesignSnapshots {
             Surface(color = Mine.colors.bg) {
                 ua.chudo.scanner.ui.profile.ProfileContent(
                     ua.chudo.scanner.ui.profile.ProfileUi(
-                        name = "Вакаренко Микита", phone = "+380 96 232 09 33", city = "Одеса",
+                        name = "Олена Коваль", phone = "+380 67 555 12 18", city = "Одеса",
                         shop = "вул. Генуезька, 5/2, ТРЦ \"Gagarinn Plaza\", друга черга, 3 поверх",
                         theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
                     ),

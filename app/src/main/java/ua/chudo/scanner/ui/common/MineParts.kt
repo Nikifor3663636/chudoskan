@@ -53,7 +53,7 @@ import ua.chudo.scanner.ui.theme.Mine
 /** Montserrat — тот же шрифт цены, что на печатных ценниках. */
 val PriceFont = FontFamily(Font(R.font.montserrat_extrabold, FontWeight.ExtraBold), Font(R.font.montserrat_bold, FontWeight.Bold))
 
-/** Пошук за текстом або штрихкодом. */
+/** Пошук за текстом або штрихкодом — M3 Search bar: 56 dp, пігулка, surfaceContainerHigh. */
 @Composable
 fun MineSearchField(
     value: String,
@@ -67,11 +67,11 @@ fun MineSearchField(
 ) {
     val m = Mine.colors
     val fieldStyle = if (homeStyle) MaterialTheme.typography.bodyLarge else TextStyle(fontSize = 17.sp)
-    val hintColor = if (homeStyle) m.textTertiary else m.textSecondary
+    val hintColor = m.textSecondary
     Row(
-        modifier.fillMaxWidth().height(if (homeStyle) 48.dp else 56.dp).clip(Mine.fieldShape).background(m.card)
-            .border(1.dp, m.outline, Mine.fieldShape)
-            .padding(start = if (homeStyle) 14.dp else 12.dp, end = if (homeStyle) 6.dp else 4.dp),
+        modifier.fillMaxWidth().height(56.dp).clip(Mine.pillShape)
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -106,12 +106,11 @@ fun MineSearchField(
         }
         onScan?.let { open ->
             if (homeStyle) {
-                Box(Modifier.size(1.dp, 36.dp).background(m.line))
-                IconButton(onClick = open, modifier = Modifier.width(44.dp)) {
-                    Icon(painterResource(R.drawable.ic_redesign_scan_barcode), "Сканувати штрихкод", Modifier.size(20.dp), tint = m.text)
+                IconButton(onClick = open, modifier = Modifier.size(48.dp)) {
+                    Icon(painterResource(R.drawable.ic_redesign_scan_barcode), "Сканувати штрихкод", Modifier.size(24.dp), tint = m.textSecondary)
                 }
             } else {
-                IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.link) }
+                IconButton(onClick = open) { Icon(BarcodeScanIcon, "Сканувати штрихкод", tint = m.textSecondary) }
             }
         }
     }

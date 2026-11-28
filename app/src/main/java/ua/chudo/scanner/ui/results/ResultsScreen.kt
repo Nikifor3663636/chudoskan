@@ -49,6 +49,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SearchOff
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -525,20 +526,23 @@ private fun ResultsHeader(
 
 @Composable
 private fun SearchChip(label: String, selected: Boolean? = null, @DrawableRes icon: Int? = null, onClick: () -> Unit) {
-    val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    // M3 filter chip (вибір) / assist chip (дія): 32 dp, 8 dp; вибраний — secondaryContainer з галочкою.
+    val c = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(8.dp)
     val active = selected == true
-    val color = if (active) m.card else m.textSecondary
+    val color = if (active) c.onSecondaryContainer else c.onSurfaceVariant
     val action = if (selected != null) Modifier.toggleable(selected, role = Role.Checkbox, onValueChange = { onClick() })
         else Modifier.clickable(role = Role.Button, onClick = onClick)
     Row(
-        Modifier.height(32.dp).clip(shape).background(if (active) m.text else m.card)
-            .border(1.dp, if (active) m.text else m.outline, shape).then(action).padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.height(32.dp).clip(shape).background(if (active) c.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+            .then(if (active) Modifier else Modifier.border(1.dp, c.outlineVariant, shape)).then(action)
+            .padding(start = if (active || icon != null) 8.dp else 16.dp, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) Icon(painterResource(icon), null, Modifier.size(16.dp), tint = color)
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = color)
+        if (active) Icon(androidx.compose.material.icons.Icons.Rounded.Check, null, Modifier.size(18.dp), tint = color)
+        else if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp), tint = c.primary)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 

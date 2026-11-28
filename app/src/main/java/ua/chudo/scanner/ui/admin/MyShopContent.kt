@@ -193,7 +193,7 @@ fun TempPasswordDialog(r: PasswordRequest, password: String, onDone: () -> Unit)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = {},
         containerColor = m.card,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(28.dp),
         title = { Text("Тимчасовий пароль", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -246,12 +246,13 @@ private fun Initials(name: String) {
 @Composable
 private fun SmallAction(text: String, primary: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
+    // M3: filled (основна дія) або text button, 40 dp, пігулка.
     Surface(
-        onClick = onClick, enabled = enabled, modifier = Modifier.height(36.dp), shape = RoundedCornerShape(6.dp),
-        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.text,
+        onClick = onClick, enabled = enabled, modifier = Modifier.height(40.dp), shape = RoundedCornerShape(50),
+        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.accent,
     ) {
-        Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Box(Modifier.padding(horizontal = if (primary) 24.dp else 12.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
         }
     }
 }

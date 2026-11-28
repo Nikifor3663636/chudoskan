@@ -26,7 +26,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +70,7 @@ val BarcodeScanIcon: ImageVector by lazy {
     }.build()
 }
 
+/** Нижня навігація Material 3: пігулка-індикатор активної вкладки, по центру — кнопка сканера (фірмовий колір). */
 @Composable
 fun MineBottomBar(
     tab: MainTab?,
@@ -75,45 +79,34 @@ fun MineBottomBar(
     scanLabel: String = "Сканувати товар",
     newOrders: Int = 0,
 ) {
-    val m = Mine.colors
-    val bottomInset = WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)
-        .union(WindowInsets(bottom = 12.dp))
-    Column(Modifier.fillMaxWidth().background(m.card).windowInsetsPadding(bottomInset)) {
-        HorizontalDivider(color = m.line)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = Mine.spacing4).selectableGroup(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TabItem(MainTab.HOME, tab, R.drawable.ic_redesign_search, "Пошук", onTab)
-            TabItem(MainTab.ORDERS, tab, R.drawable.ic_redesign_clipboard_list, "Замовлення", onTab, newOrders)
-            ScanTab(scanLabel, onScan)
-            TabItem(MainTab.STOCK, tab, R.drawable.ic_redesign_boxes, "Залишки", onTab)
-            TabItem(MainTab.PROFILE, tab, R.drawable.ic_redesign_user, "Профіль", onTab)
-        }
+    androidx.compose.material3.NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        TabItem(MainTab.HOME, tab, R.drawable.ic_redesign_search, "Пошук", onTab)
+        TabItem(MainTab.ORDERS, tab, R.drawable.ic_redesign_clipboard_list, "Замовлення", onTab, newOrders)
+        ScanTab(scanLabel, onScan)
+        TabItem(MainTab.STOCK, tab, R.drawable.ic_redesign_boxes, "Залишки", onTab)
+        TabItem(MainTab.PROFILE, tab, R.drawable.ic_redesign_user, "Профіль", onTab)
     }
 }
 
 @Composable
 private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
-    val m = Mine.colors
+    val c = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(120), label = "scanKeyScale")
     Column(
-        Modifier.weight(1f).heightIn(min = 63.dp)
+        Modifier.weight(1f).fillMaxHeight()
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
-            .semantics { contentDescription = label }
-            .padding(top = 3.dp),
+            .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
+        verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.scale(scale).size(width = 52.dp, height = 40.dp).clip(Mine.cardShape).background(m.accent),
+            Modifier.scale(scale).size(width = 64.dp, height = 48.dp).clip(RoundedCornerShape(16.dp)).background(c.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(22.dp), tint = m.onAccent)
+            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(24.dp), tint = c.onPrimaryContainer)
         }
-        TabLabel("Скан", m.text)
     }
 }
 
@@ -126,46 +119,14 @@ private fun RowScope.TabItem(
     onTab: (MainTab) -> Unit,
     badge: Int = 0,
 ) {
-    val m = Mine.colors
-    val active = tab == selected
-    val color = if (active) m.text else m.textTertiary
-    Box(
-        Modifier.weight(1f).heightIn(min = 63.dp)
-            .selectable(selected = active, role = Role.Tab, onClick = { onTab(tab) }),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (active) {
-            Box(
-                Modifier.align(Alignment.TopCenter).fillMaxWidth(0.4f).height(2.dp)
-                    .background(m.accent, androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 2.dp, bottomEnd = 2.dp)),
-            )
-        }
-        Column(
-            Modifier.padding(top = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Icon(painterResource(icon), null, Modifier.size(22.dp), tint = color)
-            TabLabel(label, color)
-        }
-        if (badge > 0) {
-            Box(
-                Modifier.align(Alignment.TopCenter).offset(x = 15.dp, y = 4.dp)
-                    .widthIn(min = 18.dp).height(18.dp)
-                    .background(m.onDanger, Mine.pillShape).border(2.dp, m.card, Mine.pillShape)
-                    .padding(horizontal = 5.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("$badge", color = Color.White, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold)
+    NavigationBarItem(
+        selected = tab == selected,
+        onClick = { onTab(tab) },
+        icon = {
+            androidx.compose.material3.BadgedBox(badge = { if (badge > 0) androidx.compose.material3.Badge { Text("$badge") } }) {
+                Icon(painterResource(icon), null, Modifier.size(24.dp))
             }
-        }
-    }
-}
-
-@Composable
-private fun TabLabel(text: String, color: Color) {
-    Text(
-        text, fontSize = 11.sp, lineHeight = 16.5.sp, fontWeight = FontWeight.Medium,
-        color = color, textAlign = TextAlign.Center,
+        },
+        label = { Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.sp)) },
     )
 }

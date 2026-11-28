@@ -137,7 +137,7 @@ fun AuthField(label: String, hint: String? = null, error: String? = null, conten
     }
 }
 
-/** Рамка `.input`: 44 dp, радіус 6, у фокусі — синя, з помилкою — червона. */
+/** Поле M3 (outlined): 56 dp, 4 dp; у фокусі — рамка 2 dp кольору primary, з помилкою — error. */
 @Composable
 fun AuthInputBox(
     focused: Boolean,
@@ -146,15 +146,16 @@ fun AuthInputBox(
     content: @Composable RowScope.() -> Unit,
 ) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val c = androidx.compose.material3.MaterialTheme.colorScheme
+    val shape = Mine.fieldShape
     val ring = when {
-        isError -> m.danger
-        focused -> m.info
-        else -> null
+        isError -> c.error
+        focused -> c.primary
+        else -> c.outline
     }
     Row(
         modifier.fillMaxWidth()
-            .height(44.dp).background(m.card, shape).border(1.dp, ring ?: m.outline, shape).padding(horizontal = 12.dp),
+            .height(56.dp).border(if (isError || focused) 2.dp else 1.dp, ring, shape).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
@@ -178,7 +179,7 @@ fun AuthTextInput(
         BasicTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.info),
+            cursorBrush = SolidColor(m.accent),
             keyboardOptions = KeyboardOptions(keyboardType = keyboard),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
             decorationBox = { inner ->
@@ -205,7 +206,7 @@ fun MinePhoneField(digits: String, enabled: Boolean, isError: Boolean = false, o
             },
             enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.info),
+            cursorBrush = SolidColor(m.accent),
             visualTransformation = PhoneMask,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
@@ -226,7 +227,7 @@ fun MinePasswordField(value: String, enabled: Boolean, isError: Boolean = false,
         BasicTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.info),
+            cursorBrush = SolidColor(m.accent),
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
@@ -240,42 +241,42 @@ fun MinePasswordField(value: String, enabled: Boolean, isError: Boolean = false,
     }
 }
 
-/** `.btn.primary.lg.block`: 52 dp, акцент. */
+/** Основна кнопка M3 (filled): 56 dp, пігулка. */
 @Composable
 fun AuthPrimaryButton(text: String, busy: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, enabled = !busy, modifier = modifier.fillMaxWidth().height(52.dp),
-        shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent,
+        onClick = onClick, enabled = !busy, modifier = modifier.fillMaxWidth().height(56.dp),
+        shape = Mine.pillShape, color = m.accent, contentColor = m.onAccent,
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = m.onAccent)
-            else Text(text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            else Text(text, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
         }
     }
 }
 
-/** `.btn.ghost.block`: 44 dp, без фону. */
+/** Текстова кнопка M3: 48 dp, пігулка, колір primary. */
 @Composable
-fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.text, onClick: () -> Unit) {
+fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.accent, onClick: () -> Unit) {
     Box(
-        modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick),
+        modifier.fillMaxWidth().height(48.dp).clip(Mine.pillShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = color)
+        Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
-/** `.btn.secondary.sm`: 36 dp, рамка. */
+/** Outlined-кнопка M3: 40 dp, пігулка. */
 @Composable
 fun AuthSecondarySmall(text: String, onClick: () -> Unit) {
     val m = Mine.colors
     Surface(
-        onClick = onClick, modifier = Modifier.height(36.dp), shape = RoundedCornerShape(6.dp),
-        color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.outline),
+        onClick = onClick, modifier = Modifier.height(40.dp), shape = Mine.pillShape,
+        color = Color.Transparent, contentColor = m.accent, border = BorderStroke(1.dp, m.outline),
     ) {
-        Box(Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Box(Modifier.padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
+            Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
         }
     }
 }
