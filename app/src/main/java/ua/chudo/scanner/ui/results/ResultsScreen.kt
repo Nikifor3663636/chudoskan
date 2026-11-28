@@ -130,12 +130,21 @@ internal sealed interface ResultsState {
     data class Offline(val updatedAt: Long?, val matches: List<OfflineStockItem>) : ResultsState
 }
 
+/** Товари категорії показуємо списком навіть коли товар один — не відкриваємо картку самі. */
+internal fun categoryResult(title: String, items: List<ProductSummary>): ResultsState =
+    ResultsState.Done(
+        if (items.isEmpty()) LookupResult.NotFound(title, null, emptyList())
+        else LookupResult.Many(title, null, items, Via.Direct),
+    )
+
 internal class ResultsViewModel(
     private val app: ChudoApp,
     private val employee: Employee,
     handle: SavedStateHandle,
 ) : ViewModel() {
     val query: String = checkNotNull(handle["q"])
+    /** `uid` категорії з «Каталогу»: тоді `query` — її назва, а товари беремо з категорії. */
+    val category: String? = handle.get<String>("cat")?.takeIf(String::isNotBlank)
     private val _state = MutableStateFlow<ResultsState>(if (query.isBlank()) ResultsState.Empty else ResultsState.Loading("Шукаємо…"))
     val state = _state.asStateFlow()
     private var job: Job? = null
@@ -144,6 +153,10 @@ internal class ResultsViewModel(
 
     fun load() {
         job?.cancel()
+        category?.let { uid ->
+            job = viewModelScope.launch { _state.value = ResultsState.Loading("Відкриваємо категорію…"); _state.value = loadCategory(uid) }
+            return
+        }
         job = viewModelScope.launch {
             _state.value = ResultsState.Loading("Шукаємо…")
             val manager = app.getSystemService(ConnectivityManager::class.java)
@@ -163,6 +176,14 @@ internal class ResultsViewModel(
                 ResultsState.Offline(snapshot?.updatedAt, matches)
             } else online
         }
+    }
+
+    private suspend fun loadCategory(uid: String): ResultsState = try {
+        categoryResult(query, app.repository.categoryProducts(uid))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        ResultsState.Failed(e.toUiError())
     }
 
     private suspend fun lookupOnline(): ResultsState {
@@ -245,7 +266,8 @@ fun ResultsScreen(
             emptySet()
         }
     }
-    LaunchedEffect(vm.query) { if (vm.query.isNotBlank()) onQueryUsed(vm.query) }
+    // Назву категорії в історію пошуку не пишемо — це не запит користувача.
+    LaunchedEffect(vm.query) { if (vm.query.isNotBlank() && vm.category == null) onQueryUsed(vm.query) }
     fun submit() {
         val clean = draft.trim()
         if (clean.isNotEmpty()) {

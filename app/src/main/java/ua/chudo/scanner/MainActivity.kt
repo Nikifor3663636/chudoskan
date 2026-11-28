@@ -75,6 +75,7 @@ import ua.chudo.scanner.ui.stock.StockScreen
 import ua.chudo.scanner.ui.home.HistoryScreen
 import ua.chudo.scanner.ui.home.HomeScreen
 import ua.chudo.scanner.ui.product.ProductScreen
+import ua.chudo.scanner.ui.results.CatalogScreen
 import ua.chudo.scanner.ui.results.ResultsScreen
 import ua.chudo.scanner.ui.scan.ProductScanScreen
 import ua.chudo.scanner.ui.scan.ScannerScreen
@@ -117,7 +118,8 @@ private const val CART_MODE = "cart"
 private object Routes {
     const val HOME = "home"
     const val SCAN = "scan?mode={mode}"
-    const val RESULTS = "results?q={q}"
+    const val RESULTS = "results?q={q}&cat={cat}"
+    const val CATALOG = "catalog"
     const val PRODUCT = "product/{urlKey}?bc={bc}&scanned={scanned}&print={print}"
     const val STOCK = "stock"
     const val ORDERS = "orders"
@@ -146,6 +148,7 @@ private object Routes {
 
     fun scan(price: Boolean = false) = if (price) "scan?mode=price" else "scan?mode=barcode"
     fun results(q: String) = if (q.isEmpty()) "results" else "results?q=${Uri.encode(q)}"
+    fun category(uid: String, title: String) = "results?q=${Uri.encode(title)}&cat=${Uri.encode(uid)}"
     fun product(urlKey: String, bc: String?, scanned: String? = null, print: Boolean = false): String {
         val query = listOfNotNull(
             bc?.let { "bc=${Uri.encode(it)}" }, scanned?.let { "scanned=${Uri.encode(it)}" }, "print=true".takeIf { print },
@@ -185,7 +188,7 @@ private fun AppNav(home: Employee) {
     val updater = LocalContext.current.chudoApp.updater
     LaunchedEffect(Unit) { updater.check() }
     val tab = when (route) {
-        Routes.HOME, Routes.RESULTS, Routes.HISTORY -> MainTab.HOME
+        Routes.HOME, Routes.RESULTS, Routes.CATALOG, Routes.HISTORY -> MainTab.HOME
         Routes.ORDERS -> MainTab.ORDERS
         Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
         Routes.PROFILE -> MainTab.PROFILE
@@ -444,7 +447,16 @@ private fun AppNavHost(
                 onClose = { nav.popBackStack() },
             )
         }
-        composable(Routes.RESULTS, arguments = listOf(navArgument("q") { type = NavType.StringType; defaultValue = "" })) { resultsEntry ->
+        composable(Routes.CATALOG) {
+            CatalogScreen(onBack = { nav.popBackStack() }, onCategory = { nav.navigate(Routes.category(it.uid, it.name)) })
+        }
+        composable(
+            Routes.RESULTS,
+            arguments = listOf(
+                navArgument("q") { type = NavType.StringType; defaultValue = "" },
+                navArgument("cat") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { resultsEntry ->
             var selection by rememberSaveable { mutableStateOf<List<String?>?>(null) }
             val results: @Composable () -> Unit = {
                 ResultsScreen(
@@ -457,7 +469,7 @@ private fun AppNavHost(
                     onSearch = { query ->
                         nav.navigate(Routes.results(query)) { popUpTo(Routes.RESULTS) { inclusive = true } }
                     },
-                    onCatalog = { nav.navigate(Routes.STOCK) },
+                    onCatalog = { nav.navigate(Routes.CATALOG) { launchSingleTop = true } },
                     employee = employee,
                     onBack = { nav.popBackStack() },
                     selectedProduct = selection?.firstOrNull().takeIf { wide },
