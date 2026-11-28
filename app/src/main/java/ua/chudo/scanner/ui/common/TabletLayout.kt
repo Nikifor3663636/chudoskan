@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -54,7 +55,7 @@ internal fun TabletRail(
             RailTab(R.drawable.ic_redesign_clipboard_list, "Замовлення", selected == MainTab.ORDERS) { onTab(MainTab.ORDERS) }
             Box(
                 Modifier.padding(top = 6.dp, bottom = 10.dp).size(width = 66.dp, height = 52.dp)
-                    .clip(Mine.fieldShape).background(m.accent)
+                    .clip(RoundedCornerShape(16.dp)).background(m.accent)
                     .clickable(onClickLabel = "Сканувати", role = Role.Button, onClick = onScan),
                 contentAlignment = Alignment.Center,
             ) {
@@ -74,7 +75,7 @@ private fun RailTab(@DrawableRes icon: Int, label: String, active: Boolean, onCl
     val m = Mine.colors
     val color = if (active) m.text else m.textTertiary
     Column(
-        Modifier.size(width = 66.dp, height = 52.dp).clip(Mine.fieldShape)
+        Modifier.size(width = 66.dp, height = 52.dp).clip(RoundedCornerShape(16.dp))
             .background(if (active) m.hover else Color.Transparent)
             .selectable(active, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,

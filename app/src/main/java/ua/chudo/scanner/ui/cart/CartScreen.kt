@@ -154,11 +154,11 @@ fun CartContent(
 private fun CartHeader(units: Int, onBack: () -> Unit, onClear: (() -> Unit)?) {
     val m = Mine.colors
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
             Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
         }
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -201,7 +201,7 @@ private fun CartProductRow(line: CartLine, onQty: (String, Int) -> Unit, onRemov
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        val shape = RoundedCornerShape(6.dp)
+        val shape = RoundedCornerShape(12.dp)
         Surface(Modifier.size(48.dp), shape = shape, color = m.surface, border = BorderStroke(1.dp, m.line)) {
             if (!line.image.isNullOrBlank()) ProductImage(line.image, Modifier.fillMaxSize())
             else Box(contentAlignment = Alignment.Center) {
@@ -263,7 +263,7 @@ private fun CartProductRow(line: CartLine, onQty: (String, Int) -> Unit, onRemov
 private fun CartQuantity(quantity: Int, onChange: (Int) -> Unit) {
     val m = Mine.colors
     Row(
-        Modifier.height(36.dp).border(1.dp, m.outline, RoundedCornerShape(6.dp)),
+        Modifier.height(36.dp).border(1.dp, m.outline, RoundedCornerShape(50)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         QuantityButton(R.drawable.ic_redesign_minus, "Менше", quantity > 1) { onChange(quantity - 1) }
@@ -356,7 +356,7 @@ private fun CartButton(
     val m = Mine.colors
     Surface(
         onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = 44.dp),
-        shape = RoundedCornerShape(6.dp), color = if (primary && enabled) m.accent else m.card,
+        shape = RoundedCornerShape(50), color = if (primary && enabled) m.accent else m.card,
         contentColor = if (!enabled) m.textTertiary else if (primary) m.onAccent else m.text,
         border = if (primary && enabled) null else BorderStroke(1.dp, m.outline),
     ) {
@@ -411,7 +411,7 @@ internal fun CashierContent(
     val ink = Color(0xFF111111)
     Column(Modifier.fillMaxSize().background(Color.White).statusBarsPadding().navigationBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
@@ -455,7 +455,7 @@ private fun CashierButton(
 ) {
     val enabled = action != null
     Surface(
-        onClick = { action?.invoke() }, enabled = enabled, modifier = modifier.height(52.dp), shape = RoundedCornerShape(6.dp),
+        onClick = { action?.invoke() }, enabled = enabled, modifier = modifier.height(56.dp), shape = RoundedCornerShape(50),
         color = if (next && enabled) Color(0xFF111111) else Color(0xFFEEF0F3),
         contentColor = if (!enabled) Color(0xFF666C77) else if (next) Color.White else Color(0xFF111111),
     ) {

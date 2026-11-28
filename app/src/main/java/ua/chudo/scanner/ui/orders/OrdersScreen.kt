@@ -285,7 +285,7 @@ internal fun TabletOrders(
                     }
                     Surface(
                         onClick = { if (active) onScan() else onOrder(selected) },
-                        shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent,
+                        shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent,
                     ) {
                         Box(Modifier.heightIn(min = 44.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
                             Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -324,16 +324,16 @@ private fun TabletOrderTableRow(name: String, qty: String, stock: String, picked
 private fun Segments(ui: OrdersUi, onTab: (OrderStage) -> Unit) {
     val m = Mine.colors
     Row(
-        Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp))
-            .border(1.dp, m.line, RoundedCornerShape(8.dp)).selectableGroup().padding(3.dp),
+        Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(50))
+            .border(1.dp, m.line, RoundedCornerShape(50)).selectableGroup().padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         OrderStage.entries.forEach { s ->
             val selected = s == ui.tab
             val count = ui.orders.count { it.stage == s }
             Surface(
-                Modifier.weight(1f).height(34.dp).selectable(selected, role = Role.Tab, onClick = { onTab(s) }),
-                shape = RoundedCornerShape(6.dp), border = if (selected) BorderStroke(1.dp, m.line) else null,
+                Modifier.weight(1f).height(40.dp).selectable(selected, role = Role.Tab, onClick = { onTab(s) }),
+                shape = RoundedCornerShape(50), border = if (selected) BorderStroke(1.dp, m.line) else null,
                 color = if (selected) m.card else Color.Transparent,
             ) {
                 Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -357,8 +357,8 @@ private fun OrderPill(text: String, tone: PillTone = PillTone.NEUTRAL) {
         PillTone.WARN -> m.warningTint to m.warningText
     }
     Box(
-        Modifier.height(22.dp).background(bg, RoundedCornerShape(4.dp))
-            .then(if (tone == PillTone.NEUTRAL) Modifier.border(1.dp, m.line, RoundedCornerShape(4.dp)) else Modifier)
+        Modifier.height(22.dp).background(bg, RoundedCornerShape(8.dp))
+            .then(if (tone == PillTone.NEUTRAL) Modifier.border(1.dp, m.line, RoundedCornerShape(8.dp)) else Modifier)
             .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {

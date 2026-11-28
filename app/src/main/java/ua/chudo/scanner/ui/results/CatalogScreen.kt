@@ -108,10 +108,10 @@ fun CatalogContent(state: CatalogState, onBack: () -> Unit, onRetry: () -> Unit,
     val m = Mine.colors
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Text(
@@ -119,7 +119,7 @@ fun CatalogContent(state: CatalogState, onBack: () -> Unit, onRetry: () -> Unit,
                 fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = m.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Box(
-                Modifier.height(22.dp).background(m.infoTint, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+                Modifier.height(22.dp).background(m.infoTint, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) { Text("Нове", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = m.info) }
             Box(Modifier.width(8.dp))

@@ -415,7 +415,7 @@ private fun HighlightListRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val shape = RoundedCornerShape(6.dp)
+        val shape = RoundedCornerShape(12.dp)
         Box(
             Modifier.size(48.dp).background(m.surface, shape).border(1.dp, m.line, shape),
             contentAlignment = Alignment.Center,
@@ -440,7 +440,7 @@ private fun HighlightListRow(
 @Composable
 private fun HighlightBadge(label: String, background: Color, color: Color) {
     Box(
-        Modifier.height(22.dp).background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+        Modifier.height(22.dp).background(background, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)

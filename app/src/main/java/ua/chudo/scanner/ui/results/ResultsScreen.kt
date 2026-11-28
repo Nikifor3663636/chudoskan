@@ -376,7 +376,7 @@ private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRe
             val date = result.updatedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
             Row(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                    .background(m.warningTint, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                    .background(m.warningTint, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_redesign_triangle_alert), null, Modifier.padding(top = 1.dp).size(18.dp), tint = m.warningText)
@@ -404,7 +404,7 @@ private fun OfflineResults(result: ResultsState.Offline, shopOnly: Boolean, onRe
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(48.dp).background(m.surface, RoundedCornerShape(6.dp)).border(1.dp, m.line, RoundedCornerShape(6.dp)),
+                    Modifier.size(48.dp).background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) { SearchIcon(R.drawable.ic_redesign_package, 22) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -487,13 +487,13 @@ private fun ResultsHeader(
     onClear: () -> Unit,
 ) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(start = 8.dp, end = 12.dp),
+        Modifier.fillMaxWidth().height(64.dp).padding(start = 4.dp, end = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
             Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
         }
         Row(
@@ -680,7 +680,7 @@ private fun ManyList(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val shape = RoundedCornerShape(6.dp)
+                val shape = RoundedCornerShape(12.dp)
                 Box(
                     Modifier.size(48.dp).clip(shape).background(m.surface).border(1.dp, m.line, shape),
                     contentAlignment = Alignment.Center,

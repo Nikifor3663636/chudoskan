@@ -400,7 +400,7 @@ private fun RecentProductRow(product: HistoryItem, onOpenProduct: (String) -> Un
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            Modifier.size(48.dp), shape = RoundedCornerShape(6.dp), color = m.surface,
+            Modifier.size(48.dp), shape = RoundedCornerShape(12.dp), color = m.surface,
             border = BorderStroke(1.dp, m.line),
         ) {
             if (product.image.isNullOrBlank()) {
@@ -436,11 +436,11 @@ internal fun HistoryContent(
     val m = Mine.colors
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = Mine.spacing8),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = Mine.spacing4),
             horizontalArrangement = Arrangement.spacedBy(Mine.spacing4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(
                     painterResource(R.drawable.ic_redesign_chevron_left), "Назад",
                     Modifier.size(24.dp), tint = m.textSecondary,

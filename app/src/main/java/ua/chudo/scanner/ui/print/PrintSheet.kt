@@ -235,7 +235,7 @@ fun PrintSheet(
     }
     if (inline) {
         Surface(
-            shape = RoundedCornerShape(8.dp), color = Mine.colors.card, contentColor = Mine.colors.text,
+            shape = RoundedCornerShape(16.dp), color = Mine.colors.card, contentColor = Mine.colors.text,
             border = BorderStroke(1.dp, Mine.colors.line),
         ) { Column(Modifier.padding(top = 12.dp)) { content() } }
     } else {
@@ -335,7 +335,7 @@ fun PrintSheetContent(
         Surface(
             onClick = onPrint, enabled = !ui.busy,
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 28.dp).heightIn(min = 52.dp),
-            shape = RoundedCornerShape(6.dp), color = if (ui.busy) m.surface else m.accent,
+            shape = RoundedCornerShape(50), color = if (ui.busy) m.surface else m.accent,
             contentColor = if (ui.busy) m.textSecondary else m.onAccent,
         ) {
             Row(
@@ -360,7 +360,7 @@ fun PrintSheetContent(
 @Composable
 private fun PrintChip(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Box(
         Modifier.height(32.dp).clip(shape).background(if (selected) m.text else m.card)
             .border(1.dp, if (selected) m.text else m.outline, shape)
@@ -375,7 +375,7 @@ private fun PrintChip(label: String, selected: Boolean, enabled: Boolean, onClic
 @Composable
 private fun PrintCopies(quantity: Int, enabled: Boolean, onQty: (Int) -> Unit) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.height(40.dp).clip(shape).background(m.card).border(1.dp, m.outline, shape),
         verticalAlignment = Alignment.CenterVertically,
@@ -410,7 +410,7 @@ private fun PrintPreview(items: List<LabelItem>, format: Template, quantity: Int
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(shape = RoundedCornerShape(8.dp), color = Mine.colors.surface, border = BorderStroke(1.dp, Mine.colors.line)) {
+        Surface(shape = RoundedCornerShape(12.dp), color = Mine.colors.surface, border = BorderStroke(1.dp, Mine.colors.line)) {
             val stripes = Mine.colors.card
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 150.dp).drawBehind {
@@ -594,7 +594,7 @@ private fun PrinterChoice(
             val tint = if (online) m.success else m.warningText
             val background = if (online) m.successTint else m.warningTint
             Row(
-                Modifier.height(22.dp).background(background, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+                Modifier.height(22.dp).background(background, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 StatusDot(tint, Modifier.size(8.dp))

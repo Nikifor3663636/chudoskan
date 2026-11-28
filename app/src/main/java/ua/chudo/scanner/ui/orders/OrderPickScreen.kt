@@ -62,10 +62,10 @@ fun OrderPickContent(
     val m = Mine.colors
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -81,7 +81,7 @@ fun OrderPickContent(
                 if (order.stage == OrderStage.NEW) {
                     Row(
                         Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp).fillMaxWidth()
-                            .background(m.infoTint, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                            .background(m.infoTint, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Icon(painterResource(R.drawable.ic_redesign_circle_alert), null, Modifier.padding(top = 1.dp).size(18.dp), tint = m.info)
@@ -119,7 +119,7 @@ fun OrderPickContent(
                     OrderStage.PICKING -> {
                         Surface(
                             onClick = onManual, modifier = Modifier.size(width = 48.dp, height = 52.dp),
-                            shape = RoundedCornerShape(6.dp), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.outline),
+                            shape = RoundedCornerShape(50), color = m.card, contentColor = m.text, border = BorderStroke(1.dp, m.outline),
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(painterResource(R.drawable.ic_redesign_keyboard), "Ввести код", Modifier.size(20.dp))
@@ -137,7 +137,7 @@ fun OrderPickContent(
 @Composable
 private fun PickButton(text: String, @DrawableRes icon: Int?, modifier: Modifier, onClick: () -> Unit) {
     val m = Mine.colors
-    Surface(onClick = onClick, modifier = modifier.height(52.dp), shape = RoundedCornerShape(6.dp), color = m.accent, contentColor = m.onAccent) {
+    Surface(onClick = onClick, modifier = modifier.height(56.dp), shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent) {
         Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             icon?.let {
                 Icon(painterResource(it), null, Modifier.size(20.dp))
@@ -166,7 +166,7 @@ private fun PickRow(line: OrderLine, enabled: Boolean, onToggle: () -> Unit) {
             if (done) Icon(painterResource(R.drawable.ic_redesign_check), "Зібрано", Modifier.size(16.dp), tint = Color.White)
         }
         Box(
-            Modifier.size(48.dp).background(m.surface, RoundedCornerShape(6.dp)).border(1.dp, m.line, RoundedCornerShape(6.dp)),
+            Modifier.size(48.dp).background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) { Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(22.dp), tint = m.textTertiary) }
         Column(Modifier.weight(1f)) {

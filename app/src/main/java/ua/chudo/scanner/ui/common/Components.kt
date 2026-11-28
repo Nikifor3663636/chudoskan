@@ -185,7 +185,7 @@ fun MessageState(
         primary?.let { (label, action) -> MinePrimaryButton(label, action) }
         secondary?.let { (label, action) ->
             Spacer(Modifier.height(10.dp))
-            MineButton(label, action, Modifier.fillMaxWidth().height(52.dp))
+            MineButton(label, action, Modifier.fillMaxWidth().height(56.dp))
         }
     }
 }

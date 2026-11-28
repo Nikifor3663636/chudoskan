@@ -94,10 +94,10 @@ fun ActivityContent(
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
             Row(
-                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
                 }
                 Text(
@@ -180,7 +180,7 @@ fun ActivityContent(
 @Composable
 private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Box(
         Modifier.height(32.dp).background(if (selected) m.text else m.card, shape)
             .border(1.dp, if (selected) m.text else m.outline, shape)

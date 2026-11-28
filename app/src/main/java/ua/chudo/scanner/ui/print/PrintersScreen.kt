@@ -406,7 +406,7 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
             Row(
-                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = a.onBack, modifier = Modifier.size(40.dp)) {
@@ -501,7 +501,7 @@ private fun SmallButton(text: String, onClick: () -> Unit, enabled: Boolean = tr
     val m = Mine.colors
     Surface(
         onClick = onClick, enabled = enabled && !busy, modifier = Modifier.height(36.dp),
-        shape = RoundedCornerShape(6.dp), color = if (danger) Color.Transparent else m.card,
+        shape = RoundedCornerShape(50), color = if (danger) Color.Transparent else m.card,
         contentColor = if (danger) m.danger else m.text,
         border = if (danger) null else BorderStroke(1.dp, m.outline),
     ) {

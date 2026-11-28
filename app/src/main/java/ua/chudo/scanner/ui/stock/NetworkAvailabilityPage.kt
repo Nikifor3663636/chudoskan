@@ -124,10 +124,10 @@ fun NetworkAvailabilityContent(cities: List<NetCity>?, title: String, updatedAt:
     val city = cities?.firstOrNull { it.name == picked } ?: cities?.firstOrNull()
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().navigationBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -167,7 +167,7 @@ fun NetworkAvailabilityContent(cities: List<NetCity>?, title: String, updatedAt:
 @Composable
 private fun CityChip(city: NetCity, selected: Boolean, onClick: () -> Unit) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(6.dp)
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.height(32.dp).background(if (selected) m.text else m.card, shape)
             .border(1.dp, if (selected) m.text else m.outline, shape)
@@ -191,7 +191,7 @@ private fun StoreRow(row: NetStoreRow) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(row.name, Modifier.weight(1f, fill = false), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (row.own) Box(
-                    Modifier.height(22.dp).background(m.surface, RoundedCornerShape(4.dp)).border(1.dp, m.line, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp),
+                    Modifier.height(22.dp).background(m.surface, RoundedCornerShape(8.dp)).border(1.dp, m.line, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text("ваш", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = m.textSecondary) }
             }

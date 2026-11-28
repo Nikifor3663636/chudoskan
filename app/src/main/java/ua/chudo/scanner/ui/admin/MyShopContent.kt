@@ -77,10 +77,10 @@ fun MyShopContent(
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         item {
             Row(
-                Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
                 }
                 Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -201,7 +201,7 @@ fun TempPasswordDialog(r: PasswordRequest, password: String, onDone: () -> Unit)
                     "Для: ${r.name ?: maskPhone(formatPhone(r.phone))}", fontSize = 14.sp, color = m.textSecondary,
                 )
                 Box(
-                    Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(8.dp)).border(1.dp, m.line, RoundedCornerShape(8.dp))
+                    Modifier.fillMaxWidth().background(m.surface, RoundedCornerShape(12.dp)).border(1.dp, m.line, RoundedCornerShape(12.dp))
                         .padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) {

@@ -95,10 +95,10 @@ fun AuthNavPage(
     val m = Mine.colors
     Column(Modifier.fillMaxSize().background(m.card).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(painterResource(R.drawable.ic_redesign_chevron_left), "Назад", Modifier.size(24.dp), tint = m.textSecondary)
             }
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
@@ -362,7 +362,7 @@ enum class StepState { DONE, ACTIVE, TODO }
 @Composable
 fun AuthSteps(steps: List<Triple<StepState, String, String?>>) {
     val m = Mine.colors
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(16.dp)
     Column(Modifier.fillMaxWidth().background(m.card, shape).border(1.dp, m.line, shape)) {
         steps.forEachIndexed { i, (state, title, sub) ->
             if (i > 0) HorizontalDivider(color = m.line)
