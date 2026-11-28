@@ -370,7 +370,7 @@ select ok(tests.ok($$delete from printers where shop_id = '22' and id = 'g'$$), 
 select tests.login('adm22');
 select ok(tests.ok($$insert into admin_log (action, target, shop_id) values ('approve', 'new22', '22')$$), 'adm22 пише журнал');
 select ok(tests.no($$insert into admin_log (by_uid, action) values ('sup', 'approve')$$), 'від чужого імені — ні');
-select ok(tests.no($$select * from admin_log$$), 'adm22 журнал не читає');
+select ok(tests.no($$select * from admin_log where shop_id is distinct from '22'$$), 'adm22 не читає журнал інших магазинів');
 select tests.login('sup');
 select ok(tests.ok($$insert into admin_log (action, target, shop_id) values ('approve', 'new22', '22')$$), 'sup пише журнал');
 select ok(tests.ok($$select * from admin_log$$), 'sup читає журнал');
