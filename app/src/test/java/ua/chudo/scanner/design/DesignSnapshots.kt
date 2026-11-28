@@ -484,7 +484,7 @@ class DesignSnapshots {
                 Box(Modifier.padding(inner)) {
                     ua.chudo.scanner.ui.home.HomeContent(
                         // Сьогодні о 09:30 — щоб знімок не залежав від часу запуску.
-                        ua.chudo.scanner.ui.home.HomeUi("Одеса", "ЧО 22 · ТРЦ Gagarin Plaza", todayAt930(), "", recent, 3, cartUnits = 4, newCount = 12, promoCount = 28),
+                        ua.chudo.scanner.ui.home.HomeUi("Одеса", "ЧО 22 · ТРЦ Gagarin Plaza", todayAt930(), "", recent, 3, cartUnits = 4, newCount = 12, promoCount = 28, greeting = "Доброго ранку, Олено"),
                         onHighlights = {},
                     )
                 }

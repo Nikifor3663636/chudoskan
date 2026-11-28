@@ -131,6 +131,9 @@ fun HomeScreen(
             promoCount = promoCount,
             ordersDemo = app.orders.demo,
             cartTotal = Cart.total(cart).takeIf { cart.all { line -> line.priceKop != null } },
+            greeting = remember(employee.name) {
+                greeting(employee.name, java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+            },
         ),
         onRegion = { showRegions = true },
         onScan = onScan,
@@ -171,6 +174,8 @@ data class HomeUi(
     val promoCount: Long? = null,
     val ordersDemo: Boolean = false,
     val cartTotal: Long? = null,
+    /** «Доброго ранку, Олено» — вітання продавця на головній. */
+    val greeting: String = "",
 )
 /** «Доступна нова версія 3.2.0 · Оновити» → завантаження з прогресом → системне встановлення. */
 @Composable
@@ -247,6 +252,10 @@ fun HomeContent(
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding().imePadding()) {
     LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = Mine.spacing16)) {
         item {
+            if (ui.greeting.isNotBlank()) Text(
+                ui.greeting, Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing16),
+                style = MaterialTheme.typography.headlineSmall, color = m.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
             Row(
                 Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing8, top = Mine.spacing4),
                 horizontalArrangement = Arrangement.spacedBy(Mine.spacing8),
