@@ -604,7 +604,7 @@ select throws_ok(format('select password_reset_target(%L)', (select id from pass
   '42501', null, 'адмін ЧО 62 не скидає пароль у ЧО 22');
 select tests.login('adm22');
 select is((select count(*)::int from password_requests where shop_id = '22'), 3, 'адмін ЧО 22 бачить запити свого магазину');
-select is((select name from password_requests_for('22') where phone = '+380671234567'), 'Оля', 'у списку — ім’я з анкети');
+select is((select name from password_requests_for('22') where phone = '+380671234567'), (select name from users where uid = 'emp22'), 'у списку — ім’я з анкети');
 select is(password_reset_target((select id from password_requests where phone = '+380671234567')), 'emp22', 'адмін ЧО 22 скидає пароль свого співробітника');
 select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234568')),
   'P0002', null, 'співробітника іншого магазину не скинути, навіть якщо запит у своєму');
