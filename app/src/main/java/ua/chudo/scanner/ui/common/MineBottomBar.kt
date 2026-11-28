@@ -57,11 +57,11 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.R
 import ua.chudo.scanner.ui.theme.Mine
 
-/** Вкладки: на телефоні в панелі — Пошук · Скан · Залишки · Профіль; Друк — у профілі, Замовлення — плиткою на головній (обидва є в панелі планшета). */
-enum class MainTab { HOME, ORDERS, PRINT, STOCK, PROFILE }
+/** Вкладки: на телефоні в панелі — Пошук · Каталог · Скан · Залишки · Профіль; Друк — у профілі, Замовлення — плиткою на головній (обидва є в панелі планшета, Каталог там — чипом у пошуку). */
+enum class MainTab { HOME, CATALOG, ORDERS, PRINT, STOCK, PROFILE }
 
-/** Вкладки нижньої панелі телефона (кнопка сканера — між першою і другою). */
-internal val PhoneBarTabs = listOf(MainTab.HOME, MainTab.STOCK, MainTab.PROFILE)
+/** Вкладки нижньої панелі телефона (кнопка сканера — між другою і третьою). */
+internal val PhoneBarTabs = listOf(MainTab.HOME, MainTab.CATALOG, MainTab.STOCK, MainTab.PROFILE)
 
 /** Яку вкладку підсвічувати в нижній панелі: друк відкривається з профілю. */
 internal fun phoneBarSelection(tab: MainTab?): MainTab? = if (tab == MainTab.PRINT) MainTab.PROFILE else tab
@@ -87,6 +87,7 @@ fun MineBottomBar(
     val selected = phoneBarSelection(tab)
     androidx.compose.material3.NavigationBar(containerColor = Mine.colors.card) {
         TabItem(MainTab.HOME, selected, R.drawable.ic_redesign_search, "Пошук", onTab)
+        TabItem(MainTab.CATALOG, selected, R.drawable.ic_redesign_layout_grid, "Каталог", onTab)
         ScanTab(scanLabel, onScan)
         TabItem(MainTab.STOCK, selected, R.drawable.ic_redesign_boxes, "Залишки", onTab)
         TabItem(MainTab.PROFILE, selected, R.drawable.ic_redesign_user, "Профіль", onTab)
