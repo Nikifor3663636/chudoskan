@@ -41,19 +41,18 @@ import androidx.compose.foundation.border
 import ua.chudo.scanner.ui.common.initials
 import ua.chudo.scanner.ui.theme.Mine
 
-/** Хто чекає підтвердження і хто вже працює: спершу адміни, далі за ім'ям; вимкнені — у кінці. */
+/** Хто чекає підтвердження і хто вже працює: за посадою (керуючий, старші, продавці, без посади), далі адміни й ім’я; вимкнені — у кінці. */
 fun myShopGroups(staff: List<StaffMember>): Pair<List<StaffMember>, List<StaffMember>> {
     val pending = staff.filter { it.pending }.sortedBy { it.name }
     val team = staff.filterNot { it.pending }
-        .sortedWith(compareBy<StaffMember> { !it.approved }.thenByDescending { it.admin }.thenBy { it.name })
+        .sortedWith(compareBy<StaffMember> { !it.approved }.thenBy { it.job?.ordinal ?: Int.MAX_VALUE }.thenByDescending { it.admin }.thenBy { it.name })
     return pending to team
 }
 
 fun staffRole(s: StaffMember): String = when {
     s.superAdmin -> "Адмін мережі"
     !s.approved -> "Доступ вимкнено"
-    s.admin -> "Адмін магазину"
-    else -> "Співробітник"
+    else -> ua.chudo.scanner.data.Team.subtitle(s.job, s.admin)
 }
 
 /** «Мій магазин» як у дизайні: анкети на підтвердження і співробітники магазину. */

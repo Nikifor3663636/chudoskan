@@ -25,6 +25,19 @@ class MyShopTest {
         assertEquals("Доступ вимкнено", staffRole(team[2]))
     }
 
+    @Test fun teamIsOrderedByJob() {
+        val staff = listOf(
+            member("1", "Андрій", approved = true).copy(job = ua.chudo.scanner.data.JobTitle.SELLER),
+            member("2", "Борис", approved = true),
+            member("3", "Віра", approved = true).copy(job = ua.chudo.scanner.data.JobTitle.MANAGER),
+            member("4", "Галина", approved = true, admin = true).copy(job = ua.chudo.scanner.data.JobTitle.SENIOR),
+        )
+        val (_, team) = myShopGroups(staff)
+        assertEquals(listOf("3", "4", "1", "2"), team.map { it.uid })
+        assertEquals("Старший продавець · Адмін магазину", staffRole(team[1]))
+        assertEquals("Співробітник", staffRole(team[3]))
+    }
+
     @Test fun notificationsShowStockAndPrinters() {
         val events = ActivityKind.entries.mapIndexed { i, k -> ShopActivity(k, k.title, "", i.toLong()) }
         assertEquals(setOf(ActivityKind.STOCK, ActivityKind.PRINTER), notificationEvents(events).map { it.kind }.toSet())

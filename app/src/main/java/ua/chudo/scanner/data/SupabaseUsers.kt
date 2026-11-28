@@ -42,15 +42,17 @@ data class UserRow(
     @SerialName("stock_admin") val stockAdmin: Boolean = false,
     @SerialName("changed_at") val changedAt: String? = null,
     @SerialName("must_change_password") val mustChangePassword: Boolean = false,
+    @SerialName("job_title") val jobTitle: String = "",
 ) {
     fun employee(fallbackPhone: String) = Employee(
         uid = uid, name = name, phone = phone.ifEmpty { fallbackPhone }, region = region, shop = shop, shopId = shopId,
         approved = approved, admin = admin,
         stockAdmin = approved && (stockAdmin || superAdmin), superAdmin = approved && superAdmin,
         mustChangePassword = mustChangePassword,
+        jobTitle = JobTitle.of(jobTitle),
     )
 
-    fun staff() = StaffMember(uid, name, phone, shopId, shop, region, approved, admin, superAdmin, parseTime(changedAt))
+    fun staff() = StaffMember(uid, name, phone, shopId, shop, region, approved, admin, superAdmin, parseTime(changedAt), JobTitle.of(jobTitle))
 }
 
 @Serializable
@@ -129,6 +131,15 @@ object SupabaseUsers {
         }
     }
 
+    /** Колектив поточного магазину: підтверджені, без телефонів (public.shop_team). */
+    suspend fun team(): List<TeamMember> =
+        db.postgrest.rpc("shop_team").decodeList<TeamRow>().map { it.member() }
+
+    /** Посада співробітника (ставить адмін магазину / мережі; перевіряє тригер users_job_guard). */
+    suspend fun setJobTitle(uid: String, job: JobTitle?) {
+        db.from("users").update(buildJsonObject { put("job_title", job?.code.orEmpty()) }) { filter { eq("uid", uid) } }
+    }
+
     // ---------- Адміністрування ----------
 
     suspend fun shops(): List<ShopDoc> =
@@ -172,4 +183,15 @@ object SupabaseUsers {
             val text = (r.details as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: r.details?.toString().orEmpty()
             AdminLogEntry(r.id.toString(), r.byUid, r.action, r.target.orEmpty(), r.shopId.orEmpty(), text, parseTime(r.at))
         }
+}
+
+/** Рядок public.shop_team(). */
+@Serializable
+data class TeamRow(
+    val uid: String,
+    val name: String = "",
+    @SerialName("job_title") val jobTitle: String = "",
+    val admin: Boolean = false,
+) {
+    fun member() = TeamMember(uid, name, JobTitle.of(jobTitle), admin)
 }

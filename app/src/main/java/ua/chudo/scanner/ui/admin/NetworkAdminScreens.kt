@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -170,6 +174,9 @@ class NetworkAdminViewModel(
     fun dismissReset(request: ua.chudo.scanner.data.PasswordRequest, onDone: (String) -> Unit) = act(onDone, "Запит відхилено") {
         ua.chudo.scanner.data.PasswordRequests.reject(request.id, employee.uid)
     }
+
+    fun setJob(m: StaffMember, job: ua.chudo.scanner.data.JobTitle?, onDone: (String) -> Unit) =
+        act(onDone, "Посада: ${job?.title ?: "не вказано"}") { repo.setJobTitle(employee.uid, m, job) }
 
     fun logActAs(shopId: String, code: String?) = viewModelScope.launch {
         runCatching { repo.log(employee.uid, "actAs", code ?: shopId, shopId) }
@@ -347,6 +354,7 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
     var chosen by remember { mutableStateOf<StaffMember?>(null) }
     var confirm by remember { mutableStateOf<Triple<StaffMember, StaffAction, ShopDoc?>?>(null) }
     var transfer by remember { mutableStateOf<StaffMember?>(null) }
+    var jobFor by remember { mutableStateOf<StaffMember?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     // Лише в пам’яті: після закриття вікна пароль більше ніде не видно.
     var tempPassword by remember { mutableStateOf<Pair<ua.chudo.scanner.data.PasswordRequest, String>?>(null) }
@@ -413,7 +421,12 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(s.shop.ifBlank { "Без магазину" }, fontSize = 14.sp, color = m.textSecondary)
-                    if (actions.isEmpty()) Text("Змінити цю анкету з телефону не можна.", fontSize = 14.sp)
+                    val canJob = ua.chudo.scanner.data.Team.canSetJob(s)
+                    if (canJob) MineButton("Посада: ${s.job?.title ?: "не вказано"}", {
+                        chosen = null
+                        jobFor = s
+                    }, Modifier.fillMaxWidth(), tone = MineTone.OUTLINE, enabled = !busy)
+                    if (actions.isEmpty() && !canJob) Text("Змінити цю анкету з телефону не можна.", fontSize = 14.sp)
                     actions.forEach { a ->
                         MineButton(a.title, {
                             chosen = null
@@ -442,6 +455,27 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
                 }
             },
             confirmButton = { TextButton(onClick = { transfer = null }) { Text("Скасувати") } },
+        )
+    }
+    jobFor?.let { s ->
+        AlertDialog(
+            onDismissRequest = { jobFor = null },
+            title = { Text("Посада · ${s.name.ifBlank { s.phone }}") },
+            text = {
+                Column(Modifier.selectableGroup()) {
+                    (ua.chudo.scanner.data.JobTitle.entries.map { it as ua.chudo.scanner.data.JobTitle? } + null).forEach { job ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .selectable(s.job == job, enabled = !busy, role = Role.RadioButton) { jobFor = null; vm.setJob(s, job) { message = it } },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = s.job == job, onClick = null)
+                            Text(job?.title ?: "Не вказано", Modifier.padding(start = 12.dp), fontSize = 16.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { jobFor = null }) { Text("Скасувати") } },
         )
     }
     confirm?.let { (s, a, target) ->
@@ -498,6 +532,7 @@ private val ACTION_TITLES = StaffAction.entries.associate { it.log to it.title }
     NetworkStockRepository.ACTION to "Завантаження залишків мережі",
     "actAs" to "Працювати як у магазині",
     "linkStore" to "Склад 1С ↔ магазин",
+    "jobTitle" to "Посада",
 )
 
 @Composable

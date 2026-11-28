@@ -17,6 +17,7 @@ private val SHOP_LOG_TITLES = mapOf(
     "unpairPc" to "Відключено комп’ютер",
     "linkStore" to "Прив’язано склад 1С",
     "actAs" to "Адмін мережі працював у магазині",
+    "jobTitle" to "Змінено посаду",
 )
 
 /**
