@@ -189,7 +189,9 @@ private fun AppNav(home: Employee) {
         Routes.HOME, Routes.RESULTS, Routes.CATALOG, Routes.HISTORY -> MainTab.HOME
         Routes.ORDERS -> MainTab.ORDERS
         Routes.LABELS -> MainTab.PRINT
-        Routes.STOCK, Routes.HIGHLIGHTS -> MainTab.STOCK
+        Routes.STOCK -> MainTab.STOCK
+        // Новинки / акції: підсвічуємо вкладку, з якої відкрили (головна або «Залишки»).
+        Routes.HIGHLIGHTS -> if (nav.previousBackStackEntry?.destination?.route == Routes.STOCK) MainTab.STOCK else MainTab.HOME
         Routes.PROFILE -> MainTab.PROFILE
         else -> null
     }
@@ -322,13 +324,6 @@ private fun AppNavHost(
             if (Backend.isSupabase) HighlightsScreen(
                 canUpload = employee.stockAdmin || employee.superAdmin,
                 initialKind = kind,
-                onPromos = { nav.navigate(Routes.highlights(HighlightKind.PROMO)) },
-                onNew = {
-                    val route = Routes.highlights(HighlightKind.NEW)
-                    if (!nav.popBackStack(route, inclusive = false)) {
-                        nav.navigate(route) { popUpTo(Routes.HIGHLIGHTS) { inclusive = true } }
-                    }
-                },
                 onBack = { nav.popBackStack() },
                 onProduct = { key, barcode -> nav.navigate(Routes.product(key, null, barcode)) },
                 onBrowseCatalog = { items, selected -> setCatalog(entry, items, selected) },

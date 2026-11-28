@@ -405,7 +405,7 @@ class DesignSnapshots {
             Surface(color = Mine.colors.bg) {
                 Column(Modifier.fillMaxSize()) {
                     ua.chudo.scanner.ui.stock.HighlightsHeader(
-                        ua.chudo.scanner.data.HighlightKind.NEW, onBack = {}, onPromos = {}, onNew = {},
+                        ua.chudo.scanner.data.HighlightKind.NEW, onBack = {},
                     )
                     ua.chudo.scanner.ui.stock.HighlightProductRow(
                         ua.chudo.scanner.data.ProductHighlight(
@@ -423,21 +423,20 @@ class DesignSnapshots {
             Surface(color = Mine.colors.bg) {
                 Column(Modifier.fillMaxSize()) {
                     ua.chudo.scanner.ui.stock.HighlightsHeader(
-                        ua.chudo.scanner.data.HighlightKind.PROMO, onBack = {}, onPromos = {}, onNew = {},
-                    )
-                    ua.chudo.scanner.ui.stock.HighlightTabs("Кампанії", "Акційні товари", false, {}, {})
-                    ua.chudo.scanner.ui.stock.HighlightProductRow(
-                        ua.chudo.scanner.data.ProductHighlight(
-                            barcode = "5702016911114", article = "10954", name = "Конструктор LEGO DUPLO",
-                            promoPrice = 649.0, endsOn = "30.11.2026",
-                        ),
-                        kind = ua.chudo.scanner.data.HighlightKind.PROMO, onClick = {},
+                        ua.chudo.scanner.data.HighlightKind.PROMO, onBack = {},
                     )
                     ua.chudo.scanner.ui.stock.PromoCampaignRow(
                         ua.chudo.scanner.data.PromoCampaign(
-                            "Знижки на конструктори", "LEGO", "", "20.11.2026", "30.11.2026", "Завершено", emptyList(),
+                            "−20% на конструктори LEGO City та Friends", "LEGO", "Дистриб’ютор", "20.11.2026", "30.11.2026", "Діє",
+                            listOf("Умови" to "Знижка на касі, не сумується з іншими акціями", "Механіка" to "Ціна на цінник — акційна"),
                         ),
-                        onClick = {},
+                        Modifier.padding(16.dp), onClick = {},
+                    )
+                    ua.chudo.scanner.ui.stock.PromoCampaignRow(
+                        ua.chudo.scanner.data.PromoCampaign(
+                            "Знижки на конструктори", "LEGO", "", "01.11.2026", "15.11.2026", "Завершено", emptyList(),
+                        ),
+                        Modifier.padding(horizontal = 16.dp), onClick = {},
                     )
                 }
             }
