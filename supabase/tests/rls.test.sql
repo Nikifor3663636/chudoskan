@@ -592,14 +592,14 @@ select is(request_password_reset('0671234567', '22'), 'bad_phone', 'номер �
 select is(request_password_reset('+380671234569', '999'), 'bad_shop', 'неіснуючий магазин');
 select is(request_password_reset('+380500000000', '22'), 'ok', 'невідомий номер — та сама відповідь (номери не перебрати)');
 select is(request_password_reset('+380671234568', '22'), 'ok', 'запит на співробітника ЧО 62 від імені ЧО 22');
-select ok(tests.no($select * from password_requests$), 'анонім не читає запити');
-select ok(tests.no($insert into password_requests (phone, shop_id) values ('+380671111111', '22')$), 'анонім не пише в таблицю напряму');
+select ok(tests.no($$select * from password_requests$$), 'анонім не читає запити');
+select ok(tests.no($$insert into password_requests (phone, shop_id) values ('+380671111111', '22')$$), 'анонім не пише в таблицю напряму');
 
 select tests.login('emp22');
-select ok(tests.no($select * from password_requests$), 'співробітник не бачить запитів');
+select ok(tests.no($$select * from password_requests$$), 'співробітник не бачить запитів');
 select is((select count(*)::int from password_requests_for('22')), 0, 'співробітник не отримує список');
 select tests.login('adm62');
-select ok(tests.no($select * from password_requests where shop_id = '22'$), 'адмін ЧО 62 не бачить запитів ЧО 22');
+select ok(tests.no($$select * from password_requests where shop_id = '22'$$), 'адмін ЧО 62 не бачить запитів ЧО 22');
 select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234567')),
   '42501', null, 'адмін ЧО 62 не скидає пароль у ЧО 22');
 select tests.login('adm22');
@@ -615,9 +615,9 @@ select lives_ok(format('select password_reset_finish(%L)', (select id from passw
 select is((select status from password_requests where phone = '+380671234567'), 'done', 'запит закрито');
 select throws_ok(format('select password_reset_target(%L)', (select id from password_requests where phone = '+380671234567')),
   'P0001', null, 'закритий запит удруге не скинути');
-select ok(tests.ok($update password_requests set status = 'rejected', done_by = 'adm22', done_at = now() where phone = '+380500000000'$),
+select ok(tests.ok($$update password_requests set status = 'rejected', done_by = 'adm22', done_at = now() where phone = '+380500000000'$$),
   'адмін відхиляє запит свого магазину');
-select ok(tests.no($update password_requests set status = 'done', done_by = 'adm22' where phone = '+380500000000'$),
+select ok(tests.no($$update password_requests set status = 'done', done_by = 'adm22' where phone = '+380500000000'$$),
   'адмін не ставить «done» в обхід скидання');
 select tests.login('sup');
 select is((select count(*)::int from admin_log where action = 'passwordReset' and target = 'emp22'), 1, 'скидання — у журналі дій');
