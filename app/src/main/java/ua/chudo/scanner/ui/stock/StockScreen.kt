@@ -165,7 +165,7 @@ class StockViewModel(
     private val stock: ShopStockRepository,
     private val prefs: AppPrefs,
     private val net: NetworkStockLookup? = null,
-    /** Адмін магазину / мережі: «Залишки» по всіх магазинах мережі й «Що в магазині». */
+    /** «Залишки по магазинах» і розподіл товару по мережі — для всіх співробітників (stock читає кожен підтверджений). */
     val networkView: Boolean = false,
 ) : ViewModel() {
     // ---------- Адмін: залишки по магазинах мережі ----------
@@ -471,7 +471,7 @@ fun rememberStockViewModel(employee: Employee, owner: ViewModelStoreOwner): Stoc
         key = "stock-${employee.uid}-${employee.shopId}",
         factory = viewModelFactory {
             initializer {
-                StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, networkView = employee.managesShop || employee.stockAdmin)
+                StockViewModel(employee, app.repository, app.shopStock, app.prefs, app.networkLookup, networkView = true)
             }
         },
     )
@@ -534,41 +534,8 @@ fun StockScreen(
     val m = Mine.colors
     val app = ctx.chudoApp
     val supabase = ua.chudo.scanner.data.Backend.isSupabase
-    var tab by rememberSaveable { mutableStateOf(StockTab.PROMO) }
     val allStores by androidx.compose.runtime.produceState<Map<String, ua.chudo.scanner.data.StoreDoc>>(emptyMap()) {
         value = try { app.networkLookup.stores() } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyMap() }
-    }
-    val myCode by androidx.compose.runtime.produceState<String?>(null, employee.shopId) {
-        value = try { app.networkLookup.storesWithOwn(employee.shopId).second } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-    }
-    val counts by androidx.compose.runtime.produceState<Map<StockTab, Long?>>(emptyMap(), supabase) {
-        if (supabase) value = mapOf(
-            StockTab.PROMO to try { ua.chudo.scanner.data.ProductHighlights.count(ua.chudo.scanner.data.HighlightKind.PROMO) } catch (e: CancellationException) { throw e } catch (_: Exception) { null },
-            StockTab.NEW to try { ua.chudo.scanner.data.ProductHighlights.count(ua.chudo.scanner.data.HighlightKind.NEW) } catch (e: CancellationException) { throw e } catch (_: Exception) { null },
-        )
-    }
-    var highlights by remember(tab) { mutableStateOf<List<ua.chudo.scanner.data.ProductHighlight>?>(null) }
-    var low by remember(tab, myCode) { mutableStateOf<List<LowItem>?>(null) }
-    LaunchedEffect(tab, myCode, allStores, supabase) {
-        try {
-            when (tab) {
-                StockTab.PROMO, StockTab.NEW -> {
-                    val kind = if (tab == StockTab.PROMO) ua.chudo.scanner.data.HighlightKind.PROMO else ua.chudo.scanner.data.HighlightKind.NEW
-                    highlights = if (supabase) ua.chudo.scanner.data.ProductHighlights.page(kind, "", 0) else emptyList()
-                }
-                StockTab.LOW -> {
-                    val code = myCode
-                    low = if (supabase && code != null) lowStock(ua.chudo.scanner.data.SupabaseStock.storeItems(code, 2000), code, allStores) else emptyList()
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            if (tab == StockTab.LOW) low = emptyList() else highlights = emptyList()
-        }
-    }
-    val openBarcode: (String) -> Unit = { barcode ->
-        onOpenCatalogProduct?.invoke(barcode, listOf(barcode)) ?: run { query = barcode; vm.scanned(barcode) }
     }
 
     LazyColumn(
@@ -587,33 +554,34 @@ fun StockScreen(
         }
         when (val st = s) {
             StockState.Idle -> {
-                item { StockSegments(tab, counts, { tab = it }, Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) }
-                if (tab == StockTab.LOW) item {
-                    Text(
-                        "Товари, яких у магазині 1 шт або немає, але є в місті.",
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp), fontSize = 13.sp, color = m.textTertiary,
-                    )
-                }
-                item { Spacer(Modifier.height(12.dp)); HorizontalDivider(color = m.line) }
-                if (tab == StockTab.LOW) {
-                    val list = low
-                    when {
-                        list == null -> item { StockListMessage("", loading = true) }
-                        list.isEmpty() -> item { StockListMessage(if (myCode == null && supabase) "Магазин ще не прив’язано до складу 1С." else "Усе є в достатній кількості.") }
-                        else -> items(list, key = { "low-" + it.row.barcode }) { LowStockRow(it) { openBarcode(it.row.barcode) } }
-                    }
+                // Залишки по магазинах: свій першим, далі місто, далі решта мережі.
+                item { StockSection("Залишки по магазинах") }
+                val order = storeOrder(stores, ownCode)
+                if (order.isEmpty()) item {
+                    StockListMessage(if (supabase) "Залишки мережі ще не завантажували." else "", loading = supabase && allStores.isEmpty() && info == null)
                 } else {
-                    val list = highlights
-                    val kind = if (tab == StockTab.PROMO) ua.chudo.scanner.data.HighlightKind.PROMO else ua.chudo.scanner.data.HighlightKind.NEW
-                    when {
-                        list == null -> item { StockListMessage("", loading = true) }
-                        list.isEmpty() -> item { StockListMessage(if (tab == StockTab.PROMO) "Акцій зараз немає." else "Новинок поки немає.") }
-                        else -> items(list, key = { "hl-" + it.barcode + it.article + it.name }) { product ->
-                            HighlightProductRow(product, kind) {
-                                if (product.barcode.isNotBlank()) openBarcode(product.barcode)
-                                else { query = product.article.ifBlank { product.name }; vm.search(query) }
+                    item { StoreChips(order, ownCode, storeCode, vm::pickStore, Modifier.padding(top = 12.dp, bottom = 12.dp)) }
+                    val chosen = order.firstOrNull { it.first == storeCode }
+                    chosen?.let { (code, store) ->
+                        item {
+                            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                                Text(store.name.ifBlank { "ЧО $code" }, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = m.text, maxLines = 2)
+                                storeItems?.takeIf { it.isNotEmpty() }?.let { list ->
+                                    Text(
+                                        "Товарів: ${list.size}" + if (list.size >= 100) " — найбільші залишки" else "",
+                                        fontSize = 13.sp, color = m.textTertiary,
+                                    )
+                                }
                             }
+                            HorizontalDivider(color = m.line)
                         }
+                    }
+                    val list = storeItems
+                    when {
+                        storeCode == null -> Unit
+                        storeLoading || list == null -> item { StockListMessage("", loading = true) }
+                        list.isEmpty() -> item { StockListMessage("У цьому магазині товарів із залишком немає.") }
+                        else -> items(list, key = { "store-" + storeCode + "-" + it.barcode }) { row -> StoreItemRow(row) { vm.openStoreItem(row) } }
                     }
                 }
             }
@@ -629,21 +597,12 @@ fun StockScreen(
                 }
             }
         }
-        if (employee.stockAdmin || onNetworkUpload != null || vm.networkView) {
+        if (employee.stockAdmin || onNetworkUpload != null) {
             item { StockSection("Для адміна залишків") }
             if (onNetworkUpload != null) item {
                 StockLinkRow(R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "«Ведомость по партиям», .xlsx", onNetworkUpload)
-            } else if (employee.stockAdmin) item {
+            } else item {
                 StockLinkRow(R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "Залишки свого магазину, .xlsx або .csv") { picker.launch(FILE_TYPES) }
-            }
-            // Адмін: що лежить у будь-якому магазині мережі.
-            if (vm.networkView) item(key = "store-stock") {
-                Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
-                    StoreStockCard(
-                        NetworkAvailability.storeChoices(stores), storeCode, storeItems, storeLoading,
-                        onPick = vm::pickStore, onOpen = vm::openStoreItem,
-                    )
-                }
             }
         }
     }

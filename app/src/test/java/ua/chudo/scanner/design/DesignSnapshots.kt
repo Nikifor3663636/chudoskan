@@ -296,12 +296,16 @@ class DesignSnapshots {
                 ua.chudo.scanner.ui.stock.StockBanner(
                     ua.chudo.scanner.data.ShopStockInfo(todayAt930(), "Марина", 21870), 46, Modifier.padding(horizontal = 16.dp),
                 )
-                ua.chudo.scanner.ui.stock.StockSegments(
-                    ua.chudo.scanner.ui.stock.StockTab.LOW,
-                    mapOf(ua.chudo.scanner.ui.stock.StockTab.PROMO to 48L, ua.chudo.scanner.ui.stock.StockTab.NEW to 12L), {},
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+                ua.chudo.scanner.ui.stock.StockSection("Залишки по магазинах")
+                ua.chudo.scanner.ui.stock.StoreChips(
+                    ua.chudo.scanner.ui.stock.storeOrder(demoStores, "22"), "22", "22", {},
+                    Modifier.padding(top = 12.dp, bottom = 12.dp),
                 )
-                ua.chudo.scanner.ui.stock.lowStock(rows, "22", demoStores).forEach { ua.chudo.scanner.ui.stock.LowStockRow(it) {} }
+                rows.forEach { r ->
+                    ua.chudo.scanner.ui.stock.StoreItemRow(
+                        ua.chudo.scanner.data.StoreItem(r.barcode, ua.chudo.scanner.data.NetItem(r.name, "BOC1000${r.article.length}", r.article, r.q), r.q.values.maxOrNull() ?: 0.0),
+                    ) {}
+                }
                 ua.chudo.scanner.ui.stock.StockSection("Для адміна залишків")
                 ua.chudo.scanner.ui.stock.StockLinkRow(ua.chudo.scanner.R.drawable.ic_redesign_file_spreadsheet, "Завантажити звіт 1С", "«Ведомость по партиям», .xlsx") {}
             }
