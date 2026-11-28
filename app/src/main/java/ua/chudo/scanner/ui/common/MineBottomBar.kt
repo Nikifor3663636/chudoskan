@@ -28,7 +28,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -95,7 +94,7 @@ private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(120), label = "scanKeyScale")
     Column(
-        Modifier.weight(1f).fillMaxHeight()
+        Modifier.weight(1f).height(80.dp)
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
             .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
