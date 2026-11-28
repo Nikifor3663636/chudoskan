@@ -235,9 +235,75 @@ fun AuthGate(content: @Composable (Employee) -> Unit) {
                     app.prefs.setRegion(s.employee.region)
                 }
             }
-            content(s.employee)
+            if (s.employee.mustChangePassword) TemporaryPasswordPage(s.employee) else content(s.employee)
         }
         else -> AuthScreen(s)
+    }
+}
+
+/** Після скидання адміном: новий пароль двічі, далі — у застосунок. Вийти можна, обійти — ні. */
+@Composable
+private fun TemporaryPasswordPage(employee: Employee) {
+    val app = LocalContext.current.chudoApp
+    val scope = rememberCoroutineScope()
+    var new by rememberSaveable { mutableStateOf("") }
+    var repeat by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    androidx.activity.compose.BackHandler {}
+    TemporaryPasswordForm(
+        employee.name, new, repeat, busy, error,
+        onNew = { new = it; error = null }, onRepeat = { repeat = it; error = null },
+        onSave = {
+            error = Passwords(new, repeat).problem()
+            if (error == null && !busy) scope.launch {
+                busy = true
+                try {
+                    app.auth.replaceTemporaryPassword(new)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    error = if (e is com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException) {
+                        "Вийдіть і увійдіть знову з тимчасовим паролем, потім задайте новий."
+                    } else e.authMessage()
+                } finally {
+                    busy = false
+                }
+            }
+        },
+        onSignOut = { app.auth.signOut() },
+    )
+}
+
+@Composable
+fun TemporaryPasswordForm(
+    name: String,
+    new: String,
+    repeat: String,
+    busy: Boolean,
+    error: String?,
+    onNew: (String) -> Unit,
+    onRepeat: (String) -> Unit,
+    onSave: () -> Unit,
+    onSignOut: () -> Unit,
+) {
+    val m = Mine.colors
+    AuthPage {
+        Column(Modifier.fillMaxWidth()) {
+            AuthLogo(132.dp, Modifier.padding(top = 12.dp, bottom = 28.dp))
+            Text("Придумайте новий пароль", fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+            Text(
+                ua.chudo.scanner.ui.home.vocativeName(name).let { if (it.isBlank()) "Ви" else "$it, ви" } +
+                    " увійшли з тимчасовим паролем від адміна. Задайте свій — його знатимете лише ви.",
+                Modifier.padding(top = 6.dp), fontSize = 15.sp, lineHeight = 22.sp, color = m.textSecondary,
+            )
+            Column(Modifier.padding(top = 26.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                AuthField("Новий пароль", hint = "Щонайменше $MIN_PASSWORD символів") { MinePasswordField(new, !busy, onChange = onNew) }
+                AuthField("Повторіть пароль", error = error) { MinePasswordField(repeat, !busy, isError = error != null, onChange = onRepeat) }
+            }
+            AuthPrimaryButton("Зберегти й увійти", busy, Modifier.padding(top = 24.dp), onSave)
+            AuthGhostButton("Вийти", Modifier.padding(top = 6.dp), onClick = onSignOut)
+        }
     }
 }
 
@@ -473,7 +539,7 @@ fun ForgotForm(ui: ForgotUi, onDigits: (String) -> Unit, onPickShop: () -> Unit,
             }
             AuthPrimaryButton("Надіслати запит", ui.busy, onClick = onSend)
             Text(
-                "Після скидання адмін передасть тимчасовий пароль особисто. Змінити його можна в «Профіль → Змінити пароль».",
+                "Після скидання адмін передасть тимчасовий пароль особисто. При вході застосунок попросить змінити його.",
                 fontSize = 13.sp, lineHeight = 18.sp, color = m.textTertiary,
             )
         }
@@ -492,7 +558,7 @@ private fun ForgotInfoPage(onBack: () -> Unit) {
             )
             AuthPrimaryButton("Зрозуміло", busy = false, onClick = onBack)
             Text(
-                "Після скидання адмін передасть тимчасовий пароль особисто. Змінити його можна в «Профіль → Змінити пароль».",
+                "Після скидання адмін передасть тимчасовий пароль особисто. При вході застосунок попросить змінити його.",
                 fontSize = 13.sp, lineHeight = 18.sp, color = m.textTertiary,
             )
         }
