@@ -120,7 +120,7 @@ fun CartContent(
     Column(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
         CartHeader(Cart.units(lines), onBack, if (lines.isNotEmpty()) ({ confirmClear = true }) else null)
         if (lines.isEmpty()) {
-            EmptyCart(onScan)
+            EmptyCart(onScan, Modifier.weight(1f))
         } else {
             LazyColumn(
                 Modifier.weight(1f),
@@ -174,22 +174,33 @@ private fun CartHeader(units: Int, onBack: () -> Unit, onClear: (() -> Unit)?) {
 }
 
 @Composable
-private fun EmptyCart(onScan: () -> Unit) {
+private fun EmptyCart(onScan: () -> Unit, modifier: Modifier = Modifier) {
     val m = Mine.colors
+    // Порожній кошик — по центру екрана, великий текст і велика кнопка під палець.
     Column(
-        Modifier.fillMaxWidth().padding(start = 20.dp, top = 80.dp, end = 20.dp),
+        modifier.fillMaxWidth().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
     ) {
-        Box(Modifier.size(48.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.ic_redesign_shopping_cart), null, Modifier.size(20.dp), tint = m.textSecondary)
+        Box(Modifier.size(96.dp).background(m.accentTone, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_redesign_shopping_cart), null, Modifier.size(44.dp), tint = m.link)
         }
-        Text("Кошик порожній", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = m.text)
+        Text("Кошик порожній", fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, color = m.text, textAlign = TextAlign.Center)
         Text(
             "Скануйте товари підряд — сума порахується сама, ще до каси.",
-            Modifier.widthIn(max = 240.dp), textAlign = TextAlign.Center, fontSize = 14.sp, color = m.textSecondary,
+            Modifier.widthIn(max = 320.dp), textAlign = TextAlign.Center, fontSize = 18.sp, lineHeight = 25.sp, color = m.textSecondary,
         )
-        CartButton("Сканувати товари", onScan, icon = R.drawable.ic_redesign_scan_barcode, primary = true)
+        Surface(
+            onClick = onScan, modifier = Modifier.padding(top = 8.dp).fillMaxWidth().widthIn(max = 360.dp).height(64.dp),
+            shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(28.dp))
+                Text("Сканувати товари", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        // Оптичний центр трохи вище середини.
+        Spacer(Modifier.height(48.dp))
     }
 }
 
