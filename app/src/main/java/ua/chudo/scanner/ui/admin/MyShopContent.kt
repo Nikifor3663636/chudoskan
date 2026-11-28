@@ -72,6 +72,7 @@ fun MyShopContent(
     resets: List<PasswordRequest> = emptyList(),
     onReset: (PasswordRequest) -> Unit = {},
     onDismissReset: (PasswordRequest) -> Unit = {},
+    log: List<ua.chudo.scanner.data.AdminLogEntry> = emptyList(),
 ) {
     val m = Mine.colors
     LazyColumn(Modifier.fillMaxSize().background(m.bg).statusBarsPadding()) {
@@ -140,6 +141,11 @@ fun MyShopContent(
                 }
                 HorizontalDivider(color = m.line)
             }
+            if (log.isNotEmpty()) {
+                val names = staff.associate { it.uid to it.name }
+                item { Section("Журнал дій") }
+                items(log.take(20), key = { "l-" + it.id }) { e -> LogRow(ua.chudo.scanner.data.shopLogLine(e, names), e.at) }
+            }
             item { Box(Modifier.height(16.dp)) }
         }
     }
@@ -171,6 +177,31 @@ private fun ResetRow(r: PasswordRequest, busy: Boolean, onReset: (PasswordReques
                 SmallAction("Відхилити", primary = false, enabled = !busy) { onDismiss(r) }
             }
         }
+    }
+    HorizontalDivider(color = m.line)
+}
+
+/** Рядок «Журналу дій»: іконка дії · що зроблено · хто → з ким · коли. */
+@Composable
+private fun LogRow(line: ua.chudo.scanner.data.ShopLogLine, at: java.util.Date?) {
+    val m = Mine.colors
+    val icon = when (line.action) {
+        "passwordReset" -> R.drawable.ic_redesign_lock
+        "pairPc", "unpairPc", "devicePair" -> R.drawable.ic_redesign_printer
+        else -> R.drawable.ic_redesign_users
+    }
+    Row(
+        Modifier.fillMaxWidth().background(m.card).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(36.dp).background(m.surface, CircleShape).border(1.dp, m.line, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, Modifier.size(18.dp), tint = m.textSecondary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(line.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text)
+            Text(line.detail, fontSize = 13.sp, color = m.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        at?.let { Text(resetTime(it), fontSize = 13.sp, color = m.textTertiary) }
     }
     HorizontalDivider(color = m.line)
 }

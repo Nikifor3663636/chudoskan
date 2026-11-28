@@ -370,7 +370,7 @@ select ok(tests.ok($$delete from printers where shop_id = '22' and id = 'g'$$), 
 select tests.login('adm22');
 select ok(tests.ok($$insert into admin_log (action, target, shop_id) values ('approve', 'new22', '22')$$), 'adm22 пише журнал');
 select ok(tests.no($$insert into admin_log (by_uid, action) values ('sup', 'approve')$$), 'від чужого імені — ні');
-select ok(tests.no($$select * from admin_log$$), 'adm22 журнал не читає');
+select ok(tests.no($$select * from admin_log where shop_id is distinct from '22'$$), 'adm22 не читає журнал інших магазинів');
 select tests.login('sup');
 select ok(tests.ok($$insert into admin_log (action, target, shop_id) values ('approve', 'new22', '22')$$), 'sup пише журнал');
 select ok(tests.ok($$select * from admin_log$$), 'sup читає журнал');
@@ -621,6 +621,21 @@ select ok(tests.no($$update password_requests set status = 'done', done_by = 'ad
   'адмін не ставить «done» в обхід скидання');
 select tests.login('sup');
 select is((select count(*)::int from admin_log where action = 'passwordReset' and target = 'emp22'), 1, 'скидання — у журналі дій');
+
+-- ===================== Журнал дій свого магазину =====================
+reset role;
+select set_config('request.headers', '{}', true);
+delete from app.device_required;
+insert into admin_log (by_uid, action, target, shop_id) values ('sup', 'approve', 'new62', '62'), ('sup', 'approve', 'new22', '22');
+select tests.login('adm22');
+select ok(tests.ok($$select * from admin_log where shop_id = '22'$$), 'адмін ЧО 22 читає журнал свого магазину');
+select ok(tests.no($$select * from admin_log where shop_id = '62'$$), 'адмін ЧО 22 не читає журнал ЧО 62');
+select ok(tests.ok($$insert into admin_log (action, target, shop_id) values ('disable', 'new22', '22')$$), 'адмін пише про свій магазин');
+select ok(tests.no($$insert into admin_log (action, target, shop_id) values ('disable', 'new62', '62')$$), 'адмін не пише в журнал чужого магазину');
+select tests.login('emp22');
+select ok(tests.no($$select * from admin_log where shop_id = '22'$$), 'співробітник журнал не читає');
+select tests.login('sup');
+select ok(tests.ok($$select * from admin_log where shop_id = '62'$$), 'адмін мережі читає весь журнал');
 
 select * from finish();
 rollback;

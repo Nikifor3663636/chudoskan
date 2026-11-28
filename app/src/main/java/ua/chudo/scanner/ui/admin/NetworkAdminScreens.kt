@@ -117,7 +117,8 @@ class NetworkAdminViewModel(
                             runCatching { ua.chudo.scanner.data.PasswordRequests.pending(employee.homeShopId) }.getOrDefault(emptyList())
                         } else emptyList()
                     }
-                    AdminData(staff = staff.await(), resets = resets.await())
+                    val log = async { runCatching { repo.shopHistory(employee.homeShopId) }.getOrDefault(emptyList()) }
+                    AdminData(staff = staff.await(), resets = resets.await(), history = log.await())
                 } else {
                     val shops = async { repo.shops() }
                     val stores = async { runCatching { stock.stores() }.getOrDefault(emptyMap()) }
@@ -358,6 +359,7 @@ fun StaffAdminScreen(employee: Employee, onBack: () -> Unit, shopFilter: String?
     if (ownShopOnly) MyShopContent(
         employee.shop, d?.staff, error, message, busy,
         resets = d?.resets.orEmpty(),
+        log = d?.history.orEmpty(),
         onReset = { r -> vm.resetPassword(r, onPassword = { tempPassword = r to it }) { message = it } },
         onDismissReset = { r -> vm.dismissReset(r) { message = it } },
         canReject = { s -> StaffAction.REJECT in NetworkAdmin.actions(s, employee.uid, false) },

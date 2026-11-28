@@ -400,7 +400,16 @@ describe('adminLog', () => {
     await assertSucceeds(setDoc(doc(as('sup'), 'adminLog', 'b'), entry('sup')));
     await assertFails(setDoc(doc(as('adm22'), 'adminLog', 'c'), entry('sup')));
     await assertFails(setDoc(doc(as('emp22'), 'adminLog', 'd'), entry('emp22')));
-    await assertFails(getDoc(doc(as('adm22'), 'adminLog', 'a')));
+    // Адмін магазину читає записи свого магазину, але не чужого.
+    await assertSucceeds(getDoc(doc(as('adm22'), 'adminLog', 'a')));
+    await assertSucceeds(getDocs(query(collection(as('adm22'), 'adminLog'), where('shopId', '==', '22'))));
+    await assertSucceeds(setDoc(doc(as('sup'), 'adminLog', 'x62'), { by: 'sup', at: serverTimestamp(), action: 'approve', target: 'new62', shopId: '62' }));
+    await assertFails(getDoc(doc(as('adm22'), 'adminLog', 'x62')));
+    await assertFails(getDocs(query(collection(as('adm22'), 'adminLog'), where('shopId', '==', '62'))));
+    await assertFails(getDocs(collection(as('adm22'), 'adminLog')));
+    await assertFails(getDoc(doc(as('emp22'), 'adminLog', 'a')));
+    // Чужому магазину в журнал не пише.
+    await assertFails(setDoc(doc(as('adm22'), 'adminLog', 'e'), { ...entry('adm22'), shopId: '62' }));
     await assertSucceeds(getDoc(doc(as('sup'), 'adminLog', 'a')));
     await assertFails(updateDoc(doc(as('sup'), 'adminLog', 'a'), { action: 'x' }));
     await assertFails(deleteDoc(doc(as('sup'), 'adminLog', 'a')));
@@ -472,8 +481,9 @@ describe('адміністрування мережі (етап 6)', () => {
     await assertSucceeds(updateDoc(doc(as('adm22'), 'users', 'new22'), { approved: false, admin: false, approvedBy: 'adm22', changedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(as('adm22'), 'users', 'new22'), { shopId: '', approvedBy: 'adm22' }));
     await assertSucceeds(addDoc(collection(as('adm22'), 'adminLog'), { by: 'adm22', action: 'disable', target: 'new22', shopId: '22', at: serverTimestamp() }));
-    // Журнал читає лише адмін мережі.
+    // Увесь журнал читає адмін мережі; адмін магазину — лише свій магазин.
     await assertSucceeds(getDocs(collection(sup, 'adminLog')));
     await assertFails(getDocs(collection(as('adm22'), 'adminLog')));
+    await assertSucceeds(getDocs(query(collection(as('adm22'), 'adminLog'), where('shopId', '==', '22'))));
   });
 });

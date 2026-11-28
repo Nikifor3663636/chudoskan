@@ -220,6 +220,24 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun myShopLog() = paparazzi.snapshot {
+        val zone = java.time.ZoneId.systemDefault()
+        fun at(daysAgo: Long, h: Int, min: Int) = java.util.Date.from(java.time.LocalDate.now(zone).minusDays(daysAgo).atTime(h, min).atZone(zone).toInstant())
+        fun member(uid: String, name: String, admin: Boolean = false) =
+            ua.chudo.scanner.data.StaffMember(uid, name, "+380675551218", "s22", "ЧО 22", "odesa", true, admin)
+        val staff = listOf(member("a", "Олена Коваль", admin = true), member("d", "Денис Т."), member("i", "Ірина Савчук"))
+        val log = listOf(
+            ua.chudo.scanner.data.AdminLogEntry("1", "a", "approve", "d", "s22", "", at(0, 10, 42)),
+            ua.chudo.scanner.data.AdminLogEntry("2", "a", "passwordReset", "i", "s22", "", at(0, 9, 15)),
+            ua.chudo.scanner.data.AdminLogEntry("3", "sup", "pairPc", "КАСА-22", "s22", "", at(1, 18, 20)),
+        )
+        ChudoTheme(dark = false) {
+            ua.chudo.scanner.ui.admin.MyShopContent(
+                "ЧО 22 · ТРЦ Gagarin Plaza", staff, null, null, false, { false }, {}, {}, {}, {}, log = log,
+            )
+        }
+    }
+
     @Test fun tempPasswordDialog() = paparazzi.snapshot {
         ChudoTheme(dark = false) {
             Box(Modifier.fillMaxSize().background(Mine.colors.bg)) {
