@@ -1,6 +1,13 @@
 package ua.chudo.scanner.print
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -97,6 +104,7 @@ class PrintService(context: Context) {
             launch { reg.listen().collect { _records.value = it } }
             launch { reg.subnets().collect { _subnets.value = it } }
         }
+        watchWifi()
     }
 
     /** Запись реестра для найденного устройства; не узнали вид — `null` (в реестр не пишем). */
@@ -236,6 +244,40 @@ class PrintService(context: Context) {
         return list.firstOrNull()?.let { it.displayName to false }
     }
 
+    // ---------- Автопідключення по Wi-Fi ----------
+
+    private var wifiWatch: ConnectivityManager.NetworkCallback? = null
+    private val autoLock = Mutex()
+    @Volatile private var lastAutoScan = 0L
+    @Volatile private var lastAutoSubnet: String? = null
+
+    /** Телефон підключився до Wi-Fi — тихо шукаємо принтери (Godex, A4) у цій мережі й додаємо в реєстр магазину. */
+    private fun watchWifi() {
+        if (wifiWatch != null) return
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { autoConnect() }
+        }
+        val request = NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
+        if (runCatching { cm.registerNetworkCallback(request, cb) }.isSuccess) wifiWatch = cb
+    }
+
+    /** Пошук у мережі телефона: нова мережа — одразу, та сама — не частіше [AutoScan.MIN_GAP_MS]. */
+    fun autoConnect() {
+        if (registry == null) return
+        scope.launch {
+            delay(AutoScan.SETTLE_MS) // IP видається не миттєво
+            autoLock.withLock {
+                val subnet = discovery.ownSubnet()
+                val now = System.currentTimeMillis()
+                if (!AutoScan.due(now, lastAutoScan, subnet, lastAutoSubnet)) return@withLock
+                lastAutoScan = now
+                lastAutoSubnet = subnet
+                runCatching { adminScan() }
+            }
+        }
+    }
+
     /**
      * При запуске, не чаще раза в 10 минут: тихо проверяем принтеры реестра (lastSeen),
      * пропавшие ищем по подсетям магазина — новый IP попадёт в реестр под тем же id.
@@ -300,4 +342,16 @@ class PrintService(context: Context) {
         /** Тестовый код: префикс Украины 482 + 9 цифр; контрольную допишет [Ean13.normalize]. */
         const val TEST_EAN12 = "482307760123"
     }
+}
+
+/** Коли шукати принтери автоматично після підключення до Wi-Fi. */
+object AutoScan {
+    /** Та сама мережа — не частіше ніж раз на 2 хв (Wi-Fi буває «мигає»). */
+    const val MIN_GAP_MS = 2 * 60 * 1000L
+    /** Пауза після підключення: телефон ще отримує IP. */
+    const val SETTLE_MS = 1_500L
+
+    /** Без Wi-Fi ([subnet] = null) — ні; інша мережа — так; та сама — якщо минуло [MIN_GAP_MS]. */
+    fun due(now: Long, last: Long, subnet: String?, lastSubnet: String?): Boolean =
+        subnet != null && (subnet != lastSubnet || now - last >= MIN_GAP_MS)
 }
