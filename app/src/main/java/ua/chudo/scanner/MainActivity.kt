@@ -290,8 +290,7 @@ private fun AppNavHost(
                 employee, onBack = { nav.popBackStack() },
                 onScannerSettings = { nav.navigate(Routes.SCANNER_SETTINGS) },
                 onOperations = { nav.navigate(Routes.OPERATIONS) },
-                onPrint = { nav.navigate(Routes.LABELS) },
-                onPrinters = if (employee.managesShop) ({ nav.navigate(Routes.PRINTERS) }) else null,
+                onPrinters = { nav.navigate(Routes.PRINTERS) },
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
                 onMyShop = if (home.admin && !home.superAdmin) ({ nav.navigate(Routes.MY_SHOP) }) else null,
@@ -334,7 +333,8 @@ private fun AppNavHost(
             )
         }
         // «Принтери» — только администратору: сотрудник принтер не выбирает и не настраивает.
-        composable(Routes.PRINTERS) { if (employee.managesShop) PrintersScreen(employee, onBack = { nav.popBackStack() }) else nav.popBackStack() }
+        // «Профіль → Принтери»: підключає й налаштовує будь-який співробітник свого магазину.
+        composable(Routes.PRINTERS) { PrintersScreen(employee, onBack = { nav.popBackStack() }, onBatch = { nav.navigate(Routes.LABELS) }) }
         composable(Routes.LABELS) { entry ->
             val homeEntry = remember(entry) { nav.getBackStackEntry(Routes.HOME) }
             LabelBatchScreen(

@@ -286,7 +286,7 @@ class PrintersViewModel(
 fun kindShort(k: LabelKind) = if (k == LabelKind.STICKY) "40×24" else "A4"
 
 @Composable
-fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
+fun PrintersScreen(employee: Employee, onBack: () -> Unit, onBatch: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val app = ctx.chudoApp
     val vm: PrintersViewModel = viewModel(factory = viewModelFactory { initializer { PrintersViewModel(app.printing, employee.shop, employee, PcRepository(com.google.firebase.firestore.FirebaseFirestore.getInstance())) } })
@@ -341,8 +341,9 @@ fun PrintersScreen(employee: Employee, onBack: () -> Unit) {
     }
     Box(Modifier.fillMaxSize()) {
         PrintersContent(
-            PrintersUi(list, usb, agents, unknown, status, main, scanning, testing, pcs),
+            PrintersUi(list, usb, agents, unknown, status, main, scanning, testing, pcs, canPairPc = employee.managesShop),
             PrintersActions(
+                onBatch = onBatch,
                 onBack = onBack, onHelp = { guide = true }, onRefresh = vm::scan,
                 onTest = vm::test, onFindAgain = { vm.scan() }, onEdit = { editing = it.id },
                 onAddUnknown = vm::addUnknown, onManual = { manual = true },
@@ -383,6 +384,8 @@ data class PrintersUi(
     val testing: String?,
     /** Комп'ютери магазину з «ЧудоСкан Друк» (devices + agents). */
     val pcs: List<PcCard> = emptyList(),
+    /** Комп’ютер («ЧудоСкан Друк») підключає лише адмін магазину — так дозволяє база. */
+    val canPairPc: Boolean = true,
 )
 
 class PrintersActions(
@@ -396,6 +399,8 @@ class PrintersActions(
     val onManual: () -> Unit = {},
     val onPairPc: () -> Unit = {},
     val onUnpairPc: (PcCard) -> Unit = {},
+    /** «Друк цінників пакетом» — перенесено сюди з профілю. */
+    val onBatch: (() -> Unit)? = null,
 )
 
 @Composable
@@ -419,6 +424,23 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
             }
             if (ui.scanning) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth(), color = m.accent, trackColor = m.line)
         }
+        a.onBatch?.let { batch ->
+            item(key = "batch") {
+                Surface(
+                    onClick = batch, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                    shape = RoundedCornerShape(16.dp), color = m.accentTone, contentColor = m.link,
+                ) {
+                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_redesign_printer), null, Modifier.size(24.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Друк цінників пакетом", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = m.text)
+                            Text("Після завантаження 1С або зі списку", fontSize = 14.sp, color = m.textSecondary)
+                        }
+                        Icon(painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(20.dp), tint = m.textTertiary)
+                    }
+                }
+            }
+        }
         item(key = "h-net") { SectionTitle("У мережі магазину") }
         items(network, key = { it.id }) { r -> RecordRow(r, ui, a) }
         items(ui.unknown, key = { "u" + it.ip }) { d -> UnknownRow(d, a.onAddUnknown) }
@@ -431,7 +453,7 @@ fun PrintersContent(ui: PrintersUi, a: PrintersActions) {
         items(ui.pcs, key = { "card" + it.uid }) { pc -> PcRow(pc, a.onUnpairPc) }
         items(viaPc, key = { "pc" + it.id }) { r -> RecordRow(r, ui, a) }
         item(key = "pair") {
-            LinkRow(R.drawable.ic_redesign_plus, "Підключити комп’ютер", "Код з програми «ЧудоСкан Друк»", a.onPairPc)
+            if (ui.canPairPc) LinkRow(R.drawable.ic_redesign_plus, "Підключити комп’ютер", "Код з програми «ЧудоСкан Друк»", a.onPairPc)
             LinkRow(R.drawable.ic_redesign_plus, "Додати за IP", "Мережевий принтер, порт 9100", a.onManual)
             LinkRow(R.drawable.ic_redesign_settings, "Допомога", "Як підключити принтер", a.onHelp)
         }
