@@ -87,7 +87,7 @@ fun MineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
         MineTone.OUTLINE -> OutlinedButton(
             onClick, modifier.heightIn(min = 48.dp), enabled = enabled && !busy, shape = shape, contentPadding = pad,
             border = BorderStroke(1.dp, m.outline),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = m.accent),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = m.link),
         ) { content() }
         else -> Button(
             onClick, modifier.heightIn(min = 48.dp), enabled = enabled && !busy, shape = shape, contentPadding = pad,
@@ -103,7 +103,7 @@ fun MineButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 private fun LocalContentColorOr(tone: MineTone, m: ua.chudo.scanner.ui.theme.MineColors): Color = when (tone) {
     MineTone.ACCENT -> m.onAccent
     MineTone.DANGER -> m.onDanger
-    MineTone.OUTLINE -> m.accent
+    MineTone.OUTLINE -> m.link
 }
 
 /** Картка M3 (elevated-тон): surfaceContainerLow, 12 dp. */

@@ -249,7 +249,7 @@ private fun SmallAction(text: String, primary: Boolean, enabled: Boolean, onClic
     // M3: filled (основна дія) або text button, 40 dp, пігулка.
     Surface(
         onClick = onClick, enabled = enabled, modifier = Modifier.height(40.dp), shape = RoundedCornerShape(50),
-        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.accent,
+        color = if (primary) m.accent else Color.Transparent, contentColor = if (primary) m.onAccent else m.link,
     ) {
         Box(Modifier.padding(horizontal = if (primary) 24.dp else 12.dp), contentAlignment = Alignment.Center) {
             Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)

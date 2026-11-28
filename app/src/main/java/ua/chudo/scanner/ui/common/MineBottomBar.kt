@@ -78,7 +78,7 @@ fun MineBottomBar(
     scanLabel: String = "Сканувати товар",
     newOrders: Int = 0,
 ) {
-    androidx.compose.material3.NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+    androidx.compose.material3.NavigationBar(containerColor = Mine.colors.card) {
         TabItem(MainTab.HOME, tab, R.drawable.ic_redesign_search, "Пошук", onTab)
         TabItem(MainTab.ORDERS, tab, R.drawable.ic_redesign_clipboard_list, "Замовлення", onTab, newOrders)
         ScanTab(scanLabel, onScan)
@@ -89,7 +89,7 @@ fun MineBottomBar(
 
 @Composable
 private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
-    val c = MaterialTheme.colorScheme
+    val m = Mine.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(120), label = "scanKeyScale")
@@ -101,10 +101,10 @@ private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            Modifier.scale(scale).size(width = 64.dp, height = 48.dp).clip(RoundedCornerShape(16.dp)).background(c.primaryContainer),
+            Modifier.scale(scale).size(width = 64.dp, height = 48.dp).clip(RoundedCornerShape(16.dp)).background(m.accent),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(24.dp), tint = c.onPrimaryContainer)
+            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(24.dp), tint = m.onAccent)
         }
     }
 }

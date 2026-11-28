@@ -4,7 +4,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -32,7 +31,7 @@ import ua.chudo.scanner.R
 /** Тема оформлення в профілі. */
 enum class ThemeMode(val title: String) { DARK("Темна"), LIGHT("Світла"), SYSTEM("Як у системі") }
 
-/** Кольори застосунку — ролі Material 3 під іменами, якими користуються екрани. */
+/** Кольори застосунку (палітра chudoskan-redesign.html); форми й компоненти — Material 3. */
 @Immutable
 data class MineColors(
     val dark: Boolean,
@@ -77,124 +76,35 @@ data class MineColors(
     val scrim: Color,
 )
 
-// Material 3: схема Fidelity від фірмового помаранчевого #FF7500 (material-color-utilities,
-// як «Color match» у Material Theme Builder): primaryContainer — сам фірмовий колір,
-// primary — темніший тон для тексту й кнопок з достатнім контрастом.
-private val M3Light = lightColorScheme(
-    primary = Color(0xFF9C4500),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFFF7500),
-    onPrimaryContainer = Color(0xFF5B2500),
-    inversePrimary = Color(0xFFFFB68E),
-    secondary = Color(0xFF914C20),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFFDA370),
-    onSecondaryContainer = Color(0xFF76370C),
-    tertiary = Color(0xFF00639A),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFF00A5FD),
-    onTertiaryContainer = Color(0xFF00385A),
-    background = Color(0xFFFFF8F6),
-    onBackground = Color(0xFF251912),
-    surface = Color(0xFFFFF8F6),
-    onSurface = Color(0xFF251912),
-    surfaceVariant = Color(0xFFFEDCCB),
-    onSurfaceVariant = Color(0xFF594236),
-    surfaceTint = Color(0xFF9C4500),
-    inverseSurface = Color(0xFF3C2D26),
-    inverseOnSurface = Color(0xFFFFEDE5),
-    error = Color(0xFFBA1A1A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF93000A),
-    outline = Color(0xFF8C7163),
-    outlineVariant = Color(0xFFE0C0B0),
-    scrim = Color(0xFF000000),
-    surfaceBright = Color(0xFFFFF8F6),
-    surfaceDim = Color(0xFFEDD5CA),
-    surfaceContainer = Color(0xFFFFEAE0),
-    surfaceContainerHigh = Color(0xFFFCE3D7),
-    surfaceContainerHighest = Color(0xFFF6DED2),
-    surfaceContainerLow = Color(0xFFFFF1EB),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
+val MineDark = MineColors(
+    dark = true,
+    bg = Color(0xFF0F1114), surface = Color(0xFF1C2025), card = Color(0xFF171A1E), line = Color(0xFF2A2F36),
+    outline = Color(0xFF3A4049), text = Color(0xFFECEEF1), textSecondary = Color(0xFFA3AAB5),
+    accent = Color(0xFFFF7A0A), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFF2A1A0C),
+    danger = Color(0xFF2E1715), onDanger = Color(0xFFFF7A70), success = Color(0xFF4CC27E),
+    warning = Color(0xFFF2B33D), warningText = Color(0xFFF2B33D), field = Color(0xFF1C2025),
+    sheet = Color(0xFF22262C), link = Color(0xFFFF9A47), logout = Color(0xFFFF7A70),
+    brandLine = Color(0xFF5A3413), textTertiary = Color(0xFF8A919C),
+    successTint = Color(0xFF13291D), warningTint = Color(0xFF2B2210),
+    info = Color(0xFF7BA7F5), infoTint = Color(0xFF152238),
+    hover = Color.White.copy(alpha = 0.05f), press = Color.White.copy(alpha = 0.09f),
+    scrim = Color.Black.copy(alpha = 0.60f),
 )
 
-private val M3Dark = darkColorScheme(
-    primary = Color(0xFFFFB68E),
-    onPrimary = Color(0xFF542200),
-    primaryContainer = Color(0xFFFF7500),
-    onPrimaryContainer = Color(0xFF5B2500),
-    inversePrimary = Color(0xFF9C4500),
-    secondary = Color(0xFFFFB68E),
-    onSecondary = Color(0xFF542200),
-    secondaryContainer = Color(0xFF76370C),
-    onSecondaryContainer = Color(0xFFFCA36F),
-    tertiary = Color(0xFF96CCFF),
-    onTertiary = Color(0xFF003353),
-    tertiaryContainer = Color(0xFF00A5FD),
-    onTertiaryContainer = Color(0xFF00385A),
-    background = Color(0xFF1C110A),
-    onBackground = Color(0xFFF6DED2),
-    surface = Color(0xFF1C110A),
-    onSurface = Color(0xFFF6DED2),
-    surfaceVariant = Color(0xFF594236),
-    onSurfaceVariant = Color(0xFFE0C0B0),
-    surfaceTint = Color(0xFFFFB68E),
-    inverseSurface = Color(0xFFF6DED2),
-    inverseOnSurface = Color(0xFF3C2D26),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    outline = Color(0xFFA88B7C),
-    outlineVariant = Color(0xFF594236),
-    scrim = Color(0xFF000000),
-    surfaceBright = Color(0xFF45362E),
-    surfaceDim = Color(0xFF1C110A),
-    surfaceContainer = Color(0xFF2A1D16),
-    surfaceContainerHigh = Color(0xFF35271F),
-    surfaceContainerHighest = Color(0xFF41322A),
-    surfaceContainerLow = Color(0xFF251912),
-    surfaceContainerLowest = Color(0xFF170C06),
+val MineLight = MineColors(
+    dark = false,
+    bg = Color(0xFFF3F4F6), surface = Color(0xFFF7F8F9), card = Color(0xFFFFFFFF), line = Color(0xFFE1E3E8),
+    outline = Color(0xFFC9CDD4), text = Color(0xFF15171C), textSecondary = Color(0xFF545B67),
+    accent = Color(0xFFFF7500), onAccent = Color(0xFF1C0D00), accentTone = Color(0xFFFFF0E3),
+    danger = Color(0xFFFCEAE8), onDanger = Color(0xFFB42620), success = Color(0xFF1E7F47),
+    warning = Color(0xFFF2B33D), warningText = Color(0xFF8F5600), field = Color(0xFFF7F8F9),
+    sheet = Color(0xFFFFFFFF), link = Color(0xFFA84A00), logout = Color(0xFFB42620),
+    brandLine = Color(0xFFFFD2AD), textTertiary = Color(0xFF666C77),
+    successTint = Color(0xFFE6F4EC), warningTint = Color(0xFFFFF4DC),
+    info = Color(0xFF1F5BC2), infoTint = Color(0xFFE7EFFC),
+    hover = Color(0xFF15171C).copy(alpha = 0.05f), press = Color(0xFF15171C).copy(alpha = 0.09f),
+    scrim = Color(0xFF0C0E12).copy(alpha = 0.48f),
 )
-
-
-/** Токени застосунку = ролі Material 3 (+ успіх / попередження / інфо, гармонізовані з фірмовим кольором). */
-private fun mine(c: ColorScheme, dark: Boolean) = MineColors(
-    dark = dark,
-    bg = c.surface,
-    surface = c.surfaceContainerHigh,
-    card = c.surfaceContainerLow,
-    line = c.outlineVariant,
-    outline = c.outline,
-    text = c.onSurface,
-    textSecondary = c.onSurfaceVariant,
-    accent = c.primary,
-    onAccent = c.onPrimary,
-    accentTone = if (dark) Color(0xFF773300) else Color(0xFFFFDBCA),
-    danger = c.errorContainer,
-    onDanger = c.onErrorContainer,
-    success = if (dark) Color(0xFF99D77F) else Color(0xFF336B21),
-    warning = if (dark) Color(0xFFFFB870) else Color(0xFF8B5000),
-    warningText = if (dark) Color(0xFFFFB870) else Color(0xFF8B5000),
-    field = c.surfaceContainerHighest,
-    sheet = c.surfaceContainerLow,
-    link = c.primary,
-    logout = c.error,
-    brandLine = c.primaryContainer,
-    textTertiary = c.outline,
-    successTint = if (dark) Color(0xFF1B5208) else Color(0xFFB4F398),
-    warningTint = if (dark) Color(0xFF693C00) else Color(0xFFFFDCBE),
-    info = if (dark) Color(0xFFBFC1FF) else Color(0xFF4C51C0),
-    infoTint = if (dark) Color(0xFF3337A7) else Color(0xFFE1E0FF),
-    // Шари стану M3: наведення 8 %, натискання 10 %.
-    hover = c.onSurface.copy(alpha = 0.08f),
-    press = c.onSurface.copy(alpha = 0.10f),
-    scrim = c.scrim.copy(alpha = 0.32f),
-)
-
-val MineDark = mine(M3Dark, dark = true)
-val MineLight = mine(M3Light, dark = false)
 
 val LocalMine = staticCompositionLocalOf { MineDark }
 
@@ -220,8 +130,48 @@ object Mine {
 val InStockGreen = Color(0xFF1E7F47)
 val OutOfStockGrey = Color(0xFF9AA0A8)
 
-private val DarkScheme = M3Dark
-private val LightScheme = M3Light
+private fun scheme(m: MineColors) =
+    (if (m.dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = m.accent,
+        onPrimary = m.onAccent,
+        primaryContainer = m.accentTone,
+        onPrimaryContainer = m.link,
+        inversePrimary = if (m.dark) MineLight.accent else MineDark.accent,
+        secondary = m.textSecondary,
+        onSecondary = m.card,
+        secondaryContainer = m.accentTone,
+        onSecondaryContainer = m.link,
+        tertiary = m.info,
+        onTertiary = m.card,
+        tertiaryContainer = m.infoTint,
+        onTertiaryContainer = m.info,
+        background = m.bg,
+        onBackground = m.text,
+        surface = m.card,
+        onSurface = m.text,
+        surfaceVariant = m.surface,
+        onSurfaceVariant = m.textSecondary,
+        surfaceTint = m.accent,
+        inverseSurface = if (m.dark) MineLight.text else MineDark.text,
+        inverseOnSurface = if (m.dark) MineLight.card else MineDark.card,
+        surfaceDim = m.bg,
+        surfaceBright = m.sheet,
+        surfaceContainerLowest = if (m.dark) m.bg else m.card,
+        surfaceContainerLow = m.card,
+        surfaceContainer = m.surface,
+        surfaceContainerHigh = m.sheet,
+        surfaceContainerHighest = m.sheet,
+        outline = m.outline,
+        outlineVariant = m.line,
+        error = m.onDanger,
+        onError = m.danger,
+        errorContainer = m.danger,
+        onErrorContainer = m.onDanger,
+        scrim = m.scrim,
+    )
+
+private val DarkScheme = scheme(MineDark)
+private val LightScheme = scheme(MineLight)
 
 val CodeStyle = TextStyle(
     fontFamily = FontFamily.Monospace,
@@ -283,7 +233,7 @@ fun ChudoTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
         CompositionLocalProvider(
             LocalMine provides m,
             LocalContentColor provides m.text,
-            LocalTextSelectionColors provides TextSelectionColors(m.accent, m.accent.copy(alpha = 0.3f)),
+            LocalTextSelectionColors provides TextSelectionColors(m.info, m.info.copy(alpha = 0.25f)),
             content = content,
         )
     }

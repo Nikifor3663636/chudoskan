@@ -146,12 +146,11 @@ fun AuthInputBox(
     content: @Composable RowScope.() -> Unit,
 ) {
     val m = Mine.colors
-    val c = androidx.compose.material3.MaterialTheme.colorScheme
     val shape = Mine.fieldShape
     val ring = when {
-        isError -> c.error
-        focused -> c.primary
-        else -> c.outline
+        isError -> m.onDanger
+        focused -> m.info
+        else -> m.outline
     }
     Row(
         modifier.fillMaxWidth()
@@ -179,7 +178,7 @@ fun AuthTextInput(
         BasicTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.accent),
+            cursorBrush = SolidColor(m.info),
             keyboardOptions = KeyboardOptions(keyboardType = keyboard),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
             decorationBox = { inner ->
@@ -206,7 +205,7 @@ fun MinePhoneField(digits: String, enabled: Boolean, isError: Boolean = false, o
             },
             enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.accent),
+            cursorBrush = SolidColor(m.info),
             visualTransformation = PhoneMask,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
@@ -227,7 +226,7 @@ fun MinePasswordField(value: String, enabled: Boolean, isError: Boolean = false,
         BasicTextField(
             value = value, onValueChange = onChange, enabled = enabled, singleLine = true,
             textStyle = TextStyle(fontSize = 16.sp, color = m.text),
-            cursorBrush = SolidColor(m.accent),
+            cursorBrush = SolidColor(m.info),
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
@@ -258,7 +257,7 @@ fun AuthPrimaryButton(text: String, busy: Boolean, modifier: Modifier = Modifier
 
 /** Текстова кнопка M3: 48 dp, пігулка, колір primary. */
 @Composable
-fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.accent, onClick: () -> Unit) {
+fun AuthGhostButton(text: String, modifier: Modifier = Modifier, color: Color = Mine.colors.link, onClick: () -> Unit) {
     Box(
         modifier.fillMaxWidth().height(48.dp).clip(Mine.pillShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -273,7 +272,7 @@ fun AuthSecondarySmall(text: String, onClick: () -> Unit) {
     val m = Mine.colors
     Surface(
         onClick = onClick, modifier = Modifier.height(40.dp), shape = Mine.pillShape,
-        color = Color.Transparent, contentColor = m.accent, border = BorderStroke(1.dp, m.outline),
+        color = Color.Transparent, contentColor = m.link, border = BorderStroke(1.dp, m.outline),
     ) {
         Box(Modifier.padding(horizontal = 24.dp), contentAlignment = Alignment.Center) {
             Text(text, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
