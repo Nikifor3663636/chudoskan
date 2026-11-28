@@ -78,6 +78,8 @@ fun ProfileScreen(
     onMyShop: (() -> Unit)? = null,
     onScannerSettings: () -> Unit = {},
     onOperations: () -> Unit = {},
+    /** «Колектив магазину»: хто керуючий, старші продавці, продавці. */
+    onTeam: () -> Unit = {},
 ) {
     val app = LocalContext.current.chudoApp
     val scope = rememberCoroutineScope()
@@ -86,11 +88,11 @@ fun ProfileScreen(
     var confirmLogout by rememberSaveable { mutableStateOf(false) }
     var changePassword by rememberSaveable { mutableStateOf(false) }
     val region = app.prefs.allRegions.firstOrNull { it.code == employee.region }
+    // Посада (ставить адмін магазину) і права: «Старший продавець · Адмін магазину».
     val role = when {
         employee.superAdmin -> "Адмін мережі"
-        employee.admin -> "Адмін магазину"
-        employee.stockAdmin -> "Адмін залишків"
-        else -> "Співробітник"
+        employee.stockAdmin && employee.jobTitle == null && !employee.admin -> "Адмін залишків"
+        else -> ua.chudo.scanner.data.Team.subtitle(employee.jobTitle, employee.admin)
     }
     BackHandler(onBack = onBack)
 
@@ -105,7 +107,7 @@ fun ProfileScreen(
             networkAdmin = onNetworkAdmin != null, myShop = onMyShop != null,
             version = app.updater.currentVersion, checking = checking,
         ),
-        onScannerSettings = onScannerSettings, onOperations = onOperations,
+        onScannerSettings = onScannerSettings, onOperations = onOperations, onTeam = onTeam,
         onEditName = { editName = true }, onTheme = app.prefs::setThemeMode,
         onPrinters = { onPrinters?.invoke() },
         onNetworkAdmin = { onNetworkAdmin?.invoke() }, onMyShop = { onMyShop?.invoke() }, onPassword = { changePassword = true }, onLogout = { confirmLogout = true },
@@ -208,6 +210,7 @@ fun ProfileContent(
     onCheckUpdate: () -> Unit = {},
     onScannerSettings: () -> Unit = {},
     onOperations: () -> Unit = {},
+    onTeam: () -> Unit = {},
 ) {
     val m = Mine.colors
     Column(
@@ -233,7 +236,8 @@ fun ProfileContent(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(ui.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (ui.role.isNotBlank()) Text(ui.role, fontSize = 14.sp, color = m.link, fontWeight = FontWeight.Medium)
+                    // Посада й права — окремими тональними пігулками (довгий рядок не обрізається).
+                    if (ui.role.isNotBlank()) RolePills(ui.role)
                     ui.shop.ifBlank { ui.city }.takeIf(String::isNotBlank)?.let {
                         Text(it, fontSize = 14.sp, color = m.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
@@ -249,6 +253,7 @@ fun ProfileContent(
                 add { ProfileRow(R.drawable.ic_redesign_printer, "Принтери", "Підключити, налаштувати, друк пакетом", onClick = onPrinters) }
                 if (ui.networkAdmin) add { ProfileRow(R.drawable.ic_redesign_users, "Адміністрування мережі", "Магазини, співробітники", onClick = onNetworkAdmin) }
                 if (ui.myShop) add { ProfileRow(R.drawable.ic_redesign_users, "Мій магазин", "Співробітники, запити", onClick = onMyShop) }
+                add { ProfileRow(R.drawable.ic_redesign_users, "Колектив магазину", "Хто є хто в магазині", onClick = onTeam) }
                 add { ProfileRow(R.drawable.ic_redesign_history, "Історія операцій", "Друк, замовлення, скани", onClick = onOperations) }
             }
             rows.forEachIndexed { i, row ->
@@ -353,5 +358,23 @@ private fun ProfileRow(
         if (chevron) Icon(
             painterResource(R.drawable.ic_redesign_chevron_right), null, Modifier.size(20.dp), tint = m.textTertiary,
         )
+    }
+}
+
+/** «Старший продавець · Адмін магазину» → дві пігулки; не вміщаються в рядок — переносяться. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun RolePills(role: String) {
+    val m = Mine.colors
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        role.split(" · ").forEach { part ->
+            Text(
+                part, Modifier.background(m.accentTone, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
+                fontSize = 13.sp, color = m.link, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            )
+        }
     }
 }

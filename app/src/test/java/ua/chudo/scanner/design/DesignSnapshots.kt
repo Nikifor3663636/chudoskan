@@ -560,7 +560,7 @@ class DesignSnapshots {
                     ua.chudo.scanner.ui.profile.ProfileUi(
                         name = "Олена Коваль", phone = "+380 67 555 12 18", city = "Одеса",
                         shop = "вул. Генуезька, 5/2, ТРЦ \"Gagarinn Plaza\", друга черга, 3 поверх",
-                        theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
+                        theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true, role = "Старший продавець · Адмін магазину",
                     ),
                 )
             }
