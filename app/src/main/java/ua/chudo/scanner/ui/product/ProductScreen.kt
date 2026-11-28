@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -197,10 +198,12 @@ fun ProductScreen(
             }
             if (p != null && !s.loading) {
                 val cartCode = vm.highlightBarcode ?: net?.barcode ?: own?.barcode
-                ProductActions(onPrint = { printSheet = true }, onCart = cartCode?.let { code ->
-                    {
-                        app.cart.add(code)
-                        scope.launch { snackbar.showSnackbar("Додано до кошика") }
+                ProductActions(onPrint = { printSheet = true }, onCart = {
+                    app.cart.addProduct(p, cartCode, net)
+                    val units = app.cart.lines.value.firstOrNull { it.urlKey == p.urlKey || it.barcode == cartCode }?.qty ?: 1
+                    scope.launch {
+                        snackbar.currentSnackbarData?.dismiss()
+                        snackbar.showSnackbar(if (units > 1) "У кошику $units шт" else "Додано до кошика")
                     }
                 })
             }
@@ -455,11 +458,20 @@ private fun Availability(stock: StockStatus) {
         StockStatus.OUT_OF_STOCK -> "Немає в наявності"
         StockStatus.UNKNOWN -> "Наявність уточнюйте"
     }
-    Column(Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp)) {
-        Text("За даними сайту", fontSize = 13.sp, color = m.textTertiary)
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text)
+    val (tone, ink) = when (stock) {
+        StockStatus.IN_STOCK -> m.successTint to m.success
+        StockStatus.OUT_OF_STOCK -> m.surface to m.textTertiary
+        StockStatus.UNKNOWN -> m.warningTint to m.warningText
     }
-    HorizontalDivider(color = m.line)
+    StockCard {
+        Box(Modifier.size(56.dp).background(tone, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_redesign_package), null, Modifier.size(26.dp), tint = ink)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("За даними сайту", fontSize = 13.sp, color = m.textTertiary)
+            Text(label, style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = m.text)
+        }
+    }
 }
 
 private fun productPrice(price: Double): String =
@@ -488,23 +500,25 @@ private fun PriceBox(p: ProductDetails) {
 }
 
 @Composable
-internal fun ProductActions(onPrint: () -> Unit, onCart: (() -> Unit)?) {
+internal fun ProductActions(onPrint: () -> Unit, onCart: () -> Unit) {
     val m = Mine.colors
     Surface(color = m.card, contentColor = m.text) {
         Column(Modifier.navigationBarsPadding()) {
             HorizontalDivider(color = m.line)
-            Row(Modifier.fillMaxWidth().padding(start = H, end = H, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = H, end = H, top = 10.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
-                    onClick = { onCart?.invoke() }, enabled = onCart != null,
-                    modifier = Modifier.size(48.dp), shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.dp, m.line), color = m.card, contentColor = m.text,
+                    onClick = onCart, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(50),
+                    color = m.accentTone, contentColor = m.link,
                 ) {
-                    Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_redesign_shopping_cart), "Додати до кошика", Modifier.size(20.dp), tint = if (onCart != null) m.text else m.textTertiary) }
-                }
-                Surface(onClick = onPrint, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(painterResource(R.drawable.ic_redesign_printer), null, Modifier.size(20.dp))
-                        Text("Друкувати цінник", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Icon(painterResource(R.drawable.ic_redesign_shopping_cart), null, Modifier.size(22.dp))
+                        Text("У кошик", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                    }
+                }
+                Surface(onClick = onPrint, modifier = Modifier.weight(1.4f).height(56.dp), shape = RoundedCornerShape(50), color = m.accent, contentColor = m.onAccent) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_redesign_printer), null, Modifier.size(22.dp))
+                        Text("Друкувати цінник", style = androidx.compose.material3.MaterialTheme.typography.titleMedium, maxLines = 1)
                     }
                 }
             }
@@ -512,31 +526,59 @@ internal fun ProductActions(onPrint: () -> Unit, onCart: (() -> Unit)?) {
     }
 }
 
+/** Колір залишку: є — зелений, 1–2 — бурштиновий, 0 — сірий. */
+private enum class StockLevel { NONE, LOW, OK }
+
+private fun stockLevel(quantity: Double) = when {
+    quantity <= 0 -> StockLevel.NONE
+    quantity <= 2 -> StockLevel.LOW
+    else -> StockLevel.OK
+}
+
 @Composable
 private fun OwnStock(quantity: Double) {
     val m = Mine.colors
-    Row(
-        Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(qtyText(quantity), Modifier.alignByBaseline(), style = PriceStyle.copy(fontSize = 34.sp, lineHeight = 34.sp), color = if (quantity > 0) m.text else m.textTertiary)
-            Text("шт", Modifier.alignByBaseline(), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.textSecondary)
+    val level = stockLevel(quantity)
+    val (tone, ink) = when (level) {
+        StockLevel.OK -> m.successTint to m.success
+        StockLevel.LOW -> m.warningTint to m.warningText
+        StockLevel.NONE -> m.surface to m.textTertiary
+    }
+    StockCard {
+        Column(
+            Modifier.size(72.dp).background(tone, RoundedCornerShape(16.dp)),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+        ) {
+            Text(qtyText(quantity), style = PriceStyle.copy(fontSize = 28.sp, lineHeight = 30.sp), color = ink, maxLines = 1)
+            Text("шт", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ink)
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("У вашому магазині", fontSize = 13.sp, color = m.textTertiary)
             Text(
-                when {
-                    quantity <= 0 -> "Немає — запропонуйте інший магазин"
-                    quantity <= 2 -> "Мало — перевірте на полиці"
-                    else -> "Є на складі магазину"
+                when (level) {
+                    StockLevel.NONE -> "Немає — запропонуйте інший магазин"
+                    StockLevel.LOW -> "Мало — перевірте на полиці"
+                    StockLevel.OK -> "Є на складі магазину"
                 },
-                fontSize = 15.sp, fontWeight = FontWeight.Medium, color = m.text,
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = m.text,
             )
         }
     }
-    HorizontalDivider(color = m.line)
+}
+
+/** Картка блоку наявності: 16 dp, відступи з боків — як у решти карток. */
+@Composable
+private fun StockCard(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val m = Mine.colors
+    Surface(
+        Modifier.fillMaxWidth().padding(start = H, end = H, top = 16.dp), shape = RoundedCornerShape(16.dp),
+        color = m.card, contentColor = m.text,
+    ) {
+        Row(
+            Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically, content = content,
+        )
+    }
 }
 
 @Composable
@@ -559,25 +601,31 @@ private fun NetworkStores(net: NetAvailability, myShop: String) {
         net.item, net.ownCode, myShop, net.item.name.ifBlank { net.barcode }, net.updatedAt,
     ) { all = false }
     val visible = net.city.take(3)
-    if (visible.isNotEmpty()) HorizontalDivider(color = m.line)
-    visible.forEach { shop ->
-        Row(
-            Modifier.fillMaxWidth().height(48.dp).background(m.card).padding(horizontal = H),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(shop.name, Modifier.weight(1f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = m.text)
-            Text(
-                if (shop.qty > 0) "${qtyText(shop.qty)} шт" else "немає",
-                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                color = when {
-                    shop.qty <= 0 -> m.textTertiary
-                    shop.qty <= 2 -> m.warningText
-                    else -> m.success
-                },
-            )
+    if (visible.isEmpty()) return
+    Surface(Modifier.fillMaxWidth().padding(horizontal = H), shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text) {
+        Column {
+            visible.forEachIndexed { i, shop ->
+                if (i > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = m.line)
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(shop.name, Modifier.weight(1f), fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = m.text)
+                    val (tone, ink) = when (stockLevel(shop.qty)) {
+                        StockLevel.OK -> m.successTint to m.success
+                        StockLevel.LOW -> m.warningTint to m.warningText
+                        StockLevel.NONE -> m.surface to m.textTertiary
+                    }
+                    Box(Modifier.height(28.dp).background(tone, RoundedCornerShape(50)).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (shop.qty > 0) "${qtyText(shop.qty)} шт" else "немає",
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ink,
+                        )
+                    }
+                }
+            }
         }
-        HorizontalDivider(color = m.line)
     }
 }
 
@@ -698,14 +746,23 @@ private fun ShopRow(shop: ShopAvailability, mineQty: Int?, isMine: Boolean, onCl
 @Composable
 private fun Description(text: String) {
     val m = Mine.colors
+    var expanded by rememberSaveable(text) { mutableStateOf(false) }
+    val long = text.length > 320
     Text(
-        "Опис", Modifier.padding(start = H, top = 20.dp, bottom = 8.dp),
+        "Опис", Modifier.padding(start = H, top = 24.dp, bottom = 8.dp),
         fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = m.textSecondary,
     )
-    Text(
-        text, Modifier.fillMaxWidth().background(m.card).padding(horizontal = H, vertical = 14.dp),
-        fontSize = 15.sp, lineHeight = 23.25.sp, color = m.textSecondary,
-    )
+    Surface(Modifier.fillMaxWidth().padding(horizontal = H), shape = RoundedCornerShape(16.dp), color = m.card, contentColor = m.text) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                text, fontSize = 15.sp, lineHeight = 23.sp, color = m.textSecondary,
+                maxLines = if (long && !expanded) 8 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis,
+            )
+            if (long) androidx.compose.material3.TextButton(onClick = { expanded = !expanded }, modifier = Modifier.padding(top = 4.dp)) {
+                Text(if (expanded) "Згорнути" else "Показати повністю", color = m.link, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
 }
 
 /** Коди для звірки товару. */

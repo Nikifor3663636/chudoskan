@@ -283,7 +283,7 @@ private fun QuantityButton(@DrawableRes icon: Int, label: String, enabled: Boole
 private val QTY = DecimalFormat("#,##0.###")
 
 private fun ids(line: CartLine) = listOfNotNull(
-    line.article.ifBlank { null }?.let { "арт. $it" }, line.code1C.ifBlank { null }, line.barcode,
+    line.article.ifBlank { null }?.let { "арт. $it" }, line.code1C.ifBlank { null }, line.barcode.takeUnless(Cart::isSiteKey),
 ).joinToString(" · ")
 
 private fun cartPrice(kop: Long): String = Cart.money(kop)
@@ -429,8 +429,8 @@ internal fun CashierContent(
                 textAlign = TextAlign.Center, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
             )
             Column(Modifier.widthIn(max = 352.dp).fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                BigBarcode(line.barcode, Modifier.fillMaxWidth().height(130.dp))
-                Text(line.barcode, Modifier.padding(top = 4.dp), fontSize = 30.sp, fontWeight = FontWeight.Medium, color = ink, textAlign = TextAlign.Center, letterSpacing = 3.sp, maxLines = 1)
+                BigBarcode(Cart.cashierCode(line), Modifier.fillMaxWidth().height(130.dp))
+                Text(Cart.cashierCode(line), Modifier.padding(top = 4.dp), fontSize = 30.sp, fontWeight = FontWeight.Medium, color = ink, textAlign = TextAlign.Center, letterSpacing = 3.sp, maxLines = 1)
             }
             Text("× ${line.qty} шт", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = ink)
             Text("Яскравість екрана піднято до максимуму", fontSize = 13.sp, color = Color(0xFF555555), textAlign = TextAlign.Center)
