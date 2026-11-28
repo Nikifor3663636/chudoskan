@@ -264,6 +264,13 @@ fun ResultsScreen(
             emptySet()
         }
     }
+    // Порожній пошук (з головної) — курсор у полі й клавіатура одразу.
+    LaunchedEffect(Unit) {
+        if (focusOnOpen(vm.query, vm.category, tablet)) {
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
     // Назву категорії в історію пошуку не пишемо — це не запит користувача.
     LaunchedEffect(vm.query) { if (vm.query.isNotBlank() && vm.category == null) onQueryUsed(vm.query) }
     fun submit() {
@@ -752,3 +759,6 @@ private fun ViaNote(text: String) {
         Text(text, Modifier.padding(12.dp), fontSize = 14.sp, lineHeight = 20.sp)
     }
 }
+
+/** Телефон, пошук без запиту й не з каталогу — одразу фокус у поле і клавіатура (на планшеті пошук — головна вкладка, клавіатуру не нав’язуємо). */
+internal fun focusOnOpen(query: String, category: String?, tablet: Boolean): Boolean = !tablet && query.isBlank() && category == null

@@ -20,6 +20,8 @@ data class StaffMember(
     val admin: Boolean = false,
     val superAdmin: Boolean = false,
     val changedAt: Date? = null,
+    /** Посада в магазині (ставить адмін магазину). */
+    val job: JobTitle? = null,
     /** Код 1С магазину (ЧО NN), якщо магазин прив'язано. */
     val code: String? = null,
 ) {
@@ -202,6 +204,13 @@ class NetworkAdminRepository(private val db: FirebaseFirestore) {
         )
         details?.let { data["details"] = it.take(1000) }
         db.collection("adminLog").add(data).await()
+    }
+
+    /** Посада співробітника — лише в Supabase (у резервному Firestore посад немає). */
+    suspend fun setJobTitle(actorUid: String, m: StaffMember, job: JobTitle?) {
+        check(Backend.isSupabase) { "Посади доступні лише в основній базі" }
+        SupabaseUsers.setJobTitle(m.uid, job)
+        log(actorUid, "jobTitle", m.uid, m.shopId, job?.title ?: Team.NO_JOB)
     }
 
     /** Останні дії (лише superAdmin читає журнал). */
