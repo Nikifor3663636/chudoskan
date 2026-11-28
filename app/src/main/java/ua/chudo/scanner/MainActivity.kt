@@ -125,6 +125,7 @@ private object Routes {
     const val PROFILE = "profile"
     const val SCANNER_SETTINGS = "scanner-settings"
     const val OPERATIONS = "operations"
+    const val TEAM = "team"
     const val NOTIFICATIONS = "notifications"
 
     const val SCAN_STOCK = "scan?mode=$STOCK_MODE"
@@ -193,7 +194,7 @@ private fun AppNav(home: Employee) {
         Routes.STOCK -> MainTab.STOCK
         // Новинки / акції: підсвічуємо вкладку, з якої відкрили (головна або «Залишки»).
         Routes.HIGHLIGHTS -> if (nav.previousBackStackEntry?.destination?.route == Routes.STOCK) MainTab.STOCK else MainTab.HOME
-        Routes.PROFILE -> MainTab.PROFILE
+        Routes.PROFILE, Routes.TEAM -> MainTab.PROFILE
         else -> null
     }
     fun openTab(r: String) {
@@ -276,6 +277,9 @@ private fun AppNavHost(
                 onNetworkUpload = if (employee.stockAdmin) ({ nav.navigate(Routes.NETWORK_STOCK) }) else null,
             )
         }
+        composable(Routes.TEAM) {
+            ua.chudo.scanner.ui.profile.TeamScreen(employee) { nav.popBackStack() }
+        }
         composable(Routes.OPERATIONS) {
             ua.chudo.scanner.ui.profile.ActivityScreen(employee, { nav.popBackStack() })
         }
@@ -290,6 +294,7 @@ private fun AppNavHost(
                 employee, onBack = { nav.popBackStack() },
                 onScannerSettings = { nav.navigate(Routes.SCANNER_SETTINGS) },
                 onOperations = { nav.navigate(Routes.OPERATIONS) },
+                onTeam = { nav.navigate(Routes.TEAM) },
                 onPrinters = { nav.navigate(Routes.PRINTERS) },
                 // Адмін мережі — «Адміністрування мережі»; адмін магазину — лише «Мій магазин».
                 onNetworkAdmin = if (home.superAdmin) ({ nav.navigate(Routes.ADMIN) }) else null,
@@ -454,6 +459,13 @@ private fun AppNavHost(
                 navArgument("cat") { type = NavType.StringType; nullable = true; defaultValue = null },
                 navArgument("n") { type = NavType.StringType; nullable = true; defaultValue = null },
             ),
+            // З головної поле пошуку «піднімається» знизу вгору.
+            enterTransition = {
+                if (initialState.destination.route == Routes.HOME)
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 4 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))
+                else null
+            },
         ) { resultsEntry ->
             var selection by rememberSaveable { mutableStateOf<List<String?>?>(null) }
             val results: @Composable () -> Unit = {

@@ -46,6 +46,8 @@ data class Employee(
     val homeShopId: String = shopId,
     /** Адмін скинув пароль — після входу спершу «Придумайте новий пароль» (users.must_change_password). */
     val mustChangePassword: Boolean = false,
+    /** Посада в магазині (users.job_title), ставить адмін магазину. */
+    val jobTitle: JobTitle? = null,
 ) {
     /** Налаштовує принтери магазину: адмін магазину або адмін мережі. */
     val managesShop: Boolean get() = admin || superAdmin

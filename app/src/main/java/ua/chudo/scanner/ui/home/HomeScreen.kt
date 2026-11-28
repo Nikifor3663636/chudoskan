@@ -292,13 +292,31 @@ fun HomeContent(
                 banner()
             }
         }
+        if (ui.history.isNotEmpty()) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing4, top = Mine.spacing8),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Нещодавні", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = m.textSecondary)
+                    androidx.compose.material3.TextButton(onClick = onHistory) {
+                        Text("Історія", style = MaterialTheme.typography.labelLarge, color = m.link)
+                    }
+                }
+                HorizontalDivider(color = m.line)
+            }
+            itemsIndexed(ui.history.take(4), key = { _, product -> product.urlKey }) { _, product ->
+                RecentProductRow(product, onOpenProduct)
+                HorizontalDivider(color = m.line)
+            }
+        }
         item {
             val cartDetail = if (ui.cartUnits == 0) "Порожній" else buildString {
                 append("${ui.cartUnits} шт")
                 ui.cartTotal?.let { append(" · ${Cart.money(it)}") }
             }
             Column(
-                Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing16),
+                Modifier.padding(start = Mine.spacing16, end = Mine.spacing16, top = Mine.spacing20, bottom = Mine.spacing16),
                 verticalArrangement = Arrangement.spacedBy(Mine.spacing12),
             ) {
                 Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Mine.spacing12)) {
@@ -320,24 +338,6 @@ fun HomeContent(
                         )
                     }
                 }
-            }
-        }
-        if (ui.history.isNotEmpty()) {
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = Mine.spacing16, end = Mine.spacing4, top = Mine.spacing20),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Нещодавні", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = m.textSecondary)
-                    androidx.compose.material3.TextButton(onClick = onHistory) {
-                        Text("Історія", style = MaterialTheme.typography.labelLarge, color = m.link)
-                    }
-                }
-                HorizontalDivider(color = m.line)
-            }
-            itemsIndexed(ui.history.take(4), key = { _, product -> product.urlKey }) { _, product ->
-                RecentProductRow(product, onOpenProduct)
-                HorizontalDivider(color = m.line)
             }
         }
     }

@@ -530,6 +530,29 @@ class DesignSnapshots {
         }
     }
 
+    @Test fun teamLight() = team(false)
+
+    @Test fun teamDark() = team(true)
+
+    private fun team(dark: Boolean) = paparazzi.snapshot {
+        ChudoTheme(dark = dark) {
+            Surface(color = Mine.colors.bg) {
+                val people = listOf(
+                    ua.chudo.scanner.data.TeamMember("1", "Олена Коваль", ua.chudo.scanner.data.JobTitle.MANAGER, admin = true),
+                    ua.chudo.scanner.data.TeamMember("2", "Дмитро Савчук", ua.chudo.scanner.data.JobTitle.SENIOR, admin = false),
+                    ua.chudo.scanner.data.TeamMember("3", "Ірина Мельник", ua.chudo.scanner.data.JobTitle.SENIOR, admin = true),
+                    ua.chudo.scanner.data.TeamMember("4", "Андрій Бондар", ua.chudo.scanner.data.JobTitle.SELLER, admin = false),
+                    ua.chudo.scanner.data.TeamMember("5", "Марія Ткачук", ua.chudo.scanner.data.JobTitle.SELLER, admin = false),
+                    ua.chudo.scanner.data.TeamMember("6", "Денис Тарасенко", null, admin = false),
+                )
+                ua.chudo.scanner.ui.profile.TeamContent(
+                    "ЧО 22 · ТРЦ Gagarin Plaza", meUid = "4",
+                    ui = ua.chudo.scanner.ui.profile.TeamUi.Ready(ua.chudo.scanner.data.Team.groups(people), people.size),
+                )
+            }
+        }
+    }
+
     @Test fun profileDark() = profile(true)
 
     @Test fun profileLight() = profile(false)
@@ -541,7 +564,7 @@ class DesignSnapshots {
                     ua.chudo.scanner.ui.profile.ProfileUi(
                         name = "Олена Коваль", phone = "+380 67 555 12 18", city = "Одеса",
                         shop = "вул. Генуезька, 5/2, ТРЦ \"Gagarinn Plaza\", друга черга, 3 поверх",
-                        theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true,
+                        theme = if (dark) ThemeMode.DARK else ThemeMode.LIGHT, admin = true, role = "Старший продавець · Адмін магазину",
                     ),
                 )
             }

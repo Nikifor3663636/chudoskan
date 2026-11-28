@@ -635,6 +635,32 @@ select throws_ok('select password_changed()', '42501', null, 'анонім не 
 select tests.login('sup');
 select is((select count(*)::int from admin_log where action = 'passwordReset' and target = 'emp22'), 1, 'скидання — у журналі дій');
 
+-- ===================== Посади й колектив магазину =====================
+reset role;
+select set_config('request.headers', '{}', true);
+delete from app.device_required;
+select tests.login('emp22');
+select ok(tests.no($$update users set job_title = 'manager' where uid = 'emp22'$$), 'співробітник не ставить собі посаду');
+select tests.login('adm62');
+select ok(tests.no($$update users set job_title = 'senior' where uid = 'emp22'$$), 'адмін ЧО 62 не ставить посаду в ЧО 22');
+select tests.login('adm22');
+select ok(tests.no($$update users set job_title = 'boss' where uid = 'emp22'$$), 'невідома посада не пройде');
+select is(tests.run($$update users set job_title = 'senior' where uid = 'emp22'$$), 1, 'адмін ЧО 22 ставить посаду співробітнику');
+select lives_ok($$update users set job_title = 'manager' where uid = 'adm22'$$, 'адмін ставить посаду собі');
+select tests.login('emp22');
+select is((select count(*)::int from shop_team()), 2, 'співробітник бачить колектив: лише підтверджених свого магазину');
+select is((select job_title from shop_team() where uid = 'emp22'), 'senior', 'у колективі — посада');
+select is((select admin from shop_team() where uid = 'adm22'), true, 'у колективі видно адміна');
+select ok(not exists (select 1 from shop_team() where uid in ('new22', 'emp62')), 'без непідтверджених і чужих');
+select tests.login('new22');
+select throws_ok('select * from shop_team()', '42501', null, 'непідтверджений колектив не бачить');
+select tests.login('sup');
+select set_config('request.headers', '{"x-act-shop":"22"}', true);
+select is((select count(*)::int from shop_team()), 2, 'адмін мережі бачить колектив магазину, в якому працює');
+select set_config('request.headers', '{}', true);
+select tests.anon();
+select throws_ok('select * from shop_team()', '42501', null, 'анонім не бачить колектив');
+
 -- ===================== Журнал дій свого магазину =====================
 reset role;
 select set_config('request.headers', '{}', true);

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -57,7 +58,7 @@ import androidx.compose.ui.unit.sp
 import ua.chudo.scanner.R
 import ua.chudo.scanner.ui.theme.Mine
 
-/** Вкладки: на телефоні в панелі — Пошук · Каталог · Скан · Залишки · Профіль; Друк — у профілі, Замовлення — плиткою на головній (обидва є в панелі планшета, Каталог там — чипом у пошуку). */
+/** Вкладки: на телефоні в панелі — Головна · Каталог · Скан · Залишки · Профіль; Друк — у профілі, Замовлення — плиткою на головній (обидва є в панелі планшета, Каталог там — чипом у пошуку). */
 enum class MainTab { HOME, CATALOG, ORDERS, PRINT, STOCK, PROFILE }
 
 /** Вкладки нижньої панелі телефона (кнопка сканера — між другою і третьою). */
@@ -76,7 +77,20 @@ val BarcodeScanIcon: ImageVector by lazy {
     }.build()
 }
 
-/** Нижня навігація Material 3: пігулка-індикатор активної вкладки, по центру — кнопка сканера (фірмовий колір). */
+/** Підпис вкладки в нижній панелі телефона. */
+internal fun phoneTabLabel(tab: MainTab): String = when (tab) {
+    MainTab.HOME -> "Головна"
+    MainTab.CATALOG -> "Каталог"
+    MainTab.STOCK -> "Залишки"
+    MainTab.PROFILE -> "Профіль"
+    MainTab.ORDERS -> "Замовлення"
+    MainTab.PRINT -> "Друк"
+}
+
+/** Висота нижньої панелі: великі вкладки під великий палець (було 80 dp). */
+internal val PhoneBarHeight = 92.dp
+
+/** Нижня навігація: великі вкладки з пігулкою-індикатором, по центру — кнопка сканера (фірмовий колір). */
 @Composable
 fun MineBottomBar(
     tab: MainTab?,
@@ -85,35 +99,38 @@ fun MineBottomBar(
     scanLabel: String = "Сканувати товар",
 ) {
     val selected = phoneBarSelection(tab)
-    androidx.compose.material3.NavigationBar(containerColor = Mine.colors.card) {
-        TabItem(MainTab.HOME, selected, R.drawable.ic_redesign_search, "Пошук", onTab)
-        TabItem(MainTab.CATALOG, selected, R.drawable.ic_redesign_layout_grid, "Каталог", onTab)
-        ScanTab(scanLabel, onScan)
-        TabItem(MainTab.STOCK, selected, R.drawable.ic_redesign_boxes, "Залишки", onTab)
-        TabItem(MainTab.PROFILE, selected, R.drawable.ic_redesign_user, "Профіль", onTab)
+    androidx.compose.material3.Surface(color = Mine.colors.card) {
+        Row(
+            Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(PhoneBarHeight)
+                .padding(horizontal = 4.dp).selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TabItem(MainTab.HOME, selected, R.drawable.ic_redesign_home, onTab)
+            TabItem(MainTab.CATALOG, selected, R.drawable.ic_redesign_layout_grid, onTab)
+            ScanTab(scanLabel, onScan)
+            TabItem(MainTab.STOCK, selected, R.drawable.ic_redesign_boxes, onTab)
+            TabItem(MainTab.PROFILE, selected, R.drawable.ic_redesign_user, onTab)
+        }
     }
 }
 
+/** Розміри однакові для всіх клітинок: пігулки на одній лінії, підписи — на одній базовій лінії. */
+internal val TabPillWidth = 64.dp
+internal val TabPillHeight = 44.dp
+
+/** Сканер: така сама клітинка, як вкладки, лише пігулка завжди фірмового кольору. */
 @Composable
 private fun RowScope.ScanTab(label: String, onScan: () -> Unit) {
     val m = Mine.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(120), label = "scanKeyScale")
-    Column(
-        Modifier.weight(1f).height(80.dp)
-            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
+    TabCell(
+        Modifier.clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScan)
             .semantics { contentDescription = label },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            Modifier.scale(scale).size(width = 64.dp, height = 48.dp).clip(RoundedCornerShape(16.dp)).background(m.accent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(R.drawable.ic_redesign_scan_barcode), null, Modifier.size(24.dp), tint = m.onAccent)
-        }
-    }
+        pill = m.accent, pillScale = scale, icon = R.drawable.ic_redesign_scan_barcode, iconTint = m.onAccent,
+        label = "Скан", labelColor = m.textSecondary, bold = false,
+    )
 }
 
 @Composable
@@ -121,18 +138,44 @@ private fun RowScope.TabItem(
     tab: MainTab,
     selected: MainTab?,
     @DrawableRes icon: Int,
-    label: String,
     onTab: (MainTab) -> Unit,
-    badge: Int = 0,
 ) {
-    NavigationBarItem(
-        selected = tab == selected,
-        onClick = { onTab(tab) },
-        icon = {
-            androidx.compose.material3.BadgedBox(badge = { if (badge > 0) androidx.compose.material3.Badge { Text("$badge") } }) {
-                Icon(painterResource(icon), null, Modifier.size(24.dp))
-            }
-        },
-        label = { Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.sp)) },
+    val m = Mine.colors
+    val active = tab == selected
+    TabCell(
+        Modifier.selectable(active, role = Role.Tab, onClick = { onTab(tab) }),
+        pill = if (active) m.accentTone else Color.Transparent, icon = icon,
+        iconTint = if (active) m.link else m.textSecondary,
+        label = phoneTabLabel(tab), labelColor = if (active) m.text else m.textSecondary, bold = active,
     )
+}
+
+@Composable
+private fun RowScope.TabCell(
+    modifier: Modifier,
+    pill: Color,
+    @DrawableRes icon: Int,
+    iconTint: Color,
+    label: String,
+    labelColor: Color,
+    bold: Boolean,
+    pillScale: Float = 1f,
+) {
+    Column(
+        Modifier.weight(1f).fillMaxHeight().then(modifier),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+    ) {
+        Box(
+            Modifier.scale(pillScale).size(width = TabPillWidth, height = TabPillHeight).clip(RoundedCornerShape(50)).background(pill),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(icon), null, Modifier.size(28.dp), tint = iconTint)
+        }
+        Text(
+            label, Modifier.height(18.dp), maxLines = 1, softWrap = false,
+            fontSize = 14.sp, lineHeight = 18.sp, letterSpacing = 0.sp,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium, color = labelColor,
+        )
+    }
 }
